@@ -50,7 +50,8 @@ export class CreateAccountController {
           dueDay: 20,
           timezone: 'America/Sao_Paulo',
         },
-        description: '`closingDaysBeforeDue` padrão: 1. `creditLimit` opcional.',
+        description:
+          '`closingDaysBeforeDue` é a distância em dias entre o fechamento e o vencimento — aceita apenas 5, 7 ou 10. `dueDay` vai de 1 a 28. `creditLimit` é opcional (null = sem limite).',
       },
     },
   })

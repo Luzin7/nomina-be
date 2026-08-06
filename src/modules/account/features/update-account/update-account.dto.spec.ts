@@ -1,226 +1,121 @@
-import { AccountType } from '@constants/enums';
-import { z } from 'zod';
+import { CLOSING_DAYS_BEFORE_DUE_OPTIONS } from '@constants/enums';
+import { updateAccountSchema } from './update-account.dto';
 
-const updateAccountSchema = z.object({
-  accountId: z.string().uuid('Invalid account ID'),
-  name: z
-    .string()
-    .trim()
-    .min(1, 'Name is required')
-    .max(50, 'Name is too long'),
-  type: z.nativeEnum(AccountType),
-  icon: z.string().trim().nullable(),
-  color: z
-    .string()
-    .trim()
-    .regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid color (use format #RRGGBB)')
-    .nullable(),
-  closingDaysBeforeDue: z.number().int().min(1).max(31).nullable(),
-  dueDay: z.number().int().min(1).max(31).nullable(),
-});
+// Este spec importa o schema real. Antes ele redefinia uma cópia local do Zod
+// (com campos que o schema real nem tem e faixas antigas de 1–31), então
+// validava a cópia — nunca o código de produção.
 
-const validBase = {
-  accountId: '123e4567-e89b-12d3-a456-426614174000',
-  name: 'Updated Account',
-  type: AccountType.CHECKING,
-  icon: null,
-  color: null,
-  closingDaysBeforeDue: null,
-  dueDay: null,
-};
+function makeRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    name: 'Updated Account',
+    ...overrides,
+  };
+}
 
 describe('UpdateAccountRequest DTO', () => {
-  describe('accountId field', () => {
-    it('should accept a valid UUID', () => {
-      const result = updateAccountSchema.safeParse(validBase);
-      expect(result.success).toBe(true);
-    });
-
-    it('should reject a non-UUID accountId', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        accountId: 'not-a-uuid',
-      });
-      expect(result.success).toBe(false);
-    });
-
-    it('should reject missing accountId', () => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { accountId: _, ...without } = validBase;
-      const result = updateAccountSchema.safeParse(without);
-      expect(result.success).toBe(false);
-    });
-  });
-
   describe('name field', () => {
     it('should accept minimum length name (1 character)', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        name: 'A',
-      });
-      expect(result.success).toBe(true);
+      expect(
+        updateAccountSchema.safeParse(makeRequest({ name: 'A' })).success,
+      ).toBe(true);
     });
 
     it('should accept maximum length name (50 characters)', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        name: 'A'.repeat(50),
-      });
-      expect(result.success).toBe(true);
+      expect(
+        updateAccountSchema.safeParse(makeRequest({ name: 'A'.repeat(50) }))
+          .success,
+      ).toBe(true);
     });
 
     it('should reject empty name', () => {
-      const result = updateAccountSchema.safeParse({ ...validBase, name: '' });
-      expect(result.success).toBe(false);
+      expect(
+        updateAccountSchema.safeParse(makeRequest({ name: '' })).success,
+      ).toBe(false);
     });
 
     it('should reject name longer than 50 characters', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        name: 'A'.repeat(51),
-      });
-      expect(result.success).toBe(false);
+      expect(
+        updateAccountSchema.safeParse(makeRequest({ name: 'A'.repeat(51) }))
+          .success,
+      ).toBe(false);
     });
 
     it('should trim whitespace from name', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        name: '  My Account  ',
-      });
+      const result = updateAccountSchema.safeParse(
+        makeRequest({ name: '  My Account  ' }),
+      );
       expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.name).toBe('My Account');
-      }
+      if (result.success) expect(result.data.name).toBe('My Account');
+    });
+
+    it('should reject a missing name', () => {
+      expect(updateAccountSchema.safeParse({}).success).toBe(false);
     });
   });
 
-  describe('type field', () => {
-    it.each(Object.values(AccountType))(
-      'should accept AccountType.%s',
-      (type) => {
-        const result = updateAccountSchema.safeParse({ ...validBase, type });
-        expect(result.success).toBe(true);
-      },
-    );
-
-    it('should reject invalid type string', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        type: 'WALLET',
-      });
-      expect(result.success).toBe(false);
-    });
-  });
-
-  describe('icon field (nullable)', () => {
-    it('should accept a string icon', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        icon: 'wallet',
-      });
-      expect(result.success).toBe(true);
+  describe('closingDaysBeforeDue field', () => {
+    it.each(CLOSING_DAYS_BEFORE_DUE_OPTIONS)('should accept %d', (option) => {
+      expect(
+        updateAccountSchema.safeParse(
+          makeRequest({ closingDaysBeforeDue: option }),
+        ).success,
+      ).toBe(true);
     });
 
-    it('should accept null icon', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        icon: null,
-      });
-      expect(result.success).toBe(true);
-    });
-  });
-
-  describe('color field (nullable)', () => {
-    it('should accept a valid hex color', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        color: '#AABBCC',
-      });
-      expect(result.success).toBe(true);
-    });
-
-    it('should accept null color', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        color: null,
-      });
-      expect(result.success).toBe(true);
-    });
-
-    it('should reject invalid hex format', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        color: 'red',
-      });
-      expect(result.success).toBe(false);
-    });
-  });
-
-  describe('closingDaysBeforeDue field (nullable)', () => {
-    it('should accept day 1 (boundary)', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        closingDaysBeforeDue: 1,
-      });
-      expect(result.success).toBe(true);
-    });
-
-    it('should accept day 31 (boundary)', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        closingDaysBeforeDue: 31,
-      });
-      expect(result.success).toBe(true);
+    it.each([0, 1, 4, 6, 8, 9, 11, 31])('should reject %d', (invalid) => {
+      expect(
+        updateAccountSchema.safeParse(
+          makeRequest({ closingDaysBeforeDue: invalid }),
+        ).success,
+      ).toBe(false);
     });
 
     it('should accept null', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        closingDaysBeforeDue: null,
-      });
-      expect(result.success).toBe(true);
+      expect(
+        updateAccountSchema.safeParse(
+          makeRequest({ closingDaysBeforeDue: null }),
+        ).success,
+      ).toBe(true);
     });
 
-    it('should reject day 0', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        closingDaysBeforeDue: 0,
-      });
-      expect(result.success).toBe(false);
-    });
-
-    it('should reject day 32', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        closingDaysBeforeDue: 32,
-      });
-      expect(result.success).toBe(false);
+    it('should accept the field being omitted', () => {
+      expect(updateAccountSchema.safeParse(makeRequest()).success).toBe(true);
     });
   });
 
-  describe('dueDay field (nullable)', () => {
-    it('should accept day 10 (valid mid-range)', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        dueDay: 10,
-      });
-      expect(result.success).toBe(true);
+  describe('dueDay field', () => {
+    it.each([1, 15, 28])('should accept day %d', (day) => {
+      expect(
+        updateAccountSchema.safeParse(makeRequest({ dueDay: day })).success,
+      ).toBe(true);
+    });
+
+    it.each([0, 29, 31])('should reject day %d', (day) => {
+      expect(
+        updateAccountSchema.safeParse(makeRequest({ dueDay: day })).success,
+      ).toBe(false);
     });
 
     it('should accept null', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        dueDay: null,
-      });
-      expect(result.success).toBe(true);
+      expect(
+        updateAccountSchema.safeParse(makeRequest({ dueDay: null })).success,
+      ).toBe(true);
+    });
+  });
+
+  describe('creditLimit field', () => {
+    it('should accept a positive limit', () => {
+      expect(
+        updateAccountSchema.safeParse(makeRequest({ creditLimit: 500000 }))
+          .success,
+      ).toBe(true);
     });
 
-    it('should reject day 0', () => {
-      const result = updateAccountSchema.safeParse({
-        ...validBase,
-        dueDay: 0,
-      });
-      expect(result.success).toBe(false);
+    it.each([0, -1])('should reject %d', (limit) => {
+      expect(
+        updateAccountSchema.safeParse(makeRequest({ creditLimit: limit }))
+          .success,
+      ).toBe(false);
     });
   });
 });

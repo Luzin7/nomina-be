@@ -1,4 +1,4 @@
-import { AccountType } from '@constants/enums';
+import { AccountType, CLOSING_DAYS_BEFORE_DUE_OPTIONS } from '@constants/enums';
 import { createAccountSchema } from './create-account.dto';
 
 describe('CreateAccountRequest DTO', () => {
@@ -83,12 +83,29 @@ describe('CreateAccountRequest DTO', () => {
       expect(createAccountSchema.safeParse(rest).success).toBe(false);
     });
 
+    it.each(CLOSING_DAYS_BEFORE_DUE_OPTIONS)(
+      'should accept closingDaysBeforeDue %d',
+      (option) => {
+        expect(
+          createAccountSchema.safeParse(
+            makeCC({ closingDaysBeforeDue: option }),
+          ).success,
+        ).toBe(true);
+      },
+    );
+
     it.each<[Record<string, unknown>, string]>([
       [{ creditLimit: -1 }, 'negative creditLimit'],
       [{ creditLimit: 0 }, 'zero creditLimit'],
       [{ closingDaysBeforeDue: 0 }, 'closingDaysBeforeDue 0'],
+      [{ closingDaysBeforeDue: 1 }, 'closingDaysBeforeDue 1'],
+      [
+        { closingDaysBeforeDue: 6 },
+        'closingDaysBeforeDue 6 (fora do conjunto)',
+      ],
       [{ closingDaysBeforeDue: 32 }, 'closingDaysBeforeDue 32'],
       [{ dueDay: 0 }, 'dueDay 0'],
+      [{ dueDay: 29 }, 'dueDay 29'],
       [{ dueDay: 32 }, 'dueDay 32'],
     ])('should reject %s', (invalidFields) => {
       expect(createAccountSchema.safeParse(makeCC(invalidFields)).success).toBe(

@@ -148,7 +148,10 @@ describe('CreateAccountService', () => {
     expect(accountRepository.create).toHaveBeenCalledTimes(1);
   });
 
-  it('should create a CREDIT_CARD without closingDaysBeforeDue', async () => {
+  // Depois do pivô, `closingDaysBeforeDue` deixou de ser opcional: sem ele o
+  // ciclo de fatura não tem como ser calculado (viraria NaN em
+  // calculateInvoiceCycle). O service precisa recusar, não persistir.
+  it('should NOT create a CREDIT_CARD without closingDaysBeforeDue', async () => {
     arrangeSuccessMocks();
 
     const result = await service.execute(
@@ -159,7 +162,7 @@ describe('CreateAccountService', () => {
         dueDay: 20,
       }),
     );
-    expect(result.isRight()).toBe(true);
-    expect(accountRepository.create).toHaveBeenCalledTimes(1);
+    expect(result.isLeft()).toBe(true);
+    expect(accountRepository.create).not.toHaveBeenCalled();
   });
 });
