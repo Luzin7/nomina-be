@@ -7,6 +7,7 @@ import {
   InvalidDateRangeError,
   InvalidRecurrenceIntervalError,
   InvalidTransferError,
+  MissingCategoryError,
 } from '../errors';
 
 export interface RecurringTransactionProps {
@@ -46,6 +47,10 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     if (props.amount <= 0n) return left(new InvalidAmountError());
     if (props.interval !== undefined && props.interval <= 0)
       return left(new InvalidRecurrenceIntervalError());
+
+    if (!props.categoryId) {
+      return left(new MissingCategoryError());
+    }
 
     if (props.endDate && props.endDate < props.startDate) {
       return left(new InvalidDateRangeError());

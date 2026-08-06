@@ -11,6 +11,7 @@ describe('Transaction entity', () => {
     return {
       workspaceId: 'workspace-1',
       accountId: 'account-1',
+      categoryId: 'category-1',
       title: 'Grocery shopping',
       amount: 5000n,
       date: pastDate,
@@ -35,6 +36,12 @@ describe('Transaction entity', () => {
     it('should reject empty title', () => {
       expect(Transaction.create(makeProps({ title: '' })).isLeft()).toBe(true);
       expect(Transaction.create(makeProps({ title: '   ' })).isLeft()).toBe(
+        true,
+      );
+    });
+
+    it('should reject a transaction without categoryId', () => {
+      expect(Transaction.create(makeProps({ categoryId: '' })).isLeft()).toBe(
         true,
       );
     });

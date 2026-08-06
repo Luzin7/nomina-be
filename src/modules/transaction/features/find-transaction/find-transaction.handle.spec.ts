@@ -14,6 +14,7 @@ function makeTransaction(workspaceId = 'ws-1'): Transaction {
     {
       workspaceId,
       accountId: 'acc-1',
+      categoryId: 'cat-1',
       title: 'Test',
       amount: 1000n,
       date: new Date('2024-01-01'),

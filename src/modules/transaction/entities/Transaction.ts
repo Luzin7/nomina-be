@@ -2,6 +2,7 @@ import { TransactionStatus, TransactionType } from '@constants/enums';
 import { AggregateRoot } from '@shared/core/Entities/AggregateRoot';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { Optional } from '@shared/core/types/Optional';
+import { MissingCategoryError } from '../errors';
 
 export interface TransactionProps {
   workspaceId: string;
@@ -51,7 +52,7 @@ export class Transaction extends AggregateRoot<TransactionProps> {
     }
 
     if (!props.categoryId) {
-      return left(new Error('The categoryId is required'));
+      return left(new MissingCategoryError());
     }
 
     if (!props.status) return left(new Error('O status é obrigatório'));
