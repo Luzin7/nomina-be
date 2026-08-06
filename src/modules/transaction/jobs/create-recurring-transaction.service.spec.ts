@@ -1,5 +1,6 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { RedisService } from '@infra/cache/redis/RedisService';
+import { Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { RecurringTransaction } from '../entities/RecurringTransaction';
 import { RecurringTransactionRepository } from '../repositories/contracts/RecurringTransactionRepository';
@@ -12,6 +13,7 @@ function makeRecurring(
   const result = RecurringTransaction.create({
     workspaceId: 'ws-1',
     accountId: 'acc-1',
+    categoryId: 'cat-1',
     title: 'Aluguel',
     amount: 150000n,
     frequency: RecurrenceFrequency.MONTHLY,
@@ -147,6 +149,26 @@ describe('GenerateRecurringTransactionsJobService', () => {
       );
     });
 
+    // O offset era fixo em 0: com uma página cheia, a segunda chamada repetia
+    // exatamente a mesma consulta. Só não virou loop infinito porque o teste
+    // acima mockava a 2ª chamada como vazia.
+    it('should advance the offset on each page', async () => {
+      const fullBatch = Array.from({ length: 50 }, (_, i) =>
+        makeRecurring({ startDate: new Date('2024-02-01'), title: `Rec ${i}` }),
+      );
+
+      recurringRepository.listNeedingGeneration
+        .mockResolvedValueOnce(fullBatch)
+        .mockResolvedValueOnce([]);
+
+      await service.execute();
+
+      const [firstCall, secondCall] =
+        recurringRepository.listNeedingGeneration.mock.calls;
+      expect(firstCall[2]).toBe(0);
+      expect(secondCall[2]).toBe(50);
+    });
+
     it('should skip a recurring whose first generation date is already past the threshold', async () => {
       const recurring = makeRecurring({ startDate: new Date('2024-02-01') });
       recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
@@ -176,7 +198,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       if (result.isRight()) expect(result.value.generatedCount).toBe(1);
     });
 
-    it('should log and skip a target date whose transaction fails validation, then keep going', async () => {
+    it('should log and skip a recurring whose transaction fails validation', async () => {
       const invalidRecurring = makeRecurring({
         startDate: new Date('2024-01-10'),
       });
@@ -195,6 +217,40 @@ describe('GenerateRecurringTransactionsJobService', () => {
         recurringRepository.createGeneratedTransactions,
       ).not.toHaveBeenCalled();
       if (result.isRight()) expect(result.value.generatedCount).toBe(0);
+    });
+
+    // Regressão: o caminho de erro recalculava targetDate sem marcar a
+    // recorrência como gerada, então calculateNextGenerationDate — que deriva
+    // a próxima data de lastGenerated — devolvia sempre a MESMA data. Como o
+    // generationCount também não era incrementado, o guard de segurança nunca
+    // disparava: o while rodava para sempre, inundando o log e travando o job
+    // diário inteiro por causa de uma única recorrência com dado inválido.
+    it('should abort a recurring with invalid data instead of looping forever', async () => {
+      const invalidRecurring = makeRecurring({
+        startDate: new Date('2024-01-10'),
+      });
+      Object.defineProperty(invalidRecurring, 'amount', { get: () => 0n });
+
+      recurringRepository.listNeedingGeneration.mockResolvedValue([
+        invalidRecurring,
+      ]);
+      // Sempre dentro do threshold: só a correção faz o laço terminar.
+      calculateNextDateService.execute.mockReturnValue(new Date('2024-01-11'));
+
+      const loggerSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      const result = await service.execute();
+
+      expect(result.isRight()).toBe(true);
+      if (result.isRight()) expect(result.value.generatedCount).toBe(0);
+      expect(
+        recurringRepository.createGeneratedTransactions,
+      ).not.toHaveBeenCalled();
+      expect(loggerSpy).toHaveBeenCalledTimes(1);
+
+      loggerSpy.mockRestore();
     });
 
     it('should stop generating once the safety cap is reached', async () => {
