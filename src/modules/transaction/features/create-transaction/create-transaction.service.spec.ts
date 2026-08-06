@@ -2,13 +2,30 @@ import { AccountType, TransactionType } from '@constants/enums';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { Category } from '@modules/category/entities/Category';
+import { SystemCategoryNotFoundError } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { randomUUID } from 'crypto';
 import { CreateTransactionService } from './create-transaction.service';
+
+function makeSystemTransferCategory(id = 'system-transfer-category') {
+  const result = Category.create(
+    {
+      workspaceId: null,
+      name: SYSTEM_CATEGORY.TRANSFER.name,
+      type: SYSTEM_CATEGORY.TRANSFER.type,
+      parentId: null,
+      isSystemCategory: true,
+    },
+    id,
+  );
+  if (result.isLeft()) throw result.value;
+  return result.value;
+}
 
 function makeRequest(
   overrides: Partial<
@@ -74,6 +91,7 @@ describe('CreateTransactionService', () => {
       countTransactions: jest.fn(),
       reassignChildren: jest.fn(),
       findManyByIds: jest.fn(),
+      findSystemCategoryByName: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
     transactionRepository = {
@@ -188,5 +206,69 @@ describe('CreateTransactionService', () => {
       }),
     );
     expect(result.isLeft()).toBe(true);
+  });
+
+  describe('TRANSFER', () => {
+    function arrangeTransferMocks() {
+      accountRepository.findById
+        .mockResolvedValueOnce(makeAccount())
+        .mockResolvedValueOnce(makeAccount('ws-1', 'acc-2'));
+      categoryRepository.findSystemCategoryByName.mockResolvedValue(
+        makeSystemTransferCategory(),
+      );
+      transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+    }
+
+    function makeTransferRequest() {
+      return makeRequest({
+        type: TransactionType.TRANSFER,
+        destinationAccountId: 'acc-2',
+        categoryId: undefined,
+      });
+    }
+
+    it('should create a TRANSFER when the destination account is valid', async () => {
+      arrangeTransferMocks();
+
+      const result = await service.execute(makeTransferRequest());
+
+      expect(result.isRight()).toBe(true);
+      expect(
+        transactionRepository.createWithBalanceUpdate,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    // Transferência não é gasto nem receita: o usuário não escolhe categoria e
+    // o backend resolve a de sistema. Sem isso, toda transferência batia na
+    // regra de categoria obrigatória e falhava.
+    it('should resolve the system transfer category when none is provided', async () => {
+      arrangeTransferMocks();
+
+      const result = await service.execute(makeTransferRequest());
+
+      expect(result.isRight()).toBe(true);
+      if (result.isRight()) {
+        expect(result.value.categoryId).toBe('system-transfer-category');
+      }
+      expect(categoryRepository.findSystemCategoryByName).toHaveBeenCalledWith(
+        SYSTEM_CATEGORY.TRANSFER.name,
+        SYSTEM_CATEGORY.TRANSFER.type,
+      );
+    });
+
+    it('should fail explicitly when the system transfer category is missing', async () => {
+      accountRepository.findById
+        .mockResolvedValueOnce(makeAccount())
+        .mockResolvedValueOnce(makeAccount('ws-1', 'acc-2'));
+      categoryRepository.findSystemCategoryByName.mockResolvedValue(null);
+
+      const result = await service.execute(makeTransferRequest());
+
+      expect(result.isLeft()).toBe(true);
+      expect(result.value).toBeInstanceOf(SystemCategoryNotFoundError);
+      expect(
+        transactionRepository.createWithBalanceUpdate,
+      ).not.toHaveBeenCalled();
+    });
   });
 });

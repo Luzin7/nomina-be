@@ -36,6 +36,7 @@ describe('ListCategoriesService', () => {
       countTransactions: jest.fn(),
       reassignChildren: jest.fn(),
       findManyByIds: jest.fn(),
+      findSystemCategoryByName: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
     service = new ListCategoriesService(categoryRepository);

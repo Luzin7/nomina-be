@@ -128,6 +128,10 @@ const categoriesData: CategorySeed[] = [
   { name: 'Telefonia', type: 'EXPENSE' },
   { name: 'Cartão de Crédito', type: 'EXPENSE' },
   { name: 'Outros Gastos', type: 'EXPENSE' },
+  // Categoria de sistema atribuída pelo backend em transferências entre contas
+  // próprias — o usuário não escolhe. Ver
+  // `src/modules/category/constants/system-categories.ts`.
+  { name: 'Transferência', type: 'TRANSFER' },
 ];
 
 async function main(): Promise<void> {

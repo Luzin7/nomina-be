@@ -1,11 +1,11 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
+import { CategoryNotFoundError } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { resolveSystemCategoryId } from '@modules/category/services/resolve-system-category';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
-import {
-  RecurringTransactionNotFoundError,
-  StartDateCannotBeTodayOrPastError,
-} from '@modules/transaction/errors';
+import { StartDateCannotBeTodayOrPastError } from '@modules/transaction/errors';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
@@ -54,8 +54,12 @@ export class CreateRecurringTransactionService implements Service<
     );
     if (destinationError) return left(destinationError);
 
-    const categoryError = await this.validateCategory(categoryId, workspaceId);
-    if (categoryError) return left(categoryError);
+    const categoryResult = await this.resolveCategoryId(
+      categoryId,
+      workspaceId,
+    );
+    if (categoryResult.isLeft()) return left(categoryResult.value);
+    const resolvedCategoryId = categoryResult.value;
 
     const accountTz = account.timezone;
     const start = this.dateProvider.startOfDay(startDate, accountTz);
@@ -81,7 +85,7 @@ export class CreateRecurringTransactionService implements Service<
       destinationAccountId: destinationAccountId ?? null,
       title: request.title,
       description: request.description ?? null,
-      categoryId,
+      categoryId: resolvedCategoryId,
       amount,
       frequency: request.frequency as RecurrenceFrequency,
       interval: request.interval,
@@ -116,23 +120,34 @@ export class CreateRecurringTransactionService implements Service<
     return null;
   }
 
-  private async validateCategory(
+  /**
+   * Sem `categoryId` a recorrência é uma transferência: o backend atribui a
+   * categoria de sistema. Ver create-transaction.service.ts.
+   */
+  private async resolveCategoryId(
     categoryId: string | null | undefined,
     workspaceId: string,
-  ): Promise<Error | null> {
-    if (!categoryId) return null;
+  ): Promise<Either<Error, string>> {
+    if (!categoryId) {
+      return resolveSystemCategoryId(
+        this.categoryRepository,
+        SYSTEM_CATEGORY.TRANSFER,
+      );
+    }
 
     const category = await this.categoryRepository.findById(categoryId);
-    if (!category) return new RecurringTransactionNotFoundError();
+    if (!category) return left(new CategoryNotFoundError());
 
     const isGlobalCategory = !category.workspaceId;
     const belongsToWorkspace = category.workspaceId === workspaceId;
 
     if (!isGlobalCategory && !belongsToWorkspace) {
-      return new UnauthorizedError('Você não tem acesso a esta categoria.');
+      return left(
+        new UnauthorizedError('Você não tem acesso a esta categoria.'),
+      );
     }
 
-    return null;
+    return right(category.id);
   }
 
   private resolveAmountAndEndDate(

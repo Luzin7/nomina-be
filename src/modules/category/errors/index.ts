@@ -41,6 +41,14 @@ export class CategoryNotFoundError extends BusinessRuleDomainError {
   }
 }
 
+export class SystemCategoryNotFoundError extends BusinessRuleDomainError {
+  constructor(name: string) {
+    super(
+      `Categoria de sistema "${name}" não encontrada. Rode o seed de categorias (npm run seed).`,
+    );
+  }
+}
+
 export class ConflictCategoryError extends Error {
   constructor(reason: string) {
     super(`Conflito na operação de categoria: ${reason}`);

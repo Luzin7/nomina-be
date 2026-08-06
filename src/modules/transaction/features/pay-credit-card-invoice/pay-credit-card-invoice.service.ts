@@ -5,6 +5,9 @@ import {
   InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
+import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { resolveSystemCategoryId } from '@modules/category/services/resolve-system-category';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
   CannotPayInvoiceWithCreditCardError,
@@ -30,6 +33,7 @@ export class PayCreditCardInvoiceService implements Service<
   constructor(
     private readonly accountRepository: AccountRepository,
     private readonly transactionRepository: TransactionRepository,
+    private readonly categoryRepository: CategoryRepository,
     private readonly dateProvider: DateProvider,
   ) {}
 
@@ -65,13 +69,20 @@ export class PayCreditCardInvoiceService implements Service<
     const tz = sourceAccount.timezone;
     const today = this.dateProvider.startOfDay(this.dateProvider.now(), tz);
 
-    const paymentDate = this.resolvePaymentDate(props, creditCardAccount, today);
+    const paymentDate = this.resolvePaymentDate(
+      props,
+      creditCardAccount,
+      today,
+    );
+
+    const categoryResult = await this.resolveCategoryId(props.categoryId);
+    if (categoryResult.isLeft()) return left(categoryResult.value);
 
     const transactionOrError = Transaction.create({
       workspaceId: props.workspaceId,
       accountId: props.sourceAccountId,
       destinationAccountId: props.creditCardAccountId,
-      categoryId: props.categoryId ?? '0d19bbf8-b66a-4cc2-9c7c-3fcd961f06b1',
+      categoryId: categoryResult.value,
       title: 'Pagamento de Fatura',
       description:
         props.description ?? `Pagamento da fatura: ${creditCardAccount.name}`,
@@ -97,6 +108,23 @@ export class PayCreditCardInvoiceService implements Service<
     );
 
     return right(transaction);
+  }
+
+  /**
+   * O pagamento de fatura é uma movimentação interna: o usuário não escolhe
+   * categoria, o backend resolve a categoria de sistema `Cartão de Crédito`
+   * pelo nome. Antes havia um UUID fixo no DTO, que só existia no banco onde
+   * ele por acaso tinha sido criado — em qualquer outro o insert violava a FK.
+   */
+  private async resolveCategoryId(
+    categoryId: string | undefined,
+  ): Promise<Either<Error, string>> {
+    if (categoryId) return right(categoryId);
+
+    return resolveSystemCategoryId(
+      this.categoryRepository,
+      SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT,
+    );
   }
 
   /**

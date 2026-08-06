@@ -2,7 +2,9 @@ import { TransactionStatus, TransactionType } from '@constants/enums';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { resolveSystemCategoryId } from '@modules/category/services/resolve-system-category';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { Injectable } from '@nestjs/common';
@@ -37,11 +39,9 @@ export class CreateTransactionService implements Service<
     if (accountsResult.isLeft()) return left(accountsResult.value);
     const { account, destinationAccount } = accountsResult.value;
 
-    const categoryResult = await this.validateCategory(
-      request.workspaceId,
-      request.categoryId,
-    );
+    const categoryResult = await this.resolveCategoryId(request);
     if (categoryResult.isLeft()) return left(categoryResult.value);
+    const categoryId = categoryResult.value;
 
     const { transactionDate, resolvedStatus } = this.resolveDateAndStatus(
       request.date,
@@ -52,7 +52,7 @@ export class CreateTransactionService implements Service<
     const transactionOrError = Transaction.create({
       workspaceId: request.workspaceId,
       accountId: request.accountId,
-      categoryId: request.categoryId ?? null,
+      categoryId,
       destinationAccountId: request.destinationAccountId ?? null,
       title: request.title,
       description: request.description ?? null,
@@ -116,20 +116,32 @@ export class CreateTransactionService implements Service<
     return right({ account, destinationAccount });
   }
 
-  private async validateCategory(
-    workspaceId: string,
-    categoryId: string,
-  ): Promise<Either<Error, void>> {
-    const category = await this.categoryRepository.findById(categoryId);
+  /**
+   * Transferência entre contas próprias não é gasto nem receita, então o
+   * usuário não escolhe categoria: o backend resolve a categoria de sistema.
+   * Nos demais tipos a categoria vem do request e é validada contra o
+   * workspace.
+   */
+  private async resolveCategoryId(
+    request: Request,
+  ): Promise<Either<Error, string>> {
+    if (!request.categoryId) {
+      return resolveSystemCategoryId(
+        this.categoryRepository,
+        SYSTEM_CATEGORY.TRANSFER,
+      );
+    }
+
+    const category = await this.categoryRepository.findById(request.categoryId);
     if (!category) return left(new CategoryNotFoundError());
 
-    if (category.workspaceId && category.workspaceId !== workspaceId) {
+    if (category.workspaceId && category.workspaceId !== request.workspaceId) {
       return left(
         new UnauthorizedError('Categoria não pertence ao workspace.'),
       );
     }
 
-    return right(undefined);
+    return right(category.id);
   }
 
   private resolveDateAndStatus(

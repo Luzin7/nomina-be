@@ -2,13 +2,17 @@ import { AccountType, TransactionStatus } from '@constants/enums';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
-    AccountNotFoundError,
-    InvalidAccountError,
+  AccountNotFoundError,
+  InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
+import { Category } from '@modules/category/entities/Category';
+import { SystemCategoryNotFoundError } from '@modules/category/errors';
+import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import {
-    CannotPayInvoiceWithCreditCardError,
-    SourceAndDestinationAccountMustBeDifferentError,
+  CannotPayInvoiceWithCreditCardError,
+  SourceAndDestinationAccountMustBeDifferentError,
 } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -65,10 +69,26 @@ function makeCheckingAccount(workspaceId = 'ws-1'): CheckingAccount {
   return r.value;
 }
 
+function makeSystemCategory(id = 'system-cc-category') {
+  const r = Category.create(
+    {
+      workspaceId: null,
+      name: SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.name,
+      type: SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.type,
+      parentId: null,
+      isSystemCategory: true,
+    },
+    id,
+  );
+  if (r.isLeft()) throw r.value;
+  return r.value;
+}
+
 describe('PayCreditCardInvoiceService', () => {
   let service: PayCreditCardInvoiceService;
   let accountRepository: jest.Mocked<AccountRepository>;
   let transactionRepository: jest.Mocked<TransactionRepository>;
+  let categoryRepository: jest.Mocked<CategoryRepository>;
   let dateProvider: jest.Mocked<DateProvider>;
 
   beforeEach(() => {
@@ -96,6 +116,23 @@ describe('PayCreditCardInvoiceService', () => {
       findByAccountAndDateRange: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
+    categoryRepository = {
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      findById: jest.fn(),
+      countByWorkspaceId: jest.fn(),
+      findUniqueByAttributes: jest.fn(),
+      findManyByWorkspaceId: jest.fn(),
+      countChildren: jest.fn(),
+      countTransactions: jest.fn(),
+      reassignChildren: jest.fn(),
+      findManyByIds: jest.fn(),
+      findSystemCategoryByName: jest
+        .fn()
+        .mockResolvedValue(makeSystemCategory()),
+    } as jest.Mocked<CategoryRepository>;
+
     dateProvider = {
       now: jest.fn().mockReturnValue(new Date()),
       startOfDay: jest.fn().mockReturnValue(new Date()),
@@ -112,6 +149,7 @@ describe('PayCreditCardInvoiceService', () => {
     service = new PayCreditCardInvoiceService(
       accountRepository,
       transactionRepository,
+      categoryRepository,
       dateProvider,
     );
   });
@@ -233,9 +271,7 @@ describe('PayCreditCardInvoiceService', () => {
       .mockResolvedValueOnce(makeCheckingAccount());
     transactionRepository.createWithBalanceUpdate.mockResolvedValue();
 
-    const result = await service.execute(
-      makeRequest({ month: 7, year: 2024 }),
-    );
+    const result = await service.execute(makeRequest({ month: 7, year: 2024 }));
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.date).toEqual(closedPeriodEnd);
@@ -257,12 +293,68 @@ describe('PayCreditCardInvoiceService', () => {
       .mockResolvedValueOnce(makeCheckingAccount());
     transactionRepository.createWithBalanceUpdate.mockResolvedValue();
 
-    const result = await service.execute(
-      makeRequest({ month: 7, year: 2024 }),
-    );
+    const result = await service.execute(makeRequest({ month: 7, year: 2024 }));
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.date).toEqual(today);
     }
+  });
+
+  describe('category resolution', () => {
+    // O DTO trazia um UUID fixo como default (`0d19bbf8-…`). O seed gera IDs
+    // aleatórios, então esse ID só existia no banco onde tinha sido criado à
+    // mão — em qualquer outro o insert violava a FK e virava 500. Agora a
+    // categoria de sistema é resolvida pelo nome.
+    it('should resolve the credit card system category when none is provided', async () => {
+      accountRepository.findById
+        .mockResolvedValueOnce(makeCreditCard())
+        .mockResolvedValueOnce(makeCheckingAccount());
+      transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+      const result = await service.execute(makeRequest());
+
+      expect(result.isRight()).toBe(true);
+      if (result.isRight()) {
+        expect(result.value.categoryId).toBe('system-cc-category');
+      }
+      expect(categoryRepository.findSystemCategoryByName).toHaveBeenCalledWith(
+        SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.name,
+        SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.type,
+      );
+    });
+
+    it('should keep an explicit categoryId when the client provides one', async () => {
+      accountRepository.findById
+        .mockResolvedValueOnce(makeCreditCard())
+        .mockResolvedValueOnce(makeCheckingAccount());
+      transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+      const result = await service.execute(
+        makeRequest({ categoryId: 'chosen-category' }),
+      );
+
+      expect(result.isRight()).toBe(true);
+      if (result.isRight()) {
+        expect(result.value.categoryId).toBe('chosen-category');
+      }
+      expect(
+        categoryRepository.findSystemCategoryByName,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('should fail explicitly when the system category is missing instead of violating the FK', async () => {
+      categoryRepository.findSystemCategoryByName.mockResolvedValue(null);
+      accountRepository.findById
+        .mockResolvedValueOnce(makeCreditCard())
+        .mockResolvedValueOnce(makeCheckingAccount());
+
+      const result = await service.execute(makeRequest());
+
+      expect(result.isLeft()).toBe(true);
+      expect(result.value).toBeInstanceOf(SystemCategoryNotFoundError);
+      expect(
+        transactionRepository.createWithBalanceUpdate,
+      ).not.toHaveBeenCalled();
+    });
   });
 });
