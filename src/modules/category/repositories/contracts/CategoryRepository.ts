@@ -10,16 +10,6 @@ export abstract class CategoryRepository {
 
   abstract findById(id: string): Promise<Category | null>;
 
-  /**
-   * Busca uma categoria global (`workspaceId = null`, `isSystemCategory = true`)
-   * pelo nome. Usado para resolver as categorias que o backend atribui sozinho,
-   * como transferência e pagamento de fatura.
-   */
-  abstract findSystemCategoryByName(
-    name: string,
-    type: TransactionType,
-  ): Promise<Category | null>;
-
   abstract countByWorkspaceId(workspaceId: string): Promise<number>;
   abstract findUniqueByAttributes(
     name: string,

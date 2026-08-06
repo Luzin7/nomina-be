@@ -4,7 +4,6 @@ import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
-import { resolveSystemCategoryId } from '@modules/category/services/resolve-system-category';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { Injectable } from '@nestjs/common';
@@ -118,18 +117,15 @@ export class CreateTransactionService implements Service<
 
   /**
    * Transferência entre contas próprias não é gasto nem receita, então o
-   * usuário não escolhe categoria: o backend resolve a categoria de sistema.
-   * Nos demais tipos a categoria vem do request e é validada contra o
-   * workspace.
+   * usuário não escolhe categoria: cai na categoria de sistema, cujo ID é fixo
+   * e conhecido em tempo de compilação — não custa uma consulta ao banco. Nos
+   * demais tipos a categoria vem do request e é validada contra o workspace.
    */
   private async resolveCategoryId(
     request: Request,
   ): Promise<Either<Error, string>> {
     if (!request.categoryId) {
-      return resolveSystemCategoryId(
-        this.categoryRepository,
-        SYSTEM_CATEGORY.TRANSFER,
-      );
+      return right(SYSTEM_CATEGORY.TRANSFER.id);
     }
 
     const category = await this.categoryRepository.findById(request.categoryId);

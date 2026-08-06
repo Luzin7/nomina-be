@@ -3,7 +3,6 @@ import { AccountRepository } from '@modules/account/repositories/contracts/Accou
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { CategoryNotFoundError } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
-import { resolveSystemCategoryId } from '@modules/category/services/resolve-system-category';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { StartDateCannotBeTodayOrPastError } from '@modules/transaction/errors';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
@@ -129,10 +128,7 @@ export class CreateRecurringTransactionService implements Service<
     workspaceId: string,
   ): Promise<Either<Error, string>> {
     if (!categoryId) {
-      return resolveSystemCategoryId(
-        this.categoryRepository,
-        SYSTEM_CATEGORY.TRANSFER,
-      );
+      return right(SYSTEM_CATEGORY.TRANSFER.id);
     }
 
     const category = await this.categoryRepository.findById(categoryId);

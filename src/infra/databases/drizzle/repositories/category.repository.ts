@@ -47,28 +47,6 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
     return CategoryMapper.toDomain(category);
   }
 
-  async findSystemCategoryByName(
-    name: string,
-    type: TransactionType,
-  ): Promise<Category | null> {
-    const [category] = await this.drizzle.db
-      .select()
-      .from(schema.categories)
-      .where(
-        and(
-          isNull(schema.categories.workspaceId),
-          eq(schema.categories.isSystemCategory, true),
-          eq(schema.categories.name, name),
-          eq(schema.categories.type, type),
-          isNull(schema.categories.parentId),
-        ),
-      )
-      .limit(1);
-
-    if (!category) return null;
-    return CategoryMapper.toDomain(category);
-  }
-
   async findUniqueByAttributes(
     name: string,
     type: TransactionType,

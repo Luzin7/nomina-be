@@ -5,7 +5,6 @@ import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
-import { resolveSystemCategoryId } from '@modules/category/services/resolve-system-category';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
   SourceAndDestinationAccountMustBeDifferentError,
@@ -61,12 +60,7 @@ export class UpdateTransactionService implements Service<
     } else {
       // Transferência: o backend atribui a categoria de sistema, o usuário não
       // escolhe. Ver create-transaction.service.ts.
-      const systemCategory = await resolveSystemCategoryId(
-        this.categoryRepository,
-        SYSTEM_CATEGORY.TRANSFER,
-      );
-      if (systemCategory.isLeft()) return left(systemCategory.value);
-      categoryId = systemCategory.value;
+      categoryId = SYSTEM_CATEGORY.TRANSFER.id;
     }
 
     const newSourceAccount = accountsMap.get(request.accountId)!;
