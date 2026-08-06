@@ -2,65 +2,31 @@
 
 Levantado durante o alinhamento dos testes ao pivô de `categoryId` obrigatório e
 `closingDay` → `closingDaysBeforeDue` (branch `fix/category-required-and-invoice-cycle-rules`).
-Nada aqui foi corrigido nessa branch — ficou de fora do escopo de propósito, para
-não misturar com o que já estava em andamento.
+Os itens de migration foram corrigidos e testados na própria branch; o restante
+ficou de fora do escopo de propósito, para não misturar com o que já estava em
+andamento.
 
 ---
 
-## 🔴 Bloqueadores de deploy
+## ✅ Migrations com conversão de dado (resolvido)
 
-### 1. Migration `0013` põe `category_id` como NOT NULL sem backfill
+As migrations `0012` e `0013` alteravam colunas sem migrar o dado existente. Ambas
+foram corrigidas nesta branch e testadas contra um Postgres 16 real, em quatro
+cenários: banco legado do zero, banco onde o seed já havia criado as categorias
+com UUID aleatório, reaplicação das duas migrations, e o estado intermediário em
+que a `0012` antiga já tinha rodado.
 
-```sql
-ALTER TABLE "recurring_transactions" ALTER COLUMN "category_id" SET NOT NULL;
-ALTER TABLE "transactions" ALTER COLUMN "category_id" SET NOT NULL;
-```
+- **`0013`** agora cria as categorias de sistema que usa, reponta duplicatas para
+  os IDs canônicos e preenche `category_id` das linhas órfãs — tudo antes do
+  `SET NOT NULL`, que falharia em qualquer banco com histórico
+- **`0012`** converte `closing_day` → `closing_days_before_due` antes do `DROP
+  COLUMN`, e ajusta `due_day` acima de 28. É idempotente, porque foi editada
+  depois de já ter sido aplicada em desenvolvimento
 
-Até este pivô `category_id` era nullable, então qualquer banco com histórico tem
-linhas com `NULL`. O `ALTER` falha em cima delas e a migration aborta —
-provavelmente já em staging.
-
-Antes do `ALTER`, a migration precisa de um backfill apontando para uma categoria
-de sistema, algo como:
-
-```sql
-UPDATE transactions t
-SET category_id = (
-  SELECT id FROM categories
-  WHERE workspace_id IS NULL AND is_system_category = true
-    AND name = 'Outros Gastos' AND type = 'EXPENSE'
-  LIMIT 1
-)
-WHERE t.category_id IS NULL;
-```
-
-O mesmo para `recurring_transactions`, e cuidando de transferências, que devem
-apontar para a categoria `Transferência` introduzida nesta branch. Isso torna a
-ordem obrigatória: **seed de categorias antes da migration**.
-
-### 2. Migration `0012` derruba `closing_day` sem converter o dado
-
-```sql
-ALTER TABLE "accounts" ADD COLUMN "closing_days_before_due" integer DEFAULT 7 NOT NULL;
-...
-ALTER TABLE "accounts" DROP COLUMN "closing_day";
-```
-
-Todo cartão de crédito já cadastrado perde silenciosamente o dia de fechamento e
-passa a valer 7. Para quem tinha fechamento distante do vencimento, o ciclo da
-fatura muda sem aviso — e o valor exibido muda junto.
-
-Uma conversão aproximada antes do `DROP` preservaria a intenção:
-
-```sql
-UPDATE accounts
-SET closing_days_before_due = LEAST(GREATEST(((due_day - closing_day + 30) % 30), 5), 10)
-WHERE type = 'CREDIT_CARD' AND closing_day IS NOT NULL AND due_day IS NOT NULL;
-```
-
-Como o novo domínio é o conjunto fechado {5, 7, 10}, o resultado precisa ser
-encaixado na opção mais próxima. Vale conferir quantas contas existem hoje — se
-forem poucas, um script pontual é mais honesto que a fórmula.
+⚠️ **Ressalva para o ambiente local:** na máquina onde a `0012` antiga já rodou, o
+`closing_day` foi derrubado antes da conversão existir — esse dado não é
+recuperável e os cartões existentes ficaram com o padrão de 7 dias. Em staging e
+produção, onde a `0012` nunca rodou, a conversão funciona normalmente.
 
 ---
 
