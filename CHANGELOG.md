@@ -3,6 +3,8 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## 1.0.0 (2026-08-06)
+
 ---
 
 ## [Unreleased]
