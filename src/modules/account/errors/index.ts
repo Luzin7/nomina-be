@@ -1,4 +1,9 @@
 import {
+  CLOSING_DAYS_BEFORE_DUE_OPTIONS,
+  MAX_DUE_DAY,
+  MIN_DUE_DAY,
+} from '@constants/enums';
+import {
   BusinessRuleDomainError,
   ConflictDomainError,
   NotFoundDomainError,
@@ -41,6 +46,22 @@ export class InvalidAccountError extends BusinessRuleDomainError {
 export class ValidationAccountError extends BusinessRuleDomainError {
   constructor(reason: string) {
     super(`Erro de validação na conta: ${reason}`);
+  }
+}
+
+export class InvalidClosingDaysBeforeDueError extends ValidationAccountError {
+  constructor() {
+    super(
+      `O fechamento da fatura deve ser ${CLOSING_DAYS_BEFORE_DUE_OPTIONS.join(', ')} dias antes do vencimento.`,
+    );
+  }
+}
+
+export class InvalidDueDayError extends ValidationAccountError {
+  constructor() {
+    super(
+      `O dia de vencimento deve estar entre ${MIN_DUE_DAY} e ${MAX_DUE_DAY}.`,
+    );
   }
 }
 

@@ -34,11 +34,7 @@ async function bootstrap() {
     },
     credentials: true,
     methods: 'GET,PUT,PATCH,POST,DELETE',
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'x-api-key',
-    ],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
   };
 
   app.enableCors(corsOptions);

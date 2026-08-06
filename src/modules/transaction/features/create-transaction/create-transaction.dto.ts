@@ -5,7 +5,7 @@ import { z } from 'zod';
 const createTransactionSchema = z
   .object({
     accountId: z.string().uuid('ID da conta inválido'),
-    categoryId: z.string().uuid('ID da categoria inválido').nullish(),
+    categoryId: z.string().uuid('ID da categoria inválido').optional(),
     title: z.string().min(1, 'Título é obrigatório'),
     description: z.string().optional().nullable(),
     amount: z.coerce.bigint().positive('Valor deve ser positivo'),
@@ -24,6 +24,17 @@ const createTransactionSchema = z
     {
       message: 'Conta destino é obrigatória para transferências',
       path: ['destinationAccountId'],
+    },
+  )
+  // Transferência não é gasto nem receita: o backend resolve a categoria de
+  // sistema `Transferência` sozinho. Nos demais tipos a categoria é do usuário
+  // e, portanto, obrigatória.
+  .refine(
+    (data) =>
+      data.type === TransactionType.TRANSFER ? true : !!data.categoryId,
+    {
+      message: 'Categoria é obrigatória',
+      path: ['categoryId'],
     },
   );
 

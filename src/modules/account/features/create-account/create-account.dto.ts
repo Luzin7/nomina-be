@@ -1,4 +1,10 @@
-import { AccountType } from '@constants/enums';
+import {
+  AccountType,
+  CLOSING_DAYS_BEFORE_DUE_OPTIONS,
+  isValidClosingDaysBeforeDue,
+  MAX_DUE_DAY,
+  MIN_DUE_DAY,
+} from '@constants/enums';
 import { ZodValidationPipe } from '@shared/pipes/ZodValidation';
 import { z } from 'zod';
 
@@ -19,8 +25,13 @@ export const createAccountSchema = z.discriminatedUnion('type', [
       .positive('Limite deve ser positivo')
       .optional()
       .nullable(),
-    closingDay: z.number().int().min(1).max(28).optional().nullable(),
-    dueDay: z.number().int().min(1).max(28),
+    closingDaysBeforeDue: z
+      .number()
+      .int()
+      .refine(isValidClosingDaysBeforeDue, {
+        message: `Fechamento deve ser ${CLOSING_DAYS_BEFORE_DUE_OPTIONS.join(', ')} dias antes do vencimento`,
+      }),
+    dueDay: z.number().int().min(MIN_DUE_DAY).max(MAX_DUE_DAY),
   }),
   baseAccountSchema.extend({
     type: z.literal(AccountType.CHECKING),

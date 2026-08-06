@@ -3,6 +3,7 @@ import { RedisService } from '@infra/cache/redis/RedisService';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
@@ -48,12 +49,18 @@ export class UpdateTransactionService implements Service<
     if (accountsResult.isLeft()) return left(accountsResult.value);
     const accountsMap = accountsResult.value;
 
-    if (request.categoryId) {
+    let categoryId = request.categoryId;
+
+    if (categoryId) {
       const catError = await this.validateCategory(
-        request.categoryId,
+        categoryId,
         request.workspaceId,
       );
       if (catError) return left(catError);
+    } else {
+      // Transferência: o backend atribui a categoria de sistema, o usuário não
+      // escolhe. Ver create-transaction.service.ts.
+      categoryId = SYSTEM_CATEGORY.TRANSFER.id;
     }
 
     const newSourceAccount = accountsMap.get(request.accountId)!;
@@ -75,7 +82,7 @@ export class UpdateTransactionService implements Service<
         date: resolvedDate,
         status: resolvedStatus,
         destinationAccountId: request.destinationAccountId ?? null,
-        categoryId: request.categoryId ?? null,
+        categoryId,
         description: request.description ?? null,
         recurringId: currentTx.recurringId,
         createdAt: currentTx.createdAt,

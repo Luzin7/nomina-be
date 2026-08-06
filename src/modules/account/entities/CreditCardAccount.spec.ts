@@ -1,3 +1,4 @@
+import { CLOSING_DAYS_BEFORE_DUE_OPTIONS } from '@constants/enums';
 import {
   CreditLimitExceededError,
   PaymentExceedsInvoiceBalanceError,
@@ -14,7 +15,7 @@ describe('CreditCard entity', () => {
       name: 'Visa Gold',
       timezone: 'America/Sao_Paulo',
       creditLimit: 5000n,
-      closingDay: 10,
+      closingDaysBeforeDue: 10,
       dueDay: 20,
       ...overrides,
     };
@@ -38,18 +39,29 @@ describe('CreditCard entity', () => {
       ).toBe(true);
     });
 
-    it('should create a credit card without closingDay', () => {
-      expect(CreditCard.create(makeProps({ closingDay: null })).isRight()).toBe(
-        true,
-      );
-    });
+    it.each(CLOSING_DAYS_BEFORE_DUE_OPTIONS)(
+      'should accept closingDaysBeforeDue %d',
+      (option) => {
+        expect(
+          CreditCard.create(
+            makeProps({ closingDaysBeforeDue: option }),
+          ).isRight(),
+        ).toBe(true);
+      },
+    );
 
     it.each<[Partial<Parameters<typeof CreditCard.create>[0]>, string]>([
       [{ creditLimit: 0n }, 'zero credit limit'],
       [{ creditLimit: -100n }, 'negative credit limit'],
-      [{ closingDay: 0 }, 'closingDay 0'],
-      [{ closingDay: 32 }, 'closingDay 32'],
+      [{ closingDaysBeforeDue: undefined }, 'missing closingDaysBeforeDue'],
+      [{ closingDaysBeforeDue: 0 }, 'closingDaysBeforeDue 0'],
+      [
+        { closingDaysBeforeDue: 6 },
+        'closingDaysBeforeDue 6 (fora do conjunto)',
+      ],
+      [{ closingDaysBeforeDue: 32 }, 'closingDaysBeforeDue 32'],
       [{ dueDay: 0 }, 'dueDay 0'],
+      [{ dueDay: 29 }, 'dueDay 29'],
       [{ dueDay: 32 }, 'dueDay 32'],
     ])('should reject %s', (props) => {
       const result = CreditCard.create(makeProps(props));
@@ -169,23 +181,44 @@ describe('CreditCard entity', () => {
   });
 
   describe('updateInvoiceDates()', () => {
-    it('should update closingDay and dueDay', () => {
+    it('should update closingDaysBeforeDue and dueDay', () => {
       const card = makeCard();
-      card.updateInvoiceDates(15, 25);
-      expect(card.closingDay).toBe(15);
+      expect(card.updateInvoiceDates(5, 25).isRight()).toBe(true);
+      expect(card.closingDaysBeforeDue).toBe(5);
       expect(card.dueDay).toBe(25);
     });
 
+    // `create()` e `updateInvoiceDates()` precisam validar a MESMA regra: antes
+    // do alinhamento, create aceitava 5–10 e updateInvoiceDates aceitava 1–10,
+    // então dava pra criar um cartão válido e depois colocá-lo num estado que
+    // create() teria rejeitado.
     it.each([
       [0, 10],
+      [1, 10],
+      [6, 10],
+      [11, 10],
       [32, 10],
       [10, 0],
+      [10, 29],
       [10, 32],
     ])(
-      'should reject invalid dates closingDay=%d dueDay=%d',
-      (closing, due) => {
-        expect(makeCard().updateInvoiceDates(closing, due).isLeft()).toBe(true);
+      'should reject invalid dates closingDaysBeforeDue=%d dueDay=%d',
+      (closingDaysBeforeDue, dueDay) => {
+        const result = makeCard().updateInvoiceDates(
+          closingDaysBeforeDue,
+          dueDay,
+        );
+        expect(result.isLeft()).toBe(true);
+        if (result.isLeft())
+          expect(result.value).toBeInstanceOf(ValidationAccountError);
       },
     );
+
+    it('should not mutate the card when validation fails', () => {
+      const card = makeCard();
+      card.updateInvoiceDates(6, 40);
+      expect(card.closingDaysBeforeDue).toBe(10);
+      expect(card.dueDay).toBe(20);
+    });
   });
 });

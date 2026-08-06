@@ -46,11 +46,12 @@ export class CreateAccountController {
           type: 'CREDIT_CARD',
           name: 'Itaú Visa',
           creditLimit: 500000,
-          closingDay: 10,
+          closingDaysBeforeDue: 10,
           dueDay: 20,
           timezone: 'America/Sao_Paulo',
         },
-        description: '`closingDay` padrão: 1. `creditLimit` opcional.',
+        description:
+          '`closingDaysBeforeDue` é a distância em dias entre o fechamento e o vencimento — aceita apenas 5, 7 ou 10. `dueDay` vai de 1 a 28. `creditLimit` é opcional (null = sem limite).',
       },
     },
   })

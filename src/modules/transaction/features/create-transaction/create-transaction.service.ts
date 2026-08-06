@@ -2,6 +2,7 @@ import { TransactionStatus, TransactionType } from '@constants/enums';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
@@ -37,11 +38,9 @@ export class CreateTransactionService implements Service<
     if (accountsResult.isLeft()) return left(accountsResult.value);
     const { account, destinationAccount } = accountsResult.value;
 
-    const categoryResult = await this.validateCategory(
-      request.workspaceId,
-      request.categoryId,
-    );
+    const categoryResult = await this.resolveCategoryId(request);
     if (categoryResult.isLeft()) return left(categoryResult.value);
+    const categoryId = categoryResult.value;
 
     const { transactionDate, resolvedStatus } = this.resolveDateAndStatus(
       request.date,
@@ -52,7 +51,7 @@ export class CreateTransactionService implements Service<
     const transactionOrError = Transaction.create({
       workspaceId: request.workspaceId,
       accountId: request.accountId,
-      categoryId: request.categoryId ?? null,
+      categoryId,
       destinationAccountId: request.destinationAccountId ?? null,
       title: request.title,
       description: request.description ?? null,
@@ -96,7 +95,7 @@ export class CreateTransactionService implements Service<
     >
   > {
     const account = await this.accountRepository.findById(request.accountId);
-    if (!account || account.workspaceId !== request.workspaceId) {
+    if (account?.workspaceId !== request.workspaceId) {
       return left(new UnauthorizedError('Conta origem inválida.'));
     }
 
@@ -108,10 +107,7 @@ export class CreateTransactionService implements Service<
       destinationAccount = await this.accountRepository.findById(
         request.destinationAccountId,
       );
-      if (
-        !destinationAccount ||
-        destinationAccount.workspaceId !== request.workspaceId
-      ) {
+      if (destinationAccount?.workspaceId !== request.workspaceId) {
         return left(new UnauthorizedError('Conta destino inválida.'));
       }
     }
@@ -119,22 +115,29 @@ export class CreateTransactionService implements Service<
     return right({ account, destinationAccount });
   }
 
-  private async validateCategory(
-    workspaceId: string,
-    categoryId?: string | null,
-  ): Promise<Either<Error, void>> {
-    if (!categoryId) return right(undefined);
+  /**
+   * Transferência entre contas próprias não é gasto nem receita, então o
+   * usuário não escolhe categoria: cai na categoria de sistema, cujo ID é fixo
+   * e conhecido em tempo de compilação — não custa uma consulta ao banco. Nos
+   * demais tipos a categoria vem do request e é validada contra o workspace.
+   */
+  private async resolveCategoryId(
+    request: Request,
+  ): Promise<Either<Error, string>> {
+    if (!request.categoryId) {
+      return right(SYSTEM_CATEGORY.TRANSFER.id);
+    }
 
-    const category = await this.categoryRepository.findById(categoryId);
+    const category = await this.categoryRepository.findById(request.categoryId);
     if (!category) return left(new CategoryNotFoundError());
 
-    if (category.workspaceId && category.workspaceId !== workspaceId) {
+    if (category.workspaceId && category.workspaceId !== request.workspaceId) {
       return left(
         new UnauthorizedError('Categoria não pertence ao workspace.'),
       );
     }
 
-    return right(undefined);
+    return right(category.id);
   }
 
   private resolveDateAndStatus(

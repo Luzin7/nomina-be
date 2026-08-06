@@ -6,6 +6,7 @@ import {
   InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import {
   CannotPayInvoiceWithCreditCardError,
   SourceAndDestinationAccountMustBeDifferentError,
@@ -40,7 +41,7 @@ function makeCreditCard(workspaceId = 'ws-1'): CreditCard {
       name: 'My Card',
       timezone: 'UTC',
       creditLimit: 500000n,
-      closingDay: 5,
+      closingDaysBeforeDue: 5,
       dueDay: 15,
       balance: 100000n,
     },
@@ -165,7 +166,7 @@ describe('PayCreditCardInvoiceService', () => {
         name: 'Another CC',
         timezone: 'UTC',
         creditLimit: 100000n,
-        closingDay: 10,
+        closingDaysBeforeDue: 10,
         dueDay: 20,
       },
       'acc-src',
@@ -196,5 +197,108 @@ describe('PayCreditCardInvoiceService', () => {
     expect(transactionRepository.createWithBalanceUpdate).toHaveBeenCalledTimes(
       1,
     );
+  });
+
+  it('should date the payment as today when month/year are not provided', async () => {
+    const today = new Date('2024-08-05');
+    dateProvider.now.mockReturnValue(today);
+    dateProvider.startOfDay.mockReturnValue(today);
+    accountRepository.findById
+      .mockResolvedValueOnce(makeCreditCard())
+      .mockResolvedValueOnce(makeCheckingAccount());
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+    const result = await service.execute(makeRequest());
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.date).toEqual(today);
+    }
+    expect(dateProvider.calculateInvoiceCycle).not.toHaveBeenCalled();
+  });
+
+  it('should anchor the payment date to the end of a closed invoice cycle when month/year target a past period', async () => {
+    // Regressão do bug: pagar em agosto a fatura de julho não podia usar
+    // "hoje" como data, senão o pagamento cairia no ciclo de agosto e a
+    // fatura de julho jamais refletiria o pagamento.
+    const today = new Date('2024-08-05');
+    const closedPeriodEnd = new Date('2024-07-10');
+    dateProvider.now.mockReturnValue(today);
+    dateProvider.startOfDay.mockReturnValue(today);
+    dateProvider.calculateInvoiceCycle.mockReturnValue({
+      periodStart: new Date('2024-06-11'),
+      periodEnd: closedPeriodEnd,
+      dueDate: new Date('2024-07-15'),
+    });
+    accountRepository.findById
+      .mockResolvedValueOnce(makeCreditCard())
+      .mockResolvedValueOnce(makeCheckingAccount());
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+    const result = await service.execute(makeRequest({ month: 7, year: 2024 }));
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.date).toEqual(closedPeriodEnd);
+    }
+  });
+
+  it('should keep today as the payment date when month/year target the still-open current cycle', async () => {
+    const today = new Date('2024-07-05');
+    const openPeriodEnd = new Date('2024-07-10');
+    dateProvider.now.mockReturnValue(today);
+    dateProvider.startOfDay.mockReturnValue(today);
+    dateProvider.calculateInvoiceCycle.mockReturnValue({
+      periodStart: new Date('2024-06-11'),
+      periodEnd: openPeriodEnd,
+      dueDate: new Date('2024-07-15'),
+    });
+    accountRepository.findById
+      .mockResolvedValueOnce(makeCreditCard())
+      .mockResolvedValueOnce(makeCheckingAccount());
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+    const result = await service.execute(makeRequest({ month: 7, year: 2024 }));
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.date).toEqual(today);
+    }
+  });
+
+  describe('categoria do pagamento', () => {
+    // O DTO trazia esse mesmo UUID como `default`, mas ele era só o ID que o
+    // seed tinha gerado no banco de um dev — em qualquer outro ambiente o
+    // insert violaria a FK. Agora o ID é contrato: a migration 0013 garante a
+    // linha com exatamente esse ID, então usar a constante é seguro e evita uma
+    // consulta ao banco em todo pagamento.
+    it('should use the credit card system category when none is provided', async () => {
+      accountRepository.findById
+        .mockResolvedValueOnce(makeCreditCard())
+        .mockResolvedValueOnce(makeCheckingAccount());
+      transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+      const result = await service.execute(makeRequest());
+
+      expect(result.isRight()).toBe(true);
+      if (result.isRight()) {
+        expect(result.value.categoryId).toBe(
+          SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
+        );
+      }
+    });
+
+    it('should keep an explicit categoryId when the client provides one', async () => {
+      accountRepository.findById
+        .mockResolvedValueOnce(makeCreditCard())
+        .mockResolvedValueOnce(makeCheckingAccount());
+      transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+      const result = await service.execute(
+        makeRequest({ categoryId: 'chosen-category' }),
+      );
+
+      expect(result.isRight()).toBe(true);
+      if (result.isRight()) {
+        expect(result.value.categoryId).toBe('chosen-category');
+      }
+    });
   });
 });

@@ -33,6 +33,7 @@ function makeTransaction(status: TransactionStatus): Transaction {
     {
       workspaceId: 'ws-1',
       accountId: 'acc-1',
+      categoryId: 'cat-1',
       title: 'Test Tx',
       amount: 100n,
       date,

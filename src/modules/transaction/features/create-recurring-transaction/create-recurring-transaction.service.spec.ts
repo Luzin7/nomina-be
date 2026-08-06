@@ -47,6 +47,7 @@ function makeRequest(overrides: Record<string, unknown> = {}) {
     sub: 'user-1',
     workspaceId: 'ws-1',
     accountId: 'acc-1',
+    categoryId: 'cat-1',
     title: 'Aluguel',
     amount: 150000n,
     frequency: RecurrenceFrequency.MONTHLY,
@@ -99,6 +100,7 @@ describe('CreateRecurringTransactionService', () => {
       countTransactions: jest.fn(),
       reassignChildren: jest.fn(),
       findManyByIds: jest.fn(),
+      findSystemCategoryByName: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
     dateProvider = {
@@ -134,7 +136,7 @@ describe('CreateRecurringTransactionService', () => {
 
   function arrangeSuccessMocks() {
     accountRepository.findById.mockResolvedValue(makeAccount());
-    categoryRepository.findById.mockResolvedValue(null);
+    categoryRepository.findById.mockResolvedValue(makeCategory());
     recurringRepository.create.mockImplementation(async (r) => r);
   }
 

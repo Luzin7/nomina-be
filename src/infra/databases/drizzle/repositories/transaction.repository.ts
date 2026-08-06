@@ -15,6 +15,7 @@ import {
   ilike,
   isNotNull,
   lte,
+  or,
   sum,
 } from 'drizzle-orm';
 import { TransactionMapper } from '../mappers/transaction.mapper';
@@ -319,7 +320,10 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
       .from(schema.transactions)
       .where(
         and(
-          eq(schema.transactions.accountId, accountId),
+          or(
+            eq(schema.transactions.accountId, accountId),
+            eq(schema.transactions.destinationAccountId, accountId),
+          ),
           eq(schema.transactions.workspaceId, workspaceId),
           gte(schema.transactions.date, startDate),
           lte(schema.transactions.date, endDate),

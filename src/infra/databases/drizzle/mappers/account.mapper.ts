@@ -27,7 +27,7 @@ export class AccountMapper {
             ...baseProps,
             creditLimit:
               raw.creditLimit === null ? null : BigInt(raw.creditLimit),
-            closingDay: raw.closingDay,
+            closingDaysBeforeDue: raw.closingDaysBeforeDue,
             dueDay: raw.dueDay,
             timezone: raw.timezone,
           },
@@ -82,7 +82,9 @@ export class AccountMapper {
           ? null
           : Number(entity.creditLimit)
         : null,
-      closingDay: isCreditCard ? entity.closingDay : null,
+      closingDaysBeforeDue: isCreditCard
+        ? entity.closingDaysBeforeDue
+        : undefined,
       dueDay: isCreditCard ? entity.dueDay : null,
     };
   }

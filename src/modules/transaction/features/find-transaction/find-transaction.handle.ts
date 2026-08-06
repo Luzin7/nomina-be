@@ -16,9 +16,7 @@ export class FindTransactionByIdService implements Service<
   Error,
   Transaction
 > {
-  constructor(
-    private readonly transactionRepository: TransactionRepository,
-  ) {}
+  constructor(private readonly transactionRepository: TransactionRepository) {}
 
   async execute({
     workspaceId,
@@ -32,7 +30,9 @@ export class FindTransactionByIdService implements Service<
     }
 
     if (transaction.workspaceId !== workspaceId) {
-      return left(new UnauthorizedError('Transação não pertence ao workspace.'));
+      return left(
+        new UnauthorizedError('Transação não pertence ao workspace.'),
+      );
     }
 
     return right(transaction);

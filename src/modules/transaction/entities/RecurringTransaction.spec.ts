@@ -11,6 +11,7 @@ describe('RecurringTransaction entity', () => {
     return {
       workspaceId: 'ws-1',
       accountId: 'acc-1',
+      categoryId: 'cat-1',
       title: 'Aluguel',
       amount: 150000n,
       frequency: RecurrenceFrequency.MONTHLY,
@@ -57,6 +58,12 @@ describe('RecurringTransaction entity', () => {
       ).toBe(true);
     });
 
+    it('should reject a recurring transaction without categoryId', () => {
+      expect(
+        RecurringTransaction.create(makeProps({ categoryId: '' })).isLeft(),
+      ).toBe(true);
+    });
+
     it('should reject endDate before startDate', () => {
       const result = RecurringTransaction.create(
         makeProps({ startDate: END_DATE, endDate: START_DATE }),
@@ -97,7 +104,7 @@ describe('RecurringTransaction entity', () => {
 
     it('should throw when title is empty', () => {
       const tx = makeTx();
-      expect(() => tx.updateDetails('', null, null)).toThrow();
+      expect(() => tx.updateDetails('', null, 'cat-1')).toThrow();
     });
   });
 

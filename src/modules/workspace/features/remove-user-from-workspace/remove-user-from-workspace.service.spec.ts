@@ -58,7 +58,9 @@ describe('RemoveUserFromWorkspaceService', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('should return left(UnauthorizedError) when requester is not a member', async () => {
-    workspaceUserRepository.findUserByWorkspaceAndUserId.mockResolvedValue(null);
+    workspaceUserRepository.findUserByWorkspaceAndUserId.mockResolvedValue(
+      null,
+    );
 
     const result = await service.execute(makeRequest());
     expect(result.isLeft()).toBe(true);
@@ -76,8 +78,9 @@ describe('RemoveUserFromWorkspaceService', () => {
   });
 
   it('should return left(UnauthorizedError) when requester has VIEWER role', async () => {
-    workspaceUserRepository.findUserByWorkspaceAndUserId
-      .mockResolvedValueOnce(makeWorkspaceUser(UserRole.VIEWER, 'user-owner'));
+    workspaceUserRepository.findUserByWorkspaceAndUserId.mockResolvedValueOnce(
+      makeWorkspaceUser(UserRole.VIEWER, 'user-owner'),
+    );
 
     const result = await service.execute(makeRequest());
     expect(result.isLeft()).toBe(true);
@@ -102,9 +105,9 @@ describe('RemoveUserFromWorkspaceService', () => {
 
     const result = await service.execute(makeRequest());
     expect(result.isRight()).toBe(true);
-    expect(workspaceUserRepository.removeUserFromWorkspace).toHaveBeenCalledWith(
-      'wu-user-2',
-    );
+    expect(
+      workspaceUserRepository.removeUserFromWorkspace,
+    ).toHaveBeenCalledWith('wu-user-2');
   });
 
   it('should remove user and return right when requester is ADMIN', async () => {

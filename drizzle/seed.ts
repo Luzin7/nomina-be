@@ -5,6 +5,12 @@ import postgres from 'postgres';
 import * as schema from '../src/infra/databases/drizzle/schema';
 import { categories } from '../src/infra/databases/drizzle/schema';
 import { env } from '../src/infra/env';
+import { SYSTEM_CATEGORY } from '../src/modules/category/constants/system-categories';
+
+const SYSTEM_CATEGORY_IDS = {
+  TRANSFER: SYSTEM_CATEGORY.TRANSFER.id,
+  CREDIT_CARD_PAYMENT: SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
+};
 
 config();
 
@@ -16,12 +22,18 @@ const client = postgres(env.DATABASE_URL, {
 });
 const db = drizzle(client, { schema });
 
-type TransactionType = 'INCOME' | 'EXPENSE';
+type TransactionType = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 
 interface CategorySeed {
   name: string;
   type: TransactionType;
   children?: string[];
+  /**
+   * ID fixo, para as categorias que o backend referencia direto no código —
+   * ver `src/modules/category/constants/system-categories.ts`. Quando ausente,
+   * o ID é gerado pelo banco.
+   */
+  id?: string;
 }
 
 interface CategoryInsert {
@@ -29,6 +41,7 @@ interface CategoryInsert {
   type: TransactionType;
   workspaceId: null;
   isSystemCategory: boolean;
+  id?: string;
 }
 
 interface ChildCategoryInsert extends CategoryInsert {
@@ -126,7 +139,12 @@ const categoriesData: CategorySeed[] = [
   { name: 'Presentes', type: 'EXPENSE' },
   { name: 'Doações', type: 'EXPENSE' },
   { name: 'Telefonia', type: 'EXPENSE' },
+  // IDs fixos: o backend atribui essas duas sozinho, em pagamento de fatura e
+  // transferência, e as referencia pela constante em vez de consultar o banco.
+  // A migration 0013 garante as mesmas linhas com os mesmos IDs.
+  { name: 'Cartão de Crédito', type: 'EXPENSE', id: SYSTEM_CATEGORY_IDS.CREDIT_CARD_PAYMENT },
   { name: 'Outros Gastos', type: 'EXPENSE' },
+  { name: 'Transferência', type: 'TRANSFER', id: SYSTEM_CATEGORY_IDS.TRANSFER },
 ];
 
 async function main(): Promise<void> {
@@ -168,6 +186,7 @@ async function main(): Promise<void> {
         const [insertedParent] = await tx
           .insert(categories)
           .values({
+            ...(parentData.id ? { id: parentData.id } : {}),
             name: parentData.name,
             type: parentData.type,
             workspaceId: null,

@@ -60,6 +60,7 @@ export class GenerateRecurringTransactionsJobService {
 
     try {
       let generatedCount = 0;
+      let offset = 0;
       let batch: RecurringTransaction[];
 
       this.logger.log(
@@ -70,8 +71,9 @@ export class GenerateRecurringTransactionsJobService {
         batch = await this.recurringRepository.listNeedingGeneration(
           lookAheadDate,
           BATCH_SIZE,
-          0,
+          offset,
         );
+        offset += BATCH_SIZE;
 
         for (const recurring of batch) {
           const generated = await this.generateTransactionsForRecurring(
@@ -133,12 +135,15 @@ export class GenerateRecurringTransactionsJobService {
       });
 
       if (transactionOrError.isLeft()) {
+        // A falha é determinística: os dados inválidos vêm da própria
+        // recorrência (valor, categoria, conta destino), então tentar a próxima
+        // data produziria exatamente o mesmo erro. Interrompe esta recorrência
+        // e segue para as demais do batch.
         this.logger.error(
-          `Job: erro ao criar transação derivada da recorrência ${recurring.id}:`,
+          `Job: recorrência ${recurring.id} tem dados inválidos, geração interrompida:`,
           transactionOrError.value,
         );
-        targetDate = this.calculateNextDateService.execute(recurring, TIMEZONE);
-        continue;
+        break;
       }
 
       transactionsToCreate.push(transactionOrError.value);

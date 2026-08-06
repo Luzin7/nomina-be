@@ -1,6 +1,12 @@
-import { AccountType } from '@constants/enums';
+import {
+  AccountType,
+  isValidClosingDaysBeforeDue,
+  isValidDueDay,
+} from '@constants/enums';
 import {
   CreditLimitExceededError,
+  InvalidClosingDaysBeforeDueError,
+  InvalidDueDayError,
   PaymentExceedsInvoiceBalanceError,
   ValidationAccountError,
 } from '@modules/account/errors';
@@ -10,7 +16,7 @@ import { BaseAccount, BaseAccountProps } from './BaseAccount';
 export interface CreditCardProps extends BaseAccountProps {
   balance: bigint;
   creditLimit: bigint | null;
-  closingDay: number | null;
+  closingDaysBeforeDue: number;
   dueDay: number;
 }
 
@@ -34,15 +40,11 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
         ),
       );
     }
-    if (
-      props.closingDay !== null &&
-      props.closingDay !== undefined &&
-      (props.closingDay < 1 || props.closingDay > 31)
-    ) {
-      return left(new ValidationAccountError('Dia de fechamento inválido.'));
+    if (!isValidClosingDaysBeforeDue(props.closingDaysBeforeDue)) {
+      return left(new InvalidClosingDaysBeforeDueError());
     }
-    if (props.dueDay < 1 || props.dueDay > 31) {
-      return left(new ValidationAccountError('Dia de vencimento inválido.'));
+    if (!isValidDueDay(props.dueDay)) {
+      return left(new InvalidDueDayError());
     }
 
     return right(
@@ -50,7 +52,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
         {
           ...props,
           creditLimit: props.creditLimit ?? null,
-          closingDay: props.closingDay ?? null,
+          closingDaysBeforeDue: props.closingDaysBeforeDue,
           balance: props.balance ?? 0n,
         },
         id,
@@ -66,8 +68,8 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     return this.props.creditLimit;
   }
 
-  get closingDay(): number | null {
-    return this.props.closingDay;
+  get closingDaysBeforeDue(): number {
+    return this.props.closingDaysBeforeDue;
   }
 
   get dueDay(): number {
@@ -129,16 +131,16 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
   }
 
   public updateInvoiceDates(
-    closingDay: number | null,
+    closingDaysBeforeDue: number,
     dueDay: number,
   ): Either<Error, void> {
-    if (closingDay !== null && (closingDay < 1 || closingDay > 31)) {
-      return left(new ValidationAccountError('Dia de fechamento inválido.'));
+    if (!isValidClosingDaysBeforeDue(closingDaysBeforeDue)) {
+      return left(new InvalidClosingDaysBeforeDueError());
     }
-    if (dueDay < 1 || dueDay > 31) {
-      return left(new ValidationAccountError('Dia de vencimento inválido.'));
+    if (!isValidDueDay(dueDay)) {
+      return left(new InvalidDueDayError());
     }
-    this.props.closingDay = closingDay;
+    this.props.closingDaysBeforeDue = closingDaysBeforeDue;
     this.props.dueDay = dueDay;
     return right(undefined);
   }

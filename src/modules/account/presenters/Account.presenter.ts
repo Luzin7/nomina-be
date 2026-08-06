@@ -17,7 +17,7 @@ export class AccountPresenter {
     if (account instanceof CreditCard) {
       return {
         ...basePayload,
-        closingDay: account.closingDay,
+        closingDaysBeforeDue: account.closingDaysBeforeDue,
         dueDay: account.dueDay,
         creditLimit:
           account.creditLimit === null

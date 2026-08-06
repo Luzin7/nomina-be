@@ -11,7 +11,7 @@ export class TransactionMapper {
       {
         workspaceId: raw.workspaceId,
         accountId: raw.accountId,
-        categoryId: raw.categoryId ?? null,
+        categoryId: raw.categoryId,
         destinationAccountId: raw.destinationAccountId ?? null,
         title: raw.title,
         description: raw.description ?? null,

@@ -10,6 +10,11 @@ export class InvalidRecurrenceIntervalError extends BusinessRuleDomainError {
     super('O intervalo de recorrência deve ser maior que zero.');
   }
 }
+export class MissingCategoryError extends BusinessRuleDomainError {
+  constructor() {
+    super('A categoria é obrigatória.');
+  }
+}
 export class InvalidTransferError extends BusinessRuleDomainError {
   constructor(reason: string) {
     super(`Transferência inválida: ${reason}`);

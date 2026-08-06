@@ -71,32 +71,29 @@ export class DayJsDateProvider implements DateProvider {
   }
 
   calculateInvoiceCycle(params: InvoiceCycleParams): InvoiceCycle {
-    const { referenceDate, closingDay, dueDay, timezone } = params;
+    const { referenceDate, closingDaysBeforeDue, dueDay, timezone } = params;
 
     const anchor = dayjs(referenceDate).tz(timezone);
 
-    const safeClosingDay = Math.min(closingDay, anchor.daysInMonth());
-    const periodEnd = anchor.date(safeClosingDay).endOf('day').toDate();
+    const safeDueDay = Math.min(dueDay, anchor.daysInMonth());
 
-    const previousMonth = anchor.subtract(1, 'month');
-    const safePrevClosingDay = Math.min(
-      closingDay,
-      previousMonth.daysInMonth(),
-    );
+    const dueDate = anchor.date(safeDueDay).startOf('day');
 
-    const periodStart = previousMonth
-      .date(safePrevClosingDay)
+    const closingDate = dueDate.subtract(closingDaysBeforeDue, 'day');
+
+    const periodEnd = closingDate.endOf('day').toDate();
+
+    const previousClosingDate = closingDate.subtract(1, 'month');
+
+    const periodStart = previousClosingDate
       .add(1, 'day')
       .startOf('day')
       .toDate();
 
-    const safeDueDay = Math.min(dueDay, anchor.daysInMonth());
-    const dueDate = anchor.date(safeDueDay).startOf('day').toDate();
-
     return {
       periodStart,
       periodEnd,
-      dueDate,
+      dueDate: dueDate.toDate(),
     };
   }
 

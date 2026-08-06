@@ -9,6 +9,7 @@ export abstract class CategoryRepository {
   abstract delete(id: string): Promise<void>;
 
   abstract findById(id: string): Promise<Category | null>;
+
   abstract countByWorkspaceId(workspaceId: string): Promise<number>;
   abstract findUniqueByAttributes(
     name: string,

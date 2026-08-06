@@ -5,11 +5,7 @@ import { z } from 'zod';
 const updateTransaction = z
   .object({
     accountId: z.string().uuid('ID da conta inválido'),
-    categoryId: z
-      .string()
-      .uuid('ID da categoria inválido')
-      .nullable()
-      .optional(),
+    categoryId: z.string().uuid('ID da categoria inválido').optional(),
     title: z.string().min(1, 'Título é obrigatório'),
     description: z.string().optional().nullable(),
     amount: z.coerce.bigint().positive('Valor deve ser positivo'),
@@ -32,6 +28,14 @@ const updateTransaction = z
     {
       message: 'Conta destino é obrigatória para transferências',
       path: ['destinationAccountId'],
+    },
+  )
+  .refine(
+    (data) =>
+      data.type === TransactionType.TRANSFER ? true : !!data.categoryId,
+    {
+      message: 'Categoria é obrigatória',
+      path: ['categoryId'],
     },
   );
 

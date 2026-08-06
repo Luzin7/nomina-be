@@ -1,6 +1,6 @@
 export type InvoiceCycleParams = {
   referenceDate: Date;
-  closingDay: number;
+  closingDaysBeforeDue: number;
   dueDay: number;
   timezone: string;
 };
