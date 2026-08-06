@@ -86,12 +86,13 @@ export class UpdateAccountService implements Service<
     }
 
     if (account instanceof CreditCard) {
-      this.validateCreditCardFields(
+      const creditCardResult = this.validateCreditCardFields(
         account,
         closingDaysBeforeDue,
         dueDay,
         creditLimit,
       );
+      if (creditCardResult.isLeft()) return left(creditCardResult.value);
     }
 
     await this.accountRepository.update(account);
