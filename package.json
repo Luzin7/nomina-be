@@ -24,6 +24,9 @@
     "db:rollback": "drizzle-kit rollback",
     "db:status": "drizzle-kit status"
   },
+  "engines": {
+    "node": "^22.14.0 || >=24.10.0"
+  },
   "dependencies": {
     "@nestjs/common": "^11.1.15",
     "@nestjs/config": "^4.0.3",

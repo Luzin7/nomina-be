@@ -104,14 +104,29 @@ ainda for esse o transform.
 O arquivo foi renomeado para `docker-compose.dev.yml` nesta branch; o README
 ainda manda subir o antigo.
 
-### 12. Lint com 24 erros pré-existentes
+### 12. Secrets do repositório não configurados
+
+`Luzin7/nomina-be` não tem **nenhum** secret nem environment configurado
+(`gh api repos/Luzin7/nomina-be/actions/secrets` → `total_count: 0`), mas os
+workflows dependem de dois:
+
+| Secret | Usado por | Efeito da ausência |
+|---|---|---|
+| `DATABASE_URL` | `run-migrations.yml` | Migrations não rodam no deploy |
+| `CRON_API_KEY` | `daily-job.yml` | Job diário de recorrências não dispara |
+
+Provavelmente ficaram para trás na migração do repositório antigo
+(`Umatech-team/nomina-be`). Só o dono do repositório pode configurá-los, em
+**Settings → Secrets and variables → Actions**.
+
+### 13. Lint com 24 erros pré-existentes
 
 Seis controllers de recorrência têm imports não usados (`UserRole`, `UseGuards`,
 `Roles`, `RolesGuard`) — resquício de quando a autorização era feita por
 decorator no controller. `npm run lint` falha por causa deles, o que significa
 que ninguém está rodando o lint. Vale limpar e ligar o lint no CI.
 
-### 13. O ciclo de fatura é rotulado por mês de referência, não de vencimento
+### 14. O ciclo de fatura é rotulado por mês de referência, não de vencimento
 
 `GetCreditCardInvoiceService` recebe `month`/`year` e trata como o mês de
 *referência* do ciclo. O app, depois desta rodada, passou a rotular a fatura pelo
