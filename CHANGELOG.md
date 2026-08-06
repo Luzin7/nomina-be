@@ -7,23 +7,40 @@ Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Ve
 
 ## [Unreleased]
 
-### Alterado
+### Alterado (breaking)
 
+- `categoryId` passa a ser obrigatório em `Transaction` e `RecurringTransaction` — entidade, DTOs, schema Drizzle e migration `0013`. Transferências e pagamento de fatura são a exceção: o backend resolve sozinho uma categoria de sistema (ver Adicionado)
+- `closingDay` (dia fixo do mês) substituído por `closingDaysBeforeDue` (dias antes do vencimento) em `CreditCard`, DTOs, `DateProvider.calculateInvoiceCycle`, schema e migration `0012`. O valor é um conjunto fechado: **5, 7 ou 10**, validado igual na entidade e nos dois DTOs. `dueDay` limitado a 1–28 em todas as camadas
 - Pivô de cartão de crédito: abandonada a ideia de reproduzir parcelamento com cálculo próprio na entidade de cartão. Compra parcelada agora é uma recorrência comum com `totalAmount`/modo de valor total, que gera as parcelas mês a mês e se autodesativa ao passar do `endDate` (`RecurringTransaction`, `GenerateRecurringTransactionsJobService`)
 - `BaseAccount`: lógica de crédito/débito de saldo unificada e reaproveitada por `CashAccounts`, `CheckingAccount`, `InvestmentAccount` e `CreditCardAccount` (antes duplicada em cada entidade)
 
 ### Adicionado
 
+- Categorias de sistema resolvidas por nome (`CategoryRepository.findSystemCategoryByName` + `resolveSystemCategoryId`) para transferências (`Transferência`) e pagamento de fatura (`Cartão de Crédito`). Substitui o UUID fixo que estava hardcoded no DTO de pagamento de fatura e que só existia no banco onde tinha sido criado à mão
+- `PayCreditCardInvoiceService` aceita `month`/`year`, ancorando o pagamento no fim do ciclo quando a fatura alvo já fechou — sem isso, quitar em agosto a fatura de julho lançava o pagamento no ciclo de agosto e a fatura de julho nunca refletia nada
 - Suporte a modo de valor total (`totalAmount`) em transações recorrentes, permitindo cadastrar uma compra parcelada informando o total e o número de parcelas
 - Autodesativação de recorrências ao atingir `endDate`
+- Erros de domínio tipados: `MissingCategoryError`, `SystemCategoryNotFoundError`, `InvalidClosingDaysBeforeDueError`, `InvalidDueDayError`
 
 ### Corrigido
 
+- `GenerateRecurringTransactionsJobService`: uma recorrência com dado inválido travava o job diário inteiro num laço infinito. O caminho de erro recalculava a data sem marcar a recorrência como gerada, então `calculateNextGenerationDate` devolvia sempre a mesma data, e o `generationCount` não incrementado impedia o guard de segurança de disparar. Agora a recorrência inválida é logada uma vez e abandonada, e as demais do batch seguem
+- `GenerateRecurringTransactionsJobService`: a paginação chamava `listNeedingGeneration` sempre com offset 0, repetindo a mesma consulta enquanto viessem páginas cheias
+- `UpdateAccountService`: o retorno de `validateCreditCardFields()` era descartado — limite de crédito ou datas de fatura inválidos eram silenciosamente ignorados e a API respondia 200 como se tivesse salvo
+- `CreditCard.create`: `closingDaysBeforeDue ?? null` num campo tipado como `number` deixava um `undefined` escapar da validação e virar `NaN` no cálculo do ciclo
+- `GetCreditCardInvoiceService.totalAmount` não descontava pagamentos parciais já feitos no ciclo atual, podendo mostrar um valor de fatura maior do que o saldo real aceito por `payInvoice()` (issue #41). Também trocados `new Error(...)` genéricos por erros de domínio tipados em `CreditCardAccount`, `CashAccounts`, `CheckingAccount`, `InvestmentAccount` e `BaseAccount`, que antes viravam 500 opaco em vez da mensagem de validação real
 - Pipeline de CI/CD e semantic-release agora também roda na branch `develop`, usada como staging antes do deploy automático em `main` (Render aponta pra `main`)
 
-### Em andamento (PR aberta, aguardando merge)
+### Testes
 
-- Fix da issue #41 (erro genérico ao pagar fatura): `GetCreditCardInvoiceService.totalAmount` não descontava pagamentos parciais já feitos no ciclo atual, podendo mostrar um valor de fatura maior do que o saldo real aceito por `payInvoice()`. Também trocados `new Error(...)` genéricos por erros de domínio tipados em `CreditCardAccount`, `CashAccounts`, `CheckingAccount`, `InvestmentAccount` e `BaseAccount`, que antes viravam 500 opaco em vez da mensagem de validação real
+- Specs alinhados ao pivô: as factories de `Transaction`/`RecurringTransaction` estavam duplicadas em cada arquivo e nenhuma passava `categoryId`, o que derrubou 5 suítes (17 testes) e deixou 38 erros de `tsc` — todos em `.spec.ts`
+- Corrigidos specs que validavam a coisa errada: `update-account.dto.spec.ts` redefinia uma cópia local do schema Zod em vez de importar o real; `CreditCardAccount.spec.ts` tinha um caso cujo nome não descrevia o que ele testava; `create-account.service.spec.ts` afirmava um comportamento que o pivô havia invertido
+- Restaurados o happy path de TRANSFER em `create-transaction.service.spec.ts` e o `describe('updateInvoiceDates()')` em `CreditCardAccount.spec.ts`, apagados durante o pivô
+- `RecurringTransaction.create()` ganhou a validação de `categoryId` em runtime, que existia só no tipo
+
+### Documentação
+
+- `docs/MELHORIAS.md`: riscos e melhorias levantados durante essa rodada e deixados fora do escopo — com destaque para as migrations `0012`/`0013`, que alteram colunas sem migrar o dado existente
 
 ---
 
