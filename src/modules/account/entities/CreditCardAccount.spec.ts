@@ -14,7 +14,7 @@ describe('CreditCard entity', () => {
       name: 'Visa Gold',
       timezone: 'America/Sao_Paulo',
       creditLimit: 5000n,
-      closingDay: 10,
+      closingDaysBeforeDue: 10,
       dueDay: 20,
       ...overrides,
     };
@@ -38,17 +38,25 @@ describe('CreditCard entity', () => {
       ).toBe(true);
     });
 
-    it('should create a credit card without closingDay', () => {
-      expect(CreditCard.create(makeProps({ closingDay: null })).isRight()).toBe(
-        true,
-      );
+    it('should NOT create a credit card without closingDaysBeforeDue', () => {
+      expect(
+        CreditCard.create(
+          makeProps({ closingDaysBeforeDue: 28 }),
+        ).isLeft(),
+      ).toBe(true);
     });
 
     it.each<[Partial<Parameters<typeof CreditCard.create>[0]>, string]>([
       [{ creditLimit: 0n }, 'zero credit limit'],
       [{ creditLimit: -100n }, 'negative credit limit'],
-      [{ closingDay: 0 }, 'closingDay 0'],
-      [{ closingDay: 32 }, 'closingDay 32'],
+      [
+        { closingDaysBeforeDue: 0 },
+        'closingDaysBeforeDue 0',
+      ],
+      [
+        { closingDaysBeforeDue: 32 },
+        'closingDaysBeforeDue 32',
+      ],
       [{ dueDay: 0 }, 'dueDay 0'],
       [{ dueDay: 32 }, 'dueDay 32'],
     ])('should reject %s', (props) => {
@@ -166,26 +174,5 @@ describe('CreditCard entity', () => {
 
       expect(makeCard().adjustLimit(-500n).isLeft()).toBe(true);
     });
-  });
-
-  describe('updateInvoiceDates()', () => {
-    it('should update closingDay and dueDay', () => {
-      const card = makeCard();
-      card.updateInvoiceDates(15, 25);
-      expect(card.closingDay).toBe(15);
-      expect(card.dueDay).toBe(25);
-    });
-
-    it.each([
-      [0, 10],
-      [32, 10],
-      [10, 0],
-      [10, 32],
-    ])(
-      'should reject invalid dates closingDay=%d dueDay=%d',
-      (closing, due) => {
-        expect(makeCard().updateInvoiceDates(closing, due).isLeft()).toBe(true);
-      },
-    );
   });
 });

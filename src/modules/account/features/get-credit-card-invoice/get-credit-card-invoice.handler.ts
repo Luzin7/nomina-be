@@ -1,3 +1,4 @@
+import { TransactionStatus } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
   AccountNotFoundError,
@@ -6,7 +7,6 @@ import {
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
-import { TransactionStatus } from '@constants/enums';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -60,7 +60,7 @@ export class GetCreditCardInvoiceService implements Service<
     const { periodStart, periodEnd, dueDate } =
       this.dateProvider.calculateInvoiceCycle({
         referenceDate,
-        closingDay: account.closingDay ?? 1,
+        closingDaysBeforeDue: account.closingDaysBeforeDue,
         dueDay: account.dueDay,
         timezone: institutionTimezone,
       });
@@ -74,20 +74,29 @@ export class GetCreditCardInvoiceService implements Service<
       );
 
     const chargesTotal = transactions
-      .filter((t) => t.status === TransactionStatus.COMPLETED)
+      .filter(
+        (t) =>
+          t.status === TransactionStatus.COMPLETED &&
+          t.accountId === props.accountId,
+      )
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
-    // O total de cobranças do período não desconta pagamentos já feitos nesse
-    // ciclo (a query acima só traz transações do próprio cartão, não a
-    // transferência de pagamento, que pertence à conta de origem). Por isso o
-    // valor exibido/pagável nunca pode ultrapassar o saldo real da fatura
-    // (account.balance), que é o que CreditCard.payInvoice() de fato valida —
-    // caso contrário o usuário via um "Total da Fatura" inflado e a tentativa
-    // de pagar o valor cheio era rejeitada por "exceder" a fatura.
-    const totalAmount = Math.min(chargesTotal, Number(account.balance));
+    const paymentsTotal = transactions
+      .filter(
+        (t) =>
+          t.status === TransactionStatus.COMPLETED &&
+          t.destinationAccountId === props.accountId,
+      )
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+
+    const totalAmount = Math.max(chargesTotal - paymentsTotal, 0);
 
     const pendingAmount = transactions
-      .filter((t) => t.status === TransactionStatus.PENDING)
+      .filter(
+        (t) =>
+          t.status === TransactionStatus.PENDING &&
+          t.accountId === props.accountId,
+      )
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const availableLimit =

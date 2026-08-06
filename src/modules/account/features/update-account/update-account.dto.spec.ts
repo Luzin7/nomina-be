@@ -15,7 +15,7 @@ const updateAccountSchema = z.object({
     .trim()
     .regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid color (use format #RRGGBB)')
     .nullable(),
-  closingDay: z.number().int().min(1).max(31).nullable(),
+  closingDaysBeforeDue: z.number().int().min(1).max(31).nullable(),
   dueDay: z.number().int().min(1).max(31).nullable(),
 });
 
@@ -25,7 +25,7 @@ const validBase = {
   type: AccountType.CHECKING,
   icon: null,
   color: null,
-  closingDay: null,
+  closingDaysBeforeDue: null,
   dueDay: null,
 };
 
@@ -156,11 +156,11 @@ describe('UpdateAccountRequest DTO', () => {
     });
   });
 
-  describe('closingDay field (nullable)', () => {
+  describe('closingDaysBeforeDue field (nullable)', () => {
     it('should accept day 1 (boundary)', () => {
       const result = updateAccountSchema.safeParse({
         ...validBase,
-        closingDay: 1,
+        closingDaysBeforeDue: 1,
       });
       expect(result.success).toBe(true);
     });
@@ -168,7 +168,7 @@ describe('UpdateAccountRequest DTO', () => {
     it('should accept day 31 (boundary)', () => {
       const result = updateAccountSchema.safeParse({
         ...validBase,
-        closingDay: 31,
+        closingDaysBeforeDue: 31,
       });
       expect(result.success).toBe(true);
     });
@@ -176,7 +176,7 @@ describe('UpdateAccountRequest DTO', () => {
     it('should accept null', () => {
       const result = updateAccountSchema.safeParse({
         ...validBase,
-        closingDay: null,
+        closingDaysBeforeDue: null,
       });
       expect(result.success).toBe(true);
     });
@@ -184,7 +184,7 @@ describe('UpdateAccountRequest DTO', () => {
     it('should reject day 0', () => {
       const result = updateAccountSchema.safeParse({
         ...validBase,
-        closingDay: 0,
+        closingDaysBeforeDue: 0,
       });
       expect(result.success).toBe(false);
     });
@@ -192,7 +192,7 @@ describe('UpdateAccountRequest DTO', () => {
     it('should reject day 32', () => {
       const result = updateAccountSchema.safeParse({
         ...validBase,
-        closingDay: 32,
+        closingDaysBeforeDue: 32,
       });
       expect(result.success).toBe(false);
     });

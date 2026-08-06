@@ -65,16 +65,18 @@ export class PayCreditCardInvoiceService implements Service<
     const tz = sourceAccount.timezone;
     const today = this.dateProvider.startOfDay(this.dateProvider.now(), tz);
 
+    const paymentDate = this.resolvePaymentDate(props, creditCardAccount, today);
+
     const transactionOrError = Transaction.create({
       workspaceId: props.workspaceId,
       accountId: props.sourceAccountId,
       destinationAccountId: props.creditCardAccountId,
-      categoryId: props.categoryId ?? null,
+      categoryId: props.categoryId ?? '0d19bbf8-b66a-4cc2-9c7c-3fcd961f06b1',
       title: 'Pagamento de Fatura',
       description:
         props.description ?? `Pagamento da fatura: ${creditCardAccount.name}`,
       amount: amountBigInt,
-      date: today,
+      date: paymentDate,
       type: 'TRANSFER',
       status: TransactionStatus.COMPLETED,
     });
@@ -95,5 +97,32 @@ export class PayCreditCardInvoiceService implements Service<
     );
 
     return right(transaction);
+  }
+
+  /**
+   * A fatura de um cartão é calculada por período (ver GetCreditCardInvoiceService),
+   * somando cobranças e pagamentos cuja `date` cai dentro do ciclo. Se o pagamento
+   * for datado com "hoje" mesmo quando o usuário está quitando uma fatura de um
+   * ciclo já fechado (ex.: pagar em agosto a fatura de julho), a transação de
+   * pagamento cai no ciclo errado e a fatura paga nunca reflete o pagamento.
+   * Quando o cliente informa `month`/`year`, ancoramos o pagamento no fim daquele
+   * ciclo para que ele seja contabilizado na fatura correta.
+   */
+  private resolvePaymentDate(
+    props: Request,
+    creditCardAccount: CreditCard,
+    today: Date,
+  ): Date {
+    if (!props.month || !props.year) return today;
+
+    const referenceDate = new Date(Date.UTC(props.year, props.month - 1, 1));
+    const { periodEnd } = this.dateProvider.calculateInvoiceCycle({
+      referenceDate,
+      closingDaysBeforeDue: creditCardAccount.closingDaysBeforeDue,
+      dueDay: creditCardAccount.dueDay,
+      timezone: creditCardAccount.timezone,
+    });
+
+    return periodEnd < today ? periodEnd : today;
   }
 }

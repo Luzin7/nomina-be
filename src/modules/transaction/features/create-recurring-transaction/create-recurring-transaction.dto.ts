@@ -5,11 +5,7 @@ import { z } from 'zod';
 const createRecurringTransactionSchema = z
   .object({
     accountId: z.string().uuid('ID da conta inválido'),
-    categoryId: z
-      .string()
-      .uuid('ID da categoria inválido')
-      .optional()
-      .nullable(),
+    categoryId: z.string().uuid('ID da categoria inválido'),
     title: z.string().min(1, 'Título é obrigatório'),
     description: z.string().optional().nullable(),
     amount: z.coerce.bigint().positive('Valor deve ser positivo').optional(),

@@ -126,6 +126,7 @@ const categoriesData: CategorySeed[] = [
   { name: 'Presentes', type: 'EXPENSE' },
   { name: 'Doações', type: 'EXPENSE' },
   { name: 'Telefonia', type: 'EXPENSE' },
+  { name: 'Cartão de Crédito', type: 'EXPENSE' },
   { name: 'Outros Gastos', type: 'EXPENSE' },
 ];
 

@@ -7,8 +7,8 @@ const updateAccountSchema = z.object({
     .trim()
     .min(1, 'Name is required')
     .max(50, 'Name is too long'),
-  closingDay: z.number().int().min(1).max(31).optional().nullable(),
-  dueDay: z.number().int().min(1).max(31),
+  closingDaysBeforeDue: z.number().int().min(5).max(10).optional().nullable(),
+  dueDay: z.number().int().min(1).max(28).optional().nullable(),
   creditLimit: z.coerce
     .number()
     .positive('Limite deve ser positivo')

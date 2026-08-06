@@ -6,7 +6,7 @@ import { Optional } from '@shared/core/types/Optional';
 export interface TransactionProps {
   workspaceId: string;
   accountId: string;
-  categoryId: string | null;
+  categoryId: string;
   destinationAccountId: string | null;
   title: string;
   description: string | null;
@@ -36,7 +36,6 @@ export class Transaction extends AggregateRoot<TransactionProps> {
       | 'recurringId'
       | 'description'
       | 'destinationAccountId'
-      | 'categoryId'
       | 'installmentGroupId'
       | 'installmentNumber'
       | 'installmentCount'
@@ -49,6 +48,10 @@ export class Transaction extends AggregateRoot<TransactionProps> {
 
     if (!props.title || props.title.trim() === '') {
       return left(new Error('The title is required'));
+    }
+
+    if (!props.categoryId) {
+      return left(new Error('The categoryId is required'));
     }
 
     if (!props.status) return left(new Error('O status é obrigatório'));
@@ -81,7 +84,7 @@ export class Transaction extends AggregateRoot<TransactionProps> {
 
     const transactionProps: TransactionProps = {
       ...props,
-      categoryId: props.categoryId ?? null,
+      categoryId: props.categoryId,
       destinationAccountId: props.destinationAccountId ?? null,
       description: props.description ?? null,
       createdAt: props.createdAt ?? new Date(),
@@ -108,7 +111,7 @@ export class Transaction extends AggregateRoot<TransactionProps> {
     return this.props.accountId;
   }
 
-  get categoryId(): string | null {
+  get categoryId(): string {
     return this.props.categoryId;
   }
 
@@ -199,7 +202,7 @@ export class Transaction extends AggregateRoot<TransactionProps> {
   /**
    * Reclassificação financeira tem semântica própria.
    */
-  public reclassify(newCategoryId: string | null): void {
+  public reclassify(newCategoryId: string): void {
     this.props.categoryId = newCategoryId;
     this.touch();
   }

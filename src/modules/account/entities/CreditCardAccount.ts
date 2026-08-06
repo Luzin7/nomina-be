@@ -10,7 +10,7 @@ import { BaseAccount, BaseAccountProps } from './BaseAccount';
 export interface CreditCardProps extends BaseAccountProps {
   balance: bigint;
   creditLimit: bigint | null;
-  closingDay: number | null;
+  closingDaysBeforeDue: number;
   dueDay: number;
 }
 
@@ -35,13 +35,13 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
       );
     }
     if (
-      props.closingDay !== null &&
-      props.closingDay !== undefined &&
-      (props.closingDay < 1 || props.closingDay > 31)
+      props.closingDaysBeforeDue !== null &&
+      props.closingDaysBeforeDue !== undefined &&
+      (props.closingDaysBeforeDue < 5 || props.closingDaysBeforeDue > 10)
     ) {
       return left(new ValidationAccountError('Dia de fechamento inválido.'));
     }
-    if (props.dueDay < 1 || props.dueDay > 31) {
+    if (props.dueDay < 1 || props.dueDay > 28) {
       return left(new ValidationAccountError('Dia de vencimento inválido.'));
     }
 
@@ -50,7 +50,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
         {
           ...props,
           creditLimit: props.creditLimit ?? null,
-          closingDay: props.closingDay ?? null,
+          closingDaysBeforeDue: props.closingDaysBeforeDue ?? null,
           balance: props.balance ?? 0n,
         },
         id,
@@ -66,8 +66,8 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     return this.props.creditLimit;
   }
 
-  get closingDay(): number | null {
-    return this.props.closingDay;
+  get closingDaysBeforeDue(): number {
+    return this.props.closingDaysBeforeDue;
   }
 
   get dueDay(): number {
@@ -129,16 +129,19 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
   }
 
   public updateInvoiceDates(
-    closingDay: number | null,
+    closingDaysBeforeDue: number,
     dueDay: number,
   ): Either<Error, void> {
-    if (closingDay !== null && (closingDay < 1 || closingDay > 31)) {
+    if (
+      closingDaysBeforeDue !== null &&
+      (closingDaysBeforeDue < 1 || closingDaysBeforeDue > 10)
+    ) {
       return left(new ValidationAccountError('Dia de fechamento inválido.'));
     }
-    if (dueDay < 1 || dueDay > 31) {
+    if (dueDay < 1 || dueDay > 28) {
       return left(new ValidationAccountError('Dia de vencimento inválido.'));
     }
-    this.props.closingDay = closingDay;
+    this.props.closingDaysBeforeDue = closingDaysBeforeDue;
     this.props.dueDay = dueDay;
     return right(undefined);
   }

@@ -81,7 +81,7 @@ export class CreateRecurringTransactionService implements Service<
       destinationAccountId: destinationAccountId ?? null,
       title: request.title,
       description: request.description ?? null,
-      categoryId: categoryId ?? null,
+      categoryId,
       amount,
       frequency: request.frequency as RecurrenceFrequency,
       interval: request.interval,

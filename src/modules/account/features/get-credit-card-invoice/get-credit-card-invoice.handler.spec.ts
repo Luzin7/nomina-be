@@ -37,7 +37,7 @@ function makeCreditCard(workspaceId = 'ws-1'): CreditCard {
       name: 'My Card',
       timezone: 'America/Sao_Paulo',
       creditLimit: 500000n,
-      closingDay: 5,
+      closingDaysBeforeDue: 5,
       dueDay: 15,
     },
     'acc-1',
@@ -65,10 +65,27 @@ function makeCompletedCharge(amount: bigint): Transaction {
   const r = Transaction.create({
     workspaceId: 'ws-1',
     accountId: 'acc-1',
+    categoryId: 'cat-1',
     title: 'Compra no cartão',
     amount,
     date: new Date('2024-01-20'),
     type: 'EXPENSE',
+    status: TransactionStatus.COMPLETED,
+  });
+  if (r.isLeft()) throw r.value;
+  return r.value;
+}
+
+function makeCompletedPayment(amount: bigint): Transaction {
+  const r = Transaction.create({
+    workspaceId: 'ws-1',
+    accountId: 'acc-2',
+    categoryId: 'cat-1',
+    destinationAccountId: 'acc-1',
+    title: 'Pagamento de Fatura',
+    amount,
+    date: new Date('2024-01-25'),
+    type: 'TRANSFER',
     status: TransactionStatus.COMPLETED,
   });
   if (r.isLeft()) throw r.value;
@@ -171,25 +188,26 @@ describe('GetCreditCardInvoiceService', () => {
       expect(result.value.dueDate).toBe(invoiceCycle.dueDate);
     }
     expect(dateProvider.calculateInvoiceCycle).toHaveBeenCalledWith(
-      expect.objectContaining({ closingDay: 5, dueDay: 15 }),
+      expect.objectContaining({
+        closingDaysBeforeDue: 5,
+        dueDay: 15,
+      }),
     );
   });
 
-  it('should cap totalAmount at the card current balance when a partial payment was already made this cycle', async () => {
-    // Bug reportado: duas cobranças de 5000 cada (10000 no total) nesse
-    // ciclo, mas o usuário já pagou parcialmente 3000 (a transação de
-    // pagamento não aparece na lista, pois pertence à conta de origem, não
-    // ao cartão). O saldo real da fatura é 7000 — é isso que o usuário pode
-    // efetivamente pagar, e é isso que payInvoice() valida.
-    const card = makeCreditCard();
-    card.registerCharge(10000n);
-    card.payInvoice(3000n);
-    expect(card.balance).toBe(7000n);
-
-    accountRepository.findById.mockResolvedValue(card);
+  it('should subtract completed payments made toward this invoice from totalAmount', async () => {
+    // Bug reportado: o pagamento de uma fatura não refletia no totalAmount
+    // porque o cálculo usava Math.min(chargesTotal, account.balance) — o
+    // saldo GLOBAL do cartão, que também inclui cobranças de outros ciclos.
+    // Pagar uma fatura antiga não reduzia o saldo abaixo do total daquele
+    // ciclo específico, então nada parecia acontecer. Agora o pagamento é
+    // uma transação (destinationAccountId = cartão) buscada no mesmo range
+    // de datas e subtraída diretamente das cobranças daquele ciclo.
+    accountRepository.findById.mockResolvedValue(makeCreditCard());
     transactionRepository.findByAccountAndDateRange.mockResolvedValue([
       makeCompletedCharge(5000n),
       makeCompletedCharge(5000n),
+      makeCompletedPayment(3000n),
     ]);
 
     const result = await service.execute(makeRequest());
@@ -199,27 +217,17 @@ describe('GetCreditCardInvoiceService', () => {
     }
   });
 
-  it('should use closingDay=1 as fallback when account has no closingDay', async () => {
-    const cardWithoutClosingDay = CreditCard.create(
-      {
-        workspaceId: 'ws-1',
-        name: 'No Closing Day Card',
-        timezone: 'America/Sao_Paulo',
-        creditLimit: 500000n,
-        closingDay: null,
-        dueDay: 15,
-      },
-      'acc-1',
-    );
-    if (cardWithoutClosingDay.isLeft()) throw cardWithoutClosingDay.value;
-
-    accountRepository.findById.mockResolvedValue(cardWithoutClosingDay.value);
-    transactionRepository.findByAccountAndDateRange.mockResolvedValue([]);
+  it('should not let totalAmount go negative when payments exceed charges', async () => {
+    accountRepository.findById.mockResolvedValue(makeCreditCard());
+    transactionRepository.findByAccountAndDateRange.mockResolvedValue([
+      makeCompletedCharge(5000n),
+      makeCompletedPayment(9000n),
+    ]);
 
     const result = await service.execute(makeRequest());
     expect(result.isRight()).toBe(true);
-    expect(dateProvider.calculateInvoiceCycle).toHaveBeenCalledWith(
-      expect.objectContaining({ closingDay: 1 }),
-    );
+    if (result.isRight()) {
+      expect(result.value.totalAmount).toBe(0);
+    }
   });
 });

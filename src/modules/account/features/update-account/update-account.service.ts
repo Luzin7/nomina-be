@@ -24,12 +24,20 @@ export class UpdateAccountService implements Service<
 
   private validateCreditCardFields(
     account: CreditCard,
-    closingDay?: number | null,
-    dueDay?: number,
+    closingDaysBeforeDue?: number | null,
+    dueDay?: number | null,
     creditLimit?: number,
   ): Either<Error, void> {
-    if (closingDay !== undefined && dueDay !== undefined) {
-      const dateResult = account.updateInvoiceDates(closingDay, dueDay);
+    if (
+      closingDaysBeforeDue !== undefined &&
+      closingDaysBeforeDue !== null &&
+      dueDay !== undefined &&
+      dueDay !== null
+    ) {
+      const dateResult = account.updateInvoiceDates(
+        closingDaysBeforeDue,
+        dueDay,
+      );
       if (dateResult.isLeft()) return left(dateResult.value);
     }
 
@@ -46,7 +54,7 @@ export class UpdateAccountService implements Service<
     accountId,
     name,
     workspaceId,
-    closingDay,
+    closingDaysBeforeDue,
     dueDay,
     creditLimit,
   }: Request): Promise<Either<Error, AnyAccount>> {
@@ -78,7 +86,12 @@ export class UpdateAccountService implements Service<
     }
 
     if (account instanceof CreditCard) {
-      this.validateCreditCardFields(account, closingDay, dueDay, creditLimit);
+      this.validateCreditCardFields(
+        account,
+        closingDaysBeforeDue,
+        dueDay,
+        creditLimit,
+      );
     }
 
     await this.accountRepository.update(account);

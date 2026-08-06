@@ -57,7 +57,7 @@ export class CreateAccountService implements Service<
           workspaceId,
           name: request.name,
           creditLimit,
-          closingDay: request.closingDay ?? null,
+          closingDaysBeforeDue: request.closingDaysBeforeDue ?? null,
           dueDay: request.dueDay,
           timezone,
         });

@@ -122,21 +122,34 @@ export const workspaceInvites = pgTable(
 // FINANCEIRO CORE
 // --------------------------------------------------------
 
-export const accounts = pgTable('accounts', {
-  id: text('id')
-    .primaryKey()
-    .$default(() => crypto.randomUUID()),
-  workspaceId: text('workspace_id')
-    .notNull()
-    .references(() => workspaces.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  type: text('type').notNull(),
-  balance: bigint('balance', { mode: 'number' }).default(0).notNull(),
-  timezone: text('time_zone').notNull().default('America/Sao_Paulo'),
-  closingDay: integer('closing_day'),
-  dueDay: integer('due_day'),
-  creditLimit: bigint('credit_limit', { mode: 'number' }),
-});
+export const accounts = pgTable(
+  'accounts',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    type: text('type').notNull(),
+    balance: bigint('balance', { mode: 'number' }).default(0).notNull(),
+    timezone: text('time_zone').notNull().default('America/Sao_Paulo'),
+    closingDaysBeforeDue: integer('closing_days_before_due')
+      .default(7)
+      .notNull(),
+    dueDay: integer('due_day'),
+    creditLimit: bigint('credit_limit', { mode: 'number' }),
+  },
+  (table) => [
+    index('idx_account_ws').on(table.workspaceId),
+    index('idx_account_type').on(table.type),
+    index('idx_account_closing_due').on(
+      table.closingDaysBeforeDue,
+      table.dueDay,
+    ),
+  ],
+);
 
 export const categories = pgTable(
   'categories',
@@ -181,7 +194,9 @@ export const recurringTransactions = pgTable(
       () => accounts.id,
       { onDelete: 'set null' },
     ),
-    categoryId: text('category_id').references(() => categories.id),
+    categoryId: text('category_id')
+      .references(() => categories.id)
+      .notNull(),
     type: text('type').notNull(),
 
     title: text('title').notNull(),
@@ -222,7 +237,9 @@ export const transactions = pgTable(
     accountId: text('account_id')
       .notNull()
       .references(() => accounts.id, { onDelete: 'cascade' }),
-    categoryId: text('category_id').references(() => categories.id),
+    categoryId: text('category_id')
+      .references(() => categories.id)
+      .notNull(),
 
     title: text('title').notNull(),
     description: text('description'),

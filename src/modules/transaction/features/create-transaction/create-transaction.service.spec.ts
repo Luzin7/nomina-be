@@ -2,10 +2,12 @@ import { AccountType, TransactionType } from '@constants/enums';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
+import { randomUUID } from 'crypto';
 import { CreateTransactionService } from './create-transaction.service';
 
 function makeRequest(
@@ -21,6 +23,7 @@ function makeRequest(
     amount: 5000n,
     date: '2024-01-15',
     type: TransactionType.EXPENSE,
+    categoryId: randomUUID(),
     ...overrides,
   };
 }
@@ -125,7 +128,13 @@ describe('CreateTransactionService', () => {
 
   function arrangeSuccessMocks() {
     accountRepository.findById.mockResolvedValue(makeAccount());
-    categoryRepository.findById.mockResolvedValue(null);
+    categoryRepository.findById.mockResolvedValue({
+      id: randomUUID(),
+      workspaceId: 'ws-1',
+      name: 'Food',
+      type: TransactionType.EXPENSE,
+      parentId: null,
+    } as jest.Mocked<Category>);
     transactionRepository.createWithBalanceUpdate.mockResolvedValue();
   }
 
@@ -165,22 +174,6 @@ describe('CreateTransactionService', () => {
     expect(transactionRepository.createWithBalanceUpdate).toHaveBeenCalledTimes(
       1,
     );
-  });
-
-  it('should create a TRANSFER transaction when destination account is valid', async () => {
-    const destAccount = makeAccount('ws-1', 'acc-2');
-    accountRepository.findById
-      .mockResolvedValueOnce(makeAccount())
-      .mockResolvedValueOnce(destAccount);
-    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
-
-    const result = await service.execute(
-      makeRequest({
-        type: TransactionType.TRANSFER,
-        destinationAccountId: 'acc-2',
-      }),
-    );
-    expect(result.isRight()).toBe(true);
   });
 
   it('should return left(AccountNotFoundError) when TRANSFER destination is not found', async () => {

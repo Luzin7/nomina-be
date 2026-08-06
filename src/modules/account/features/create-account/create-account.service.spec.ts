@@ -125,7 +125,7 @@ describe('CreateAccountService', () => {
       makeRequest({
         type: AccountType.CREDIT_CARD,
         creditLimit: 5000,
-        closingDay: 10,
+        closingDaysBeforeDue: 10,
         dueDay: 20,
       }),
     );
@@ -140,7 +140,7 @@ describe('CreateAccountService', () => {
       makeRequest({
         type: AccountType.CREDIT_CARD,
         creditLimit: undefined,
-        closingDay: 10,
+        closingDaysBeforeDue: 10,
         dueDay: 20,
       }),
     );
@@ -148,14 +148,14 @@ describe('CreateAccountService', () => {
     expect(accountRepository.create).toHaveBeenCalledTimes(1);
   });
 
-  it('should create a CREDIT_CARD without closingDay', async () => {
+  it('should create a CREDIT_CARD without closingDaysBeforeDue', async () => {
     arrangeSuccessMocks();
 
     const result = await service.execute(
       makeRequest({
         type: AccountType.CREDIT_CARD,
         creditLimit: 5000,
-        closingDay: undefined,
+        closingDaysBeforeDue: undefined,
         dueDay: 20,
       }),
     );

@@ -96,7 +96,7 @@ export class CreateTransactionService implements Service<
     >
   > {
     const account = await this.accountRepository.findById(request.accountId);
-    if (!account || account.workspaceId !== request.workspaceId) {
+    if (account?.workspaceId !== request.workspaceId) {
       return left(new UnauthorizedError('Conta origem inválida.'));
     }
 
@@ -108,10 +108,7 @@ export class CreateTransactionService implements Service<
       destinationAccount = await this.accountRepository.findById(
         request.destinationAccountId,
       );
-      if (
-        !destinationAccount ||
-        destinationAccount.workspaceId !== request.workspaceId
-      ) {
+      if (destinationAccount?.workspaceId !== request.workspaceId) {
         return left(new UnauthorizedError('Conta destino inválida.'));
       }
     }
@@ -121,10 +118,8 @@ export class CreateTransactionService implements Service<
 
   private async validateCategory(
     workspaceId: string,
-    categoryId?: string | null,
+    categoryId: string,
   ): Promise<Either<Error, void>> {
-    if (!categoryId) return right(undefined);
-
     const category = await this.categoryRepository.findById(categoryId);
     if (!category) return left(new CategoryNotFoundError());
 

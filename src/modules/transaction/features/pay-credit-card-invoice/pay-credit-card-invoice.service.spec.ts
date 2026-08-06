@@ -2,13 +2,13 @@ import { AccountType, TransactionStatus } from '@constants/enums';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
-  AccountNotFoundError,
-  InvalidAccountError,
+    AccountNotFoundError,
+    InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import {
-  CannotPayInvoiceWithCreditCardError,
-  SourceAndDestinationAccountMustBeDifferentError,
+    CannotPayInvoiceWithCreditCardError,
+    SourceAndDestinationAccountMustBeDifferentError,
 } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -40,7 +40,7 @@ function makeCreditCard(workspaceId = 'ws-1'): CreditCard {
       name: 'My Card',
       timezone: 'UTC',
       creditLimit: 500000n,
-      closingDay: 5,
+      closingDaysBeforeDue: 5,
       dueDay: 15,
       balance: 100000n,
     },
@@ -165,7 +165,7 @@ describe('PayCreditCardInvoiceService', () => {
         name: 'Another CC',
         timezone: 'UTC',
         creditLimit: 100000n,
-        closingDay: 10,
+        closingDaysBeforeDue: 10,
         dueDay: 20,
       },
       'acc-src',
@@ -196,5 +196,73 @@ describe('PayCreditCardInvoiceService', () => {
     expect(transactionRepository.createWithBalanceUpdate).toHaveBeenCalledTimes(
       1,
     );
+  });
+
+  it('should date the payment as today when month/year are not provided', async () => {
+    const today = new Date('2024-08-05');
+    dateProvider.now.mockReturnValue(today);
+    dateProvider.startOfDay.mockReturnValue(today);
+    accountRepository.findById
+      .mockResolvedValueOnce(makeCreditCard())
+      .mockResolvedValueOnce(makeCheckingAccount());
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+    const result = await service.execute(makeRequest());
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.date).toEqual(today);
+    }
+    expect(dateProvider.calculateInvoiceCycle).not.toHaveBeenCalled();
+  });
+
+  it('should anchor the payment date to the end of a closed invoice cycle when month/year target a past period', async () => {
+    // Regressão do bug: pagar em agosto a fatura de julho não podia usar
+    // "hoje" como data, senão o pagamento cairia no ciclo de agosto e a
+    // fatura de julho jamais refletiria o pagamento.
+    const today = new Date('2024-08-05');
+    const closedPeriodEnd = new Date('2024-07-10');
+    dateProvider.now.mockReturnValue(today);
+    dateProvider.startOfDay.mockReturnValue(today);
+    dateProvider.calculateInvoiceCycle.mockReturnValue({
+      periodStart: new Date('2024-06-11'),
+      periodEnd: closedPeriodEnd,
+      dueDate: new Date('2024-07-15'),
+    });
+    accountRepository.findById
+      .mockResolvedValueOnce(makeCreditCard())
+      .mockResolvedValueOnce(makeCheckingAccount());
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+    const result = await service.execute(
+      makeRequest({ month: 7, year: 2024 }),
+    );
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.date).toEqual(closedPeriodEnd);
+    }
+  });
+
+  it('should keep today as the payment date when month/year target the still-open current cycle', async () => {
+    const today = new Date('2024-07-05');
+    const openPeriodEnd = new Date('2024-07-10');
+    dateProvider.now.mockReturnValue(today);
+    dateProvider.startOfDay.mockReturnValue(today);
+    dateProvider.calculateInvoiceCycle.mockReturnValue({
+      periodStart: new Date('2024-06-11'),
+      periodEnd: openPeriodEnd,
+      dueDate: new Date('2024-07-15'),
+    });
+    accountRepository.findById
+      .mockResolvedValueOnce(makeCreditCard())
+      .mockResolvedValueOnce(makeCheckingAccount());
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+    const result = await service.execute(
+      makeRequest({ month: 7, year: 2024 }),
+    );
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.date).toEqual(today);
+    }
   });
 });

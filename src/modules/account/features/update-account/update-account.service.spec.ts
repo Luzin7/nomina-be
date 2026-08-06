@@ -16,7 +16,7 @@ function makeRequest(
     accountId: 'acc-1',
     workspaceId: 'ws-1',
     name: 'Updated Name',
-    closingDay: 10,
+    closingDaysBeforeDue: 10,
     dueDay: 20,
     ...overrides,
   } as ServiceRequest;

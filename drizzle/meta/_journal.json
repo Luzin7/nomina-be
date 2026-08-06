@@ -85,6 +85,20 @@
       "when": 1777831084948,
       "tag": "0011_add_login_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785888233730,
+      "tag": "0012_right_falcon",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785892689206,
+      "tag": "0013_wild_aaron_stack",
+      "breakpoints": true
     }
   ]
 }

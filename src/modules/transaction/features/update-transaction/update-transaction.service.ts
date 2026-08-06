@@ -75,7 +75,7 @@ export class UpdateTransactionService implements Service<
         date: resolvedDate,
         status: resolvedStatus,
         destinationAccountId: request.destinationAccountId ?? null,
-        categoryId: request.categoryId ?? null,
+        categoryId: request.categoryId,
         description: request.description ?? null,
         recurringId: currentTx.recurringId,
         createdAt: currentTx.createdAt,

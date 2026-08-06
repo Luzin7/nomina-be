@@ -13,7 +13,7 @@ export interface RecurringTransactionProps {
   workspaceId: string;
   accountId: string;
   destinationAccountId: string | null;
-  categoryId: string | null;
+  categoryId: string;
   title: string;
   description: string | null;
   amount: bigint;
@@ -40,7 +40,6 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
       | 'active'
       | 'description'
       | 'destinationAccountId'
-      | 'categoryId'
     >,
     id?: string,
   ): Either<Error, RecurringTransaction> {
@@ -69,7 +68,7 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
       ...props,
       destinationAccountId: props.destinationAccountId ?? null,
       description: props.description ?? null,
-      categoryId: props.categoryId ?? null,
+      categoryId: props.categoryId,
       interval: props.interval ?? 1,
       endDate: props.endDate ?? null,
       lastGenerated: props.lastGenerated ?? null,
@@ -102,7 +101,7 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     return this.props.destinationAccountId;
   }
 
-  get categoryId(): string | null {
+  get categoryId(): string {
     return this.props.categoryId;
   }
 
@@ -149,7 +148,7 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
   public updateDetails(
     title: string,
     description: string | null,
-    categoryId: string | null,
+    categoryId: string,
   ): void {
     if (!title || title.trim() === '')
       throw new Error('O título é obrigatório.');
