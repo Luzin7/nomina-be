@@ -16,11 +16,12 @@ Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Ve
 
 ### Adicionado
 
-- Categorias de sistema resolvidas por nome (`CategoryRepository.findSystemCategoryByName` + `resolveSystemCategoryId`) para transferências (`Transferência`) e pagamento de fatura (`Cartão de Crédito`). Substitui o UUID fixo que estava hardcoded no DTO de pagamento de fatura e que só existia no banco onde tinha sido criado à mão
+- Categorias de sistema com ID fixo (`SYSTEM_CATEGORY`) para transferências (`Transferência`) e pagamento de fatura (`Cartão de Crédito`). O backend as atribui sozinho, usando a constante direto — sem consultar o banco. Substitui o UUID que estava hardcoded no DTO de pagamento de fatura e que só existia no banco onde o seed o tinha gerado; agora o mesmo ID é contrato, garantido pela migration `0013` e pelo seed
 - `PayCreditCardInvoiceService` aceita `month`/`year`, ancorando o pagamento no fim do ciclo quando a fatura alvo já fechou — sem isso, quitar em agosto a fatura de julho lançava o pagamento no ciclo de agosto e a fatura de julho nunca refletia nada
 - Suporte a modo de valor total (`totalAmount`) em transações recorrentes, permitindo cadastrar uma compra parcelada informando o total e o número de parcelas
 - Autodesativação de recorrências ao atingir `endDate`
-- Erros de domínio tipados: `MissingCategoryError`, `SystemCategoryNotFoundError`, `InvalidClosingDaysBeforeDueError`, `InvalidDueDayError`
+- Erros de domínio tipados: `MissingCategoryError`, `InvalidClosingDaysBeforeDueError`, `InvalidDueDayError`
+- Migrations `0012` e `0013` passam a migrar o dado existente, não só o schema: a `0013` cria as categorias de sistema, reponta duplicatas e preenche `category_id` das linhas órfãs antes do `SET NOT NULL`; a `0012` converte `closing_day` em `closing_days_before_due` antes do `DROP COLUMN` e ajusta `due_day` acima de 28. Ambas são idempotentes e foram testadas contra Postgres 16 em quatro cenários
 
 ### Corrigido
 
