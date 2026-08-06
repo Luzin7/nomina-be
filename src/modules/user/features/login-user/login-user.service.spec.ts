@@ -181,7 +181,9 @@ describe('LoginUserService', () => {
   it('should not create a refresh token when default workspace is not found', async () => {
     userRepository.findUniqueByEmail.mockResolvedValue(makeUser());
     hashComparer.compare.mockResolvedValue(true);
-    workspaceUserRepository.findDefaultWorkspaceByUserId.mockResolvedValue(null);
+    workspaceUserRepository.findDefaultWorkspaceByUserId.mockResolvedValue(
+      null,
+    );
     refreshTokensRepository.deleteManyByUserId.mockResolvedValue();
 
     await service.execute(makeRequest());
