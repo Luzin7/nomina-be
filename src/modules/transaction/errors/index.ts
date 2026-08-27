@@ -1,4 +1,7 @@
-import { BusinessRuleDomainError } from '@shared/core/errors/DomainError';
+import {
+  BusinessRuleDomainError,
+  InvalidOperationDomainError,
+} from '@shared/core/errors/DomainError';
 
 export class InvalidAmountError extends BusinessRuleDomainError {
   constructor() {
@@ -75,5 +78,41 @@ export class CannotRemoveDestinationAccountError extends BusinessRuleDomainError
     super(
       'Não é possível remover a conta destino de uma transferência diretamente. Converta a transação para receita ou despesa primeiro.',
     );
+  }
+}
+
+export class TitleRequiredError extends BusinessRuleDomainError {
+  constructor() {
+    super('O título da transação é obrigatório.');
+  }
+}
+
+export class StatusRequiredError extends BusinessRuleDomainError {
+  constructor() {
+    super('O status da transação é obrigatório.');
+  }
+}
+
+export class DateRequiredError extends BusinessRuleDomainError {
+  constructor() {
+    super('A data da transação é obrigatória.');
+  }
+}
+
+export class TypeRequiredError extends BusinessRuleDomainError {
+  constructor() {
+    super('O tipo da transação é obrigatório.');
+  }
+}
+
+export class TransactionAlreadyCompletedError extends InvalidOperationDomainError {
+  constructor() {
+    super('A transação já está concluída.');
+  }
+}
+
+export class TransactionAlreadyPendingError extends InvalidOperationDomainError {
+  constructor() {
+    super('A transação já está pendente.');
   }
 }

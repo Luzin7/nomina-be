@@ -47,7 +47,7 @@ atualizar 4 mocks à mão.
 Criar os arquivos que a documentação já promete é a maior redução de atrito
 disponível hoje na base.
 
-### 4. Erros genéricos em `Transaction.create`
+### 4. Erros genéricos em `Transaction.create` ✅
 
 A entidade ainda devolve `new Error('The amount must be greater than zero')` e
 similares — inclusive com um `// Substituir por DomainError` no código. Sem
@@ -55,13 +55,22 @@ herdar de `DomainError`, o `ErrorPresenter` não sabe mapear e vira 500 opaco em
 vez da mensagem de validação. `CreditCardAccount` já foi migrado; `Transaction`
 ficou para trás. (O caso do `categoryId` foi migrado nesta branch.)
 
-### 5. `Transaction.create` ignora o `status` recebido
+**Resolvido na `fix/improvements-cheap-to-medium`:** todos os `new Error()` foram
+substituídos por subclasses de `DomainError` (`InvalidAmountError`,
+`TitleRequiredError`, `StatusRequiredError`, `DateRequiredError`,
+`TypeRequiredError`, `TransactionAlreadyCompletedError`,
+`TransactionAlreadyPendingError`).
+
+### 5. `Transaction.create` ignora o `status` recebido ✅
 
 O status é sempre derivado da data (`props.date > new Date()`), mesmo quando o
 chamador passa um explicitamente. Hoje funciona por coincidência — os specs
 inclusive comentam isso — mas é uma armadilha: o job passa
 `status: PENDING` e só não quebra porque as datas geradas são futuras. Ou o
 parâmetro deixa de existir na assinatura, ou ele passa a ser respeitado.
+
+**Resolvido na `fix/improvements-cheap-to-medium`:** `props.status` agora é
+respeitado quando fornecido; quando omitido, deriva da data como antes.
 
 ### 6. `MAX_GENERATIONS_PER_RECURRING = 365` não conversa com o domínio
 
@@ -75,19 +84,25 @@ Em `PayCreditCardInvoiceService`, "hoje" vem de `sourceAccount.timezone` e o
 ciclo da fatura de `creditCardAccount.timezone`. Se as contas tiverem timezones
 diferentes, a comparação `periodEnd < today` fica ambígua na virada do dia.
 
-### 8. `availableLimit` pode ficar negativo sem tratamento
+### 8. `availableLimit` pode ficar negativo sem tratamento ✅
 
 `GetCreditCardInvoiceService` calcula
 `creditLimit - totalAmount - pendingAmount` sem piso. Com transações pendentes
 somando mais que o limite, a API devolve um número negativo e o app exibe do
 jeito que veio.
 
-### 9. `AccountMapper.toDrizzle` depende do default do banco
+**Resolvido na `fix/improvements-cheap-to-medium`:** `Math.max(0, ...)` aplicado
+no cálculo; teste adicionado.
+
+### 9. `AccountMapper.toDrizzle` depende do default do banco ✅
 
 Para contas que não são cartão, o mapper devolve
 `closingDaysBeforeDue: undefined`, contando com o `DEFAULT 7` da coluna. Funciona,
 mas amarra o mapper ao DDL: se o default mudar ou sumir, o insert quebra longe
 daqui. Melhor ser explícito.
+
+**Resolvido na `fix/improvements-cheap-to-medium`:** trocado `undefined` por `7`
+explícito no mapper.
 
 ### 10. Suíte de testes leva ~3,5 minutos
 
@@ -99,10 +114,13 @@ ainda for esse o transform.
 
 ## 🟢 Follow-ups menores
 
-### 11. `README.md` referencia `docker-compose.yml`
+### 11. `README.md` referencia `docker-compose.yml` ✅
 
 O arquivo foi renomeado para `docker-compose.dev.yml` nesta branch; o README
 ainda manda subir o antigo.
+
+**Resolvido na `fix/improvements-cheap-to-medium`:** README atualizado para
+`docker compose -f docker-compose.dev.yml up -d`.
 
 ### 12. Secrets do repositório não configurados
 
@@ -119,12 +137,15 @@ Provavelmente ficaram para trás na migração do repositório antigo
 (`Umatech-team/nomina-be`). Só o dono do repositório pode configurá-los, em
 **Settings → Secrets and variables → Actions**.
 
-### 13. Lint com 24 erros pré-existentes
+### 13. Lint com 24 erros pré-existentes ✅
 
 Seis controllers de recorrência têm imports não usados (`UserRole`, `UseGuards`,
 `Roles`, `RolesGuard`) — resquício de quando a autorização era feita por
 decorator no controller. `npm run lint` falha por causa deles, o que significa
 que ninguém está rodando o lint. Vale limpar e ligar o lint no CI.
+
+**Resolvido na `fix/improvements-cheap-to-medium`:** imports não usados removidos
+dos 6 controllers; `npm run lint` passa limpo.
 
 ### 14. O ciclo de fatura é rotulado por mês de referência, não de vencimento
 

@@ -52,7 +52,7 @@ REDIS_ENABLED=false
 
 ```bash
 # 3. Infraestrutura (PostgreSQL + Redis)
-docker-compose up -d
+docker compose -f docker-compose.dev.yml up -d
 
 # 4. Migrations
 npm run db:migrate

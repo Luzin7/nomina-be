@@ -230,4 +230,26 @@ describe('GetCreditCardInvoiceService', () => {
       expect(result.value.totalAmount).toBe(0);
     }
   });
+
+  it('should not let availableLimit go negative when pending exceeds remaining limit', async () => {
+    const card = makeCreditCard();
+    Object.defineProperty(card, 'creditLimit', { value: 10000n });
+    accountRepository.findById.mockResolvedValue(card);
+    const charge = makeCompletedCharge(8000n);
+    const pending = makeCompletedCharge(1000n);
+    Object.defineProperty(pending, 'status', {
+      value: TransactionStatus.PENDING,
+    });
+    Object.defineProperty(pending, 'amount', { value: 6000n });
+    transactionRepository.findByAccountAndDateRange.mockResolvedValue([
+      charge,
+      pending,
+    ]);
+
+    const result = await service.execute(makeRequest());
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.availableLimit).toBe(0);
+    }
+  });
 });
