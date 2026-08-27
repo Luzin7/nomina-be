@@ -63,8 +63,10 @@ export class PayCreditCardInvoiceService implements Service<
     }
 
     const amountBigInt = BigInt(props.amount);
-    const tz = sourceAccount.timezone;
-    const today = this.dateProvider.startOfDay(this.dateProvider.now(), tz);
+    const today = this.dateProvider.startOfDay(
+      this.dateProvider.now(),
+      creditCardAccount.timezone,
+    );
 
     const paymentDate = this.resolvePaymentDate(
       props,

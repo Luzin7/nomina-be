@@ -1,4 +1,4 @@
-import { TransactionStatus } from '@constants/enums';
+import { RecurrenceFrequency, TransactionStatus } from '@constants/enums';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -11,8 +11,20 @@ import { CalculateNextGenerationDateService } from '../services/calculate-next-g
 const BATCH_SIZE = 50;
 const LOCK_TTL_SECONDS = 300;
 const CACHE_TTL_SECONDS = 86400; // 24 horas
-const MAX_GENERATIONS_PER_RECURRING = 365;
 const TIMEZONE = 'America/Sao_Paulo';
+
+function getMaxGenerations(frequency: RecurrenceFrequency): number {
+  switch (frequency) {
+    case RecurrenceFrequency.WEEKLY:
+      return 104;
+    case RecurrenceFrequency.MONTHLY:
+      return 24;
+    case RecurrenceFrequency.YEARLY:
+      return 10;
+    default:
+      return 52;
+  }
+}
 
 interface Response {
   generatedCount: number;
@@ -108,7 +120,7 @@ export class GenerateRecurringTransactionsJobService {
     let generationCount = 0;
 
     while (targetDate <= thresholdDate) {
-      if (generationCount >= MAX_GENERATIONS_PER_RECURRING) {
+      if (generationCount >= getMaxGenerations(recurring.frequency)) {
         this.logger.warn(
           `Job: limite de segurança atingido para recorrência ${recurring.id}.`,
         );

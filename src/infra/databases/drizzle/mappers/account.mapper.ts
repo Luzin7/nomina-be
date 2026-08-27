@@ -82,9 +82,7 @@ export class AccountMapper {
           ? null
           : Number(entity.creditLimit)
         : null,
-      closingDaysBeforeDue: isCreditCard
-        ? entity.closingDaysBeforeDue
-        : undefined,
+      closingDaysBeforeDue: isCreditCard ? entity.closingDaysBeforeDue : 7,
       dueDay: isCreditCard ? entity.dueDay : null,
     };
   }

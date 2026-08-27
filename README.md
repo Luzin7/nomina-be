@@ -52,7 +52,7 @@ REDIS_ENABLED=false
 
 ```bash
 # 3. Infraestrutura (PostgreSQL + Redis)
-docker-compose up -d
+docker compose -f docker-compose.dev.yml up -d
 
 # 4. Migrations
 npm run db:migrate
@@ -201,7 +201,18 @@ REDIS_HOST="..."
 REDIS_PORT=6379
 PROD_URL="https://seu-dominio.com"
 DEV_URL="http://localhost:3000"
+CRON_API_KEY="chave-para-job-diario"
 ```
+
+### Secrets do GitHub Actions
+
+Os workflows dependem de dois secrets que **precisam** ser configurados em
+**Settings → Secrets and variables → Actions**:
+
+| Secret | Workflow | Uso |
+|--------|----------|-----|
+| `DATABASE_URL` | `run-migrations.yml` | Migrations no deploy |
+| `CRON_API_KEY` | `daily-job.yml` | Job diário de recorrências |
 
 ---
 

@@ -2,7 +2,17 @@ import { TransactionStatus, TransactionType } from '@constants/enums';
 import { AggregateRoot } from '@shared/core/Entities/AggregateRoot';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { Optional } from '@shared/core/types/Optional';
-import { MissingCategoryError } from '../errors';
+import {
+  DateRequiredError,
+  DestinationAccountRequiredForTransferError,
+  InvalidAmountError,
+  MissingCategoryError,
+  SourceAndDestinationAccountMustBeDifferentError,
+  TitleRequiredError,
+  TransactionAlreadyCompletedError,
+  TransactionAlreadyPendingError,
+  TypeRequiredError,
+} from '../errors';
 
 export interface TransactionProps {
   workspaceId: string;
@@ -44,44 +54,39 @@ export class Transaction extends AggregateRoot<TransactionProps> {
     id?: string,
   ): Either<Error, Transaction> {
     if (props.amount <= 0n) {
-      return left(new Error('The amount must be greater than zero')); // Substituir por DomainError
+      return left(new InvalidAmountError());
     }
 
     if (!props.title || props.title.trim() === '') {
-      return left(new Error('The title is required'));
+      return left(new TitleRequiredError());
     }
 
     if (!props.categoryId) {
       return left(new MissingCategoryError());
     }
 
-    if (!props.status) return left(new Error('O status é obrigatório'));
-
     if (!props.date) {
-      return left(new Error('The date is required'));
+      return left(new DateRequiredError());
     }
 
     if (!props.type) {
-      return left(new Error('The type is required'));
+      return left(new TypeRequiredError());
     }
 
     if (props.type === 'TRANSFER') {
       if (!props.destinationAccountId) {
-        return left(
-          new Error('Conta destino é obrigatória para transferências'),
-        );
+        return left(new DestinationAccountRequiredForTransferError());
       }
       if (props.destinationAccountId === props.accountId) {
-        return left(
-          new Error('Conta destino deve ser diferente da conta origem'),
-        );
+        return left(new SourceAndDestinationAccountMustBeDifferentError());
       }
     }
 
     const status =
-      props.date > new Date()
+      props.status ??
+      (props.date > new Date()
         ? TransactionStatus.PENDING
-        : TransactionStatus.COMPLETED;
+        : TransactionStatus.COMPLETED);
 
     const transactionProps: TransactionProps = {
       ...props,
@@ -180,7 +185,7 @@ export class Transaction extends AggregateRoot<TransactionProps> {
     description: string | null,
   ): Either<Error, void> {
     if (!title || title.trim() === '') {
-      return left(new Error('The title is required'));
+      return left(new TitleRequiredError());
     }
     this.props.title = title;
     this.props.description = description;
@@ -193,7 +198,7 @@ export class Transaction extends AggregateRoot<TransactionProps> {
    */
   public correctAmount(newAmount: bigint): Either<Error, void> {
     if (newAmount <= 0n) {
-      return left(new Error('The amount must be greater than zero'));
+      return left(new InvalidAmountError());
     }
     this.props.amount = newAmount;
     this.touch();
@@ -213,7 +218,7 @@ export class Transaction extends AggregateRoot<TransactionProps> {
    */
   public reschedule(newDate: Date): Either<Error, void> {
     if (!newDate) {
-      return left(new Error('The date is required'));
+      return left(new DateRequiredError());
     }
     this.props.date = newDate;
 
@@ -233,7 +238,7 @@ export class Transaction extends AggregateRoot<TransactionProps> {
    */
   public complete(): Either<Error, void> {
     if (this.props.status === TransactionStatus.COMPLETED) {
-      return left(new Error('Transaction is already completed'));
+      return left(new TransactionAlreadyCompletedError());
     }
     this.props.status = TransactionStatus.COMPLETED;
     this.touch();
@@ -246,7 +251,7 @@ export class Transaction extends AggregateRoot<TransactionProps> {
 
   public markAsPending(): Either<Error, void> {
     if (this.props.status === TransactionStatus.PENDING) {
-      return left(new Error('A transação já está pendente.'));
+      return left(new TransactionAlreadyPendingError());
     }
     this.props.status = TransactionStatus.PENDING;
     this.touch();

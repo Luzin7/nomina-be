@@ -1,11 +1,8 @@
-import { UserRole } from '@constants/enums';
 import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
 import { RecurringTransactionPresenter } from '@modules/transaction/presenters/RecurringTransaction.presenter';
-import { Controller, Get, HttpCode, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, Query } from '@nestjs/common';
 import { ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CurrentLoggedUser } from '@providers/auth/decorators/CurrentLoggedUser.decorator';
-import { Roles } from '@providers/auth/decorators/Roles.decorator';
-import { RolesGuard } from '@providers/auth/guards/Roles.guard';
 import { type TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { statusCode } from '@shared/core/types/statusCode';
 import {

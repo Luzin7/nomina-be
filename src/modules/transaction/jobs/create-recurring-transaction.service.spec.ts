@@ -267,8 +267,8 @@ describe('GenerateRecurringTransactionsJobService', () => {
       ).toHaveBeenCalledTimes(1);
       const [transactions] =
         recurringRepository.createGeneratedTransactions.mock.calls[0];
-      expect(transactions).toHaveLength(365);
-      if (result.isRight()) expect(result.value.generatedCount).toBe(365);
+      expect(transactions).toHaveLength(24);
+      if (result.isRight()) expect(result.value.generatedCount).toBe(24);
     });
 
     it('should deactivate the recurring once generation passes its endDate', async () => {
