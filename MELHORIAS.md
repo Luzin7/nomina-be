@@ -32,20 +32,24 @@ produção, onde a `0012` nunca rodou, a conversão funciona normalmente.
 
 ## 🟡 Qualidade e arquitetura
 
-### 3. As `test-helpers/mock-factories.ts` prometidas não existem
+### 3. As `test-helpers/mock-factories.ts` prometidas não existem ✅
 
 `.github/copilot-instructions.md` e `.github/instructions/create-tests.instructions.md`
 descrevem um `test-helpers/mock-factories.ts` por módulo com
-`createMock<Name>Repository()` e builders de entidade. **Nenhum existe.**
+`createMock<Name>Repository()` e builders de entidade. **Nenhum existia.**
 
-A consequência é concreta: a factory de `Transaction` está copiada em ~10 specs,
+A consequência era concreta: a factory de `Transaction` estava copiada em ~10 specs,
 e o mock de `CategoryRepository` em 4. Foi exatamente por isso que tornar um
 campo obrigatório quebrou 5 suítes de uma vez e exigiu editar 8 arquivos de
 teste — e por que adicionar um método ao contrato do repositório obrigou a
 atualizar 4 mocks à mão.
 
-Criar os arquivos que a documentação já promete é a maior redução de atrito
-disponível hoje na base.
+**Resolvido na `fix/improvements-cheap-to-medium`:** criados os arquivos
+`src/modules/account/test-helpers/mock-factories.ts` e
+`src/modules/transaction/test-helpers/mock-factories.ts` com builders
+compartilhados de entidade (`makeCreditCard`, `makeCheckingAccount`,
+`makeTransaction`, `makeCompletedCharge`, `makeCompletedPayment`). As specs com
+maior duplicação foram refatoradas para importar dos factories.
 
 ### 4. Erros genéricos em `Transaction.create` ✅
 

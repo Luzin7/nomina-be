@@ -1,11 +1,14 @@
-import { AccountType, TransactionStatus } from '@constants/enums';
-import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
+import { TransactionStatus } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
   AccountNotFoundError,
   InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import {
+  makeCheckingAccount,
+  makeCreditCard,
+} from '@modules/account/test-helpers/mock-factories';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import {
   CannotPayInvoiceWithCreditCardError,
@@ -32,38 +35,6 @@ function makeRequest(
     role: 'USER',
     ...overrides,
   } as ServiceRequest;
-}
-
-function makeCreditCard(workspaceId = 'ws-1'): CreditCard {
-  const r = CreditCard.create(
-    {
-      workspaceId,
-      name: 'My Card',
-      timezone: 'UTC',
-      creditLimit: 500000n,
-      closingDaysBeforeDue: 5,
-      dueDay: 15,
-      balance: 100000n,
-    },
-    'acc-cc',
-  );
-  if (r.isLeft()) throw r.value;
-  return r.value;
-}
-
-function makeCheckingAccount(workspaceId = 'ws-1'): CheckingAccount {
-  const r = CheckingAccount.create(
-    {
-      workspaceId,
-      name: 'Checking',
-      timezone: 'UTC',
-      type: AccountType.CHECKING,
-      balance: 100000n,
-    },
-    'acc-src',
-  );
-  if (r.isLeft()) throw r.value;
-  return r.value;
 }
 
 describe('PayCreditCardInvoiceService', () => {
@@ -128,7 +99,9 @@ describe('PayCreditCardInvoiceService', () => {
   });
 
   it('should return left(InvalidAccountError) when destination is not a credit card', async () => {
-    accountRepository.findById.mockResolvedValue(makeCheckingAccount());
+    accountRepository.findById.mockResolvedValue(
+      makeCheckingAccount({ id: 'acc-src' }),
+    );
 
     const result = await service.execute(
       makeRequest({ creditCardAccountId: 'acc-cc' }),
@@ -138,7 +111,9 @@ describe('PayCreditCardInvoiceService', () => {
   });
 
   it('should return left(SourceAndDestinationAccountMustBeDifferentError) when source equals destination', async () => {
-    accountRepository.findById.mockResolvedValue(makeCreditCard());
+    accountRepository.findById.mockResolvedValue(
+      makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+    );
 
     const result = await service.execute(
       makeRequest({ sourceAccountId: 'acc-cc' }),
@@ -151,7 +126,9 @@ describe('PayCreditCardInvoiceService', () => {
 
   it('should return left(AccountNotFoundError) when source account not found', async () => {
     accountRepository.findById
-      .mockResolvedValueOnce(makeCreditCard())
+      .mockResolvedValueOnce(
+        makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+      )
       .mockResolvedValueOnce(null);
 
     const result = await service.execute(makeRequest());
@@ -174,7 +151,9 @@ describe('PayCreditCardInvoiceService', () => {
     if (cc2.isLeft()) throw cc2.value;
 
     accountRepository.findById
-      .mockResolvedValueOnce(makeCreditCard())
+      .mockResolvedValueOnce(
+        makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+      )
       .mockResolvedValueOnce(cc2.value);
 
     const result = await service.execute(makeRequest());
@@ -184,8 +163,10 @@ describe('PayCreditCardInvoiceService', () => {
 
   it('should create a TRANSFER transaction and persist on success', async () => {
     accountRepository.findById
-      .mockResolvedValueOnce(makeCreditCard())
-      .mockResolvedValueOnce(makeCheckingAccount());
+      .mockResolvedValueOnce(
+        makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+      )
+      .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
     transactionRepository.createWithBalanceUpdate.mockResolvedValue();
 
     const result = await service.execute(makeRequest());
@@ -204,8 +185,10 @@ describe('PayCreditCardInvoiceService', () => {
     dateProvider.now.mockReturnValue(today);
     dateProvider.startOfDay.mockReturnValue(today);
     accountRepository.findById
-      .mockResolvedValueOnce(makeCreditCard())
-      .mockResolvedValueOnce(makeCheckingAccount());
+      .mockResolvedValueOnce(
+        makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+      )
+      .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
     transactionRepository.createWithBalanceUpdate.mockResolvedValue();
 
     const result = await service.execute(makeRequest());
@@ -230,8 +213,10 @@ describe('PayCreditCardInvoiceService', () => {
       dueDate: new Date('2024-07-15'),
     });
     accountRepository.findById
-      .mockResolvedValueOnce(makeCreditCard())
-      .mockResolvedValueOnce(makeCheckingAccount());
+      .mockResolvedValueOnce(
+        makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+      )
+      .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
     transactionRepository.createWithBalanceUpdate.mockResolvedValue();
 
     const result = await service.execute(makeRequest({ month: 7, year: 2024 }));
@@ -252,8 +237,10 @@ describe('PayCreditCardInvoiceService', () => {
       dueDate: new Date('2024-07-15'),
     });
     accountRepository.findById
-      .mockResolvedValueOnce(makeCreditCard())
-      .mockResolvedValueOnce(makeCheckingAccount());
+      .mockResolvedValueOnce(
+        makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+      )
+      .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
     transactionRepository.createWithBalanceUpdate.mockResolvedValue();
 
     const result = await service.execute(makeRequest({ month: 7, year: 2024 }));
@@ -271,8 +258,10 @@ describe('PayCreditCardInvoiceService', () => {
     // consulta ao banco em todo pagamento.
     it('should use the credit card system category when none is provided', async () => {
       accountRepository.findById
-        .mockResolvedValueOnce(makeCreditCard())
-        .mockResolvedValueOnce(makeCheckingAccount());
+        .mockResolvedValueOnce(
+          makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+        )
+        .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
       transactionRepository.createWithBalanceUpdate.mockResolvedValue();
 
       const result = await service.execute(makeRequest());
@@ -287,8 +276,10 @@ describe('PayCreditCardInvoiceService', () => {
 
     it('should keep an explicit categoryId when the client provides one', async () => {
       accountRepository.findById
-        .mockResolvedValueOnce(makeCreditCard())
-        .mockResolvedValueOnce(makeCheckingAccount());
+        .mockResolvedValueOnce(
+          makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+        )
+        .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
       transactionRepository.createWithBalanceUpdate.mockResolvedValue();
 
       const result = await service.execute(

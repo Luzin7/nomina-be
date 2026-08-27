@@ -1,13 +1,19 @@
-import { AccountType, TransactionStatus } from '@constants/enums';
-import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
+import { TransactionStatus } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
   AccountNotFoundError,
   AccountTypeError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
-import { Transaction } from '@modules/transaction/entities/Transaction';
+import {
+  makeCheckingAccount,
+  makeCreditCard,
+} from '@modules/account/test-helpers/mock-factories';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import {
+  makeCompletedCharge,
+  makeCompletedPayment,
+} from '@modules/transaction/test-helpers/mock-factories';
 import {
   DateProvider,
   InvoiceCycle,
@@ -28,68 +34,6 @@ function makeRequest(
     workspaceId: 'ws-1',
     ...overrides,
   } as ServiceRequest;
-}
-
-function makeCreditCard(workspaceId = 'ws-1'): CreditCard {
-  const r = CreditCard.create(
-    {
-      workspaceId,
-      name: 'My Card',
-      timezone: 'America/Sao_Paulo',
-      creditLimit: 500000n,
-      closingDaysBeforeDue: 5,
-      dueDay: 15,
-    },
-    'acc-1',
-  );
-  if (r.isLeft()) throw r.value;
-  return r.value;
-}
-
-function makeCheckingAccount(): CheckingAccount {
-  const r = CheckingAccount.create(
-    {
-      workspaceId: 'ws-1',
-      name: 'Checking',
-      timezone: 'UTC',
-      type: AccountType.CHECKING,
-      balance: 100000n,
-    },
-    'acc-2',
-  );
-  if (r.isLeft()) throw r.value;
-  return r.value;
-}
-
-function makeCompletedCharge(amount: bigint): Transaction {
-  const r = Transaction.create({
-    workspaceId: 'ws-1',
-    accountId: 'acc-1',
-    categoryId: 'cat-1',
-    title: 'Compra no cartão',
-    amount,
-    date: new Date('2024-01-20'),
-    type: 'EXPENSE',
-    status: TransactionStatus.COMPLETED,
-  });
-  if (r.isLeft()) throw r.value;
-  return r.value;
-}
-
-function makeCompletedPayment(amount: bigint): Transaction {
-  const r = Transaction.create({
-    workspaceId: 'ws-1',
-    accountId: 'acc-2',
-    categoryId: 'cat-1',
-    destinationAccountId: 'acc-1',
-    title: 'Pagamento de Fatura',
-    amount,
-    date: new Date('2024-01-25'),
-    type: 'TRANSFER',
-    status: TransactionStatus.COMPLETED,
-  });
-  if (r.isLeft()) throw r.value;
-  return r.value;
 }
 
 describe('GetCreditCardInvoiceService', () => {
@@ -160,7 +104,9 @@ describe('GetCreditCardInvoiceService', () => {
   });
 
   it('should return left(UnauthorizedError) when account belongs to different workspace', async () => {
-    accountRepository.findById.mockResolvedValue(makeCreditCard('ws-other'));
+    accountRepository.findById.mockResolvedValue(
+      makeCreditCard({ workspaceId: 'ws-other' }),
+    );
 
     const result = await service.execute(makeRequest());
     expect(result.isLeft()).toBe(true);
