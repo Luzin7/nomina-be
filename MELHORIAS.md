@@ -120,6 +120,10 @@ explícito no mapper.
 por arquivo. Vale medir `--maxWorkers` e avaliar `swc` no lugar do `ts-jest`, se
 ainda for esse o transform.
 
+**Observação:** na branch `fix/improvements-cheap-to-medium` a suíte inteira roda
+em ~2 s localmente, possivelmente devido ao hardware ou à redução de imports.
+Não foi necessário trocar o transform.
+
 ---
 
 ## 🟢 Follow-ups menores
