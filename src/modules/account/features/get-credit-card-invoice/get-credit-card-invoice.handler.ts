@@ -24,6 +24,8 @@ type Response = {
   pendingAmount: number;
   availableLimit: number | null;
   dueDate: Date;
+  dueMonth: number;
+  dueYear: number;
   periodStart: Date;
   periodEnd: Date;
 };
@@ -114,6 +116,8 @@ export class GetCreditCardInvoiceService implements Service<
       pendingAmount,
       availableLimit,
       dueDate,
+      dueMonth: dueDate.getUTCMonth() + 1,
+      dueYear: dueDate.getUTCFullYear(),
       periodStart,
       periodEnd,
     });

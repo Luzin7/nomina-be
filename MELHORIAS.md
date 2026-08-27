@@ -72,17 +72,23 @@ parâmetro deixa de existir na assinatura, ou ele passa a ser respeitado.
 **Resolvido na `fix/improvements-cheap-to-medium`:** `props.status` agora é
 respeitado quando fornecido; quando omitido, deriva da data como antes.
 
-### 6. `MAX_GENERATIONS_PER_RECURRING = 365` não conversa com o domínio
+### 6. `MAX_GENERATIONS_PER_RECURRING = 365` não conversa com o domínio ✅
 
 Numa recorrência mensal, 365 gerações são 30 anos de transações num único batch.
 O cap deveria ser função da frequência, ou a janela deveria limitar por data em
 vez de contagem.
 
-### 7. `resolvePaymentDate` mistura dois timezones
+**Resolvido na `fix/improvements-cheap-to-medium`:** agora é função da
+frequência — semanal: 104, mensal: 24, anual: 10.
+
+### 7. `resolvePaymentDate` mistura dois timezones ✅
 
 Em `PayCreditCardInvoiceService`, "hoje" vem de `sourceAccount.timezone` e o
 ciclo da fatura de `creditCardAccount.timezone`. Se as contas tiverem timezones
 diferentes, a comparação `periodEnd < today` fica ambígua na virada do dia.
+
+**Resolvido na `fix/improvements-cheap-to-medium`:** unificado para usar
+`creditCardAccount.timezone` (timezone do cartão, dono do ciclo da fatura).
 
 ### 8. `availableLimit` pode ficar negativo sem tratamento ✅
 
@@ -122,7 +128,7 @@ ainda manda subir o antigo.
 **Resolvido na `fix/improvements-cheap-to-medium`:** README atualizado para
 `docker compose -f docker-compose.dev.yml up -d`.
 
-### 12. Secrets do repositório não configurados
+### 12. Secrets do repositório não configurados ✅
 
 `Luzin7/nomina-be` não tem **nenhum** secret nem environment configurado
 (`gh api repos/Luzin7/nomina-be/actions/secrets` → `total_count: 0`), mas os
@@ -137,6 +143,9 @@ Provavelmente ficaram para trás na migração do repositório antigo
 (`Umatech-team/nomina-be`). Só o dono do repositório pode configurá-los, em
 **Settings → Secrets and variables → Actions**.
 
+**Documentado no README.md na branch `fix/improvements-cheap-to-medium`** —
+seção adicionada com a tabela de secrets necessários.
+
 ### 13. Lint com 24 erros pré-existentes ✅
 
 Seis controllers de recorrência têm imports não usados (`UserRole`, `UseGuards`,
@@ -147,7 +156,7 @@ que ninguém está rodando o lint. Vale limpar e ligar o lint no CI.
 **Resolvido na `fix/improvements-cheap-to-medium`:** imports não usados removidos
 dos 6 controllers; `npm run lint` passa limpo.
 
-### 14. O ciclo de fatura é rotulado por mês de referência, não de vencimento
+### 14. O ciclo de fatura é rotulado por mês de referência, não de vencimento ✅
 
 `GetCreditCardInvoiceService` recebe `month`/`year` e trata como o mês de
 *referência* do ciclo. O app, depois desta rodada, passou a rotular a fatura pelo
@@ -155,3 +164,7 @@ mês de *vencimento*. Nos casos em que o vencimento cai no mês seguinte ao do
 período de compras, o usuário vê "Fatura de agosto" mas o pagamento é enviado
 com `month: 7`. Não é um bug hoje — os dois lados são consistentes entre si —
 mas é uma divergência de vocabulário esperando para virar um.
+
+**Resolvido na `fix/improvements-cheap-to-medium`:** `dueMonth` e `dueYear`
+foram adicionados ao response do handler. O frontend pode rotular a fatura pelo
+vencimento real sem mudar a semântica dos parâmetros de requisição.
