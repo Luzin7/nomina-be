@@ -7,6 +7,7 @@ import { UserRepository } from '@modules/user/repositories/contracts/user.reposi
 
 import { CashAccount } from '@modules/account/entities/CashAccounts';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
+import { InvestmentAccount } from '@modules/account/entities/InvestmentAccount';
 import { ConflictAccountError } from '@modules/account/errors';
 import { UserNotFoundError } from '@modules/user/errors';
 import { Injectable } from '@nestjs/common';
@@ -83,7 +84,14 @@ export class CreateAccountService implements Service<
         });
         break;
 
-      // TODO: adicionar os outros tipos de conta (INVESTMENT, etc) quando implementados
+      case AccountType.INVESTMENT:
+        accountOrError = InvestmentAccount.create({
+          workspaceId,
+          name: request.name,
+          balance: BigInt(request.balance ?? 0),
+          timezone,
+        });
+        break;
 
       default:
         return left(new Error(`Tipo de conta não suportado: ${request}`));

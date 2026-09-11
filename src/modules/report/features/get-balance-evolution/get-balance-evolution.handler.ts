@@ -11,12 +11,19 @@ import { alias } from 'drizzle-orm/pg-core';
 import { BalanceEvolutionRequest } from './get-balance-evolution.dto';
 
 type Request = BalanceEvolutionRequest & TokenPayloadBase;
-type Response = Array<{
+
+type DaySummary = {
   date: string;
   income: number;
   expense: number;
   balance: number;
-}>;
+};
+
+type Response = {
+  evolution: DaySummary[];
+  investments: DaySummary[];
+  totalInvested: number;
+};
 
 const CACHE_TTL = 5 * 60;
 
@@ -40,35 +47,76 @@ export class BalanceEvolutionService {
     startDate.setDate(endDate.getDate() - (period === '7d' ? 7 : 30));
 
     const destAccount = alias(schema.accounts, 'dest_account');
-
     const sumAmount = sql<number>`SUM(${schema.transactions.amount})`
       .mapWith(Number)
       .as('total_amount');
-
     const isCompleted = eq(schema.transactions.status, 'COMPLETED');
-
     const isNotCreditCard = ne(schema.accounts.type, AccountType.CREDIT_CARD);
+    const isNotInvestment = ne(schema.accounts.type, AccountType.INVESTMENT);
 
-    const isCreditCardInvoicePayment = and(
+    const isCreditCardPayment = and(
       eq(schema.transactions.type, 'TRANSFER'),
       eq(destAccount.type, AccountType.CREDIT_CARD),
     );
 
-    const reportFilter = or(
+    const isInvestmentBoundary = and(
+      eq(schema.transactions.type, 'TRANSFER'),
+      or(
+        eq(schema.accounts.type, AccountType.INVESTMENT),
+        eq(destAccount.type, AccountType.INVESTMENT),
+      ),
+    );
+
+    const generalFilter = or(
       and(
         sql`${schema.transactions.type} IN ('INCOME', 'EXPENSE')`,
         isNotCreditCard,
+        isNotInvestment,
       ),
-      isCreditCardInvoicePayment,
+      isCreditCardPayment,
+      isInvestmentBoundary,
     );
 
-    const [openingBalanceResult, periodTransactions] = await Promise.all([
-      this.drizzle.db
-        .select({
-          type: schema.transactions.type,
-          destType: destAccount.type,
-          amount: sumAmount,
-        })
+    const investmentBaseFilter = and(
+      sql`${schema.transactions.type} IN ('INCOME', 'EXPENSE')`,
+      eq(schema.accounts.type, AccountType.INVESTMENT),
+    );
+
+    const investmentTransferFilter = and(
+      eq(schema.transactions.type, 'TRANSFER'),
+      or(
+        eq(destAccount.type, AccountType.INVESTMENT),
+        eq(schema.accounts.type, AccountType.INVESTMENT),
+      ),
+    );
+
+    const investmentFilter = or(investmentBaseFilter, investmentTransferFilter);
+
+    const selectFields = {
+      type: schema.transactions.type,
+      sourceType: schema.accounts.type,
+      destType: destAccount.type,
+      amount: sumAmount,
+    } as const;
+
+    const groupByFields = [
+      schema.transactions.type,
+      schema.accounts.type,
+      destAccount.type,
+    ] as const;
+
+    const queryOpening = async (
+      filter: ReturnType<typeof and>,
+    ): Promise<
+      Array<{
+        type: string;
+        sourceType: string;
+        destType: string | null;
+        amount: number;
+      }>
+    > => {
+      return await this.drizzle.db
+        .select(selectFields)
         .from(schema.transactions)
         .innerJoin(
           schema.accounts,
@@ -83,17 +131,27 @@ export class BalanceEvolutionService {
             eq(schema.transactions.workspaceId, workspaceId),
             isCompleted,
             lt(schema.transactions.date, startDate),
-            reportFilter,
+            filter,
           ),
         )
-        .groupBy(schema.transactions.type, destAccount.type),
+        .groupBy(...groupByFields);
+    };
 
-      this.drizzle.db
+    const queryPeriod = async (
+      filter: ReturnType<typeof and>,
+    ): Promise<
+      Array<{
+        type: string;
+        sourceType: string;
+        destType: string | null;
+        amount: number;
+        date: Date;
+      }>
+    > => {
+      return await this.drizzle.db
         .select({
+          ...selectFields,
           date: schema.transactions.date,
-          type: schema.transactions.type,
-          destType: destAccount.type,
-          amount: sumAmount,
         })
         .from(schema.transactions)
         .innerJoin(
@@ -110,73 +168,153 @@ export class BalanceEvolutionService {
             isCompleted,
             gte(schema.transactions.date, startDate),
             lte(schema.transactions.date, endDate),
-            reportFilter,
+            filter,
           ),
         )
-        .groupBy(
-          schema.transactions.date,
-          schema.transactions.type,
-          destAccount.type,
-        ),
+        .groupBy(schema.transactions.date, ...groupByFields);
+    };
+
+    const queryTotalInvested = async (): Promise<number> => {
+      const result = await this.drizzle.db
+        .select({
+          total: sql<number>`COALESCE(SUM(${schema.accounts.balance}), 0)`
+            .mapWith(Number)
+            .as('total_invested'),
+        })
+        .from(schema.accounts)
+        .where(
+          and(
+            eq(schema.accounts.workspaceId, workspaceId),
+            eq(schema.accounts.type, AccountType.INVESTMENT),
+          ),
+        );
+
+      return result[0]?.total ?? 0;
+    };
+
+    const [
+      generalOpening,
+      generalPeriod,
+      investmentOpening,
+      investmentPeriod,
+      totalInvestedResult,
+    ] = await Promise.all([
+      queryOpening(generalFilter),
+      queryPeriod(generalFilter),
+      queryOpening(investmentFilter),
+      queryPeriod(investmentFilter),
+      queryTotalInvested(),
     ]);
 
-    const resolveType = (type: string, destType: string | null) =>
-      type === 'TRANSFER' && destType === AccountType.CREDIT_CARD
-        ? 'EXPENSE'
-        : type;
+    const resolveGeneralType = (
+      type: string,
+      sourceType: string,
+      destType: string | null,
+    ): string => {
+      if (type === 'TRANSFER' && destType === AccountType.CREDIT_CARD)
+        return 'EXPENSE';
+      if (type === 'TRANSFER' && destType === AccountType.INVESTMENT)
+        return 'EXPENSE';
+      if (type === 'TRANSFER' && sourceType === AccountType.INVESTMENT)
+        return 'INCOME';
+      return type;
+    };
 
-    let accumulatedBalance = 0;
+    const resolveInvestmentType = (
+      type: string,
+      sourceType: string,
+      destType: string | null,
+    ): string => {
+      if (type === 'TRANSFER' && destType === AccountType.INVESTMENT)
+        return 'INCOME';
+      if (type === 'TRANSFER' && sourceType === AccountType.INVESTMENT)
+        return 'EXPENSE';
+      return type;
+    };
 
-    for (const res of openingBalanceResult) {
-      const effectiveType = resolveType(res.type, res.destType);
-      if (effectiveType === 'INCOME') accumulatedBalance += res.amount;
-      else if (effectiveType === 'EXPENSE') accumulatedBalance -= res.amount;
-    }
+    const buildDailySummary = (
+      opening: Array<{
+        type: string;
+        sourceType: string;
+        destType: string | null;
+        amount: number;
+      }>,
+      period: Array<{
+        type: string;
+        sourceType: string;
+        destType: string | null;
+        amount: number;
+        date: Date;
+      }>,
+      resolve: (
+        type: string,
+        sourceType: string,
+        destType: string | null,
+      ) => string,
+    ): DaySummary[] => {
+      let accumulatedBalance = 0;
 
-    const dailySummaryMap = new Map<
-      string,
-      { income: number; expense: number }
-    >();
+      for (const row of opening) {
+        const effectiveType = resolve(row.type, row.sourceType, row.destType);
+        if (effectiveType === 'INCOME') accumulatedBalance += row.amount;
+        if (effectiveType === 'EXPENSE') accumulatedBalance -= row.amount;
+      }
 
-    for (
-      let d = new Date(startDate);
-      d.getTime() <= endDate.getTime();
-      d.setDate(d.getDate() + 1)
-    ) {
-      const key = d.toISOString().split('T')[0];
-      dailySummaryMap.set(key, { income: 0, expense: 0 });
-    }
+      const dailyMap = new Map<string, { income: number; expense: number }>();
 
-    for (const transaction of periodTransactions) {
-      const dateKey = transaction.date.toISOString().split('T')[0];
+      for (
+        let d = new Date(startDate);
+        d.getTime() <= endDate.getTime();
+        d.setDate(d.getDate() + 1)
+      ) {
+        const key = d.toISOString().split('T')[0];
+        dailyMap.set(key, { income: 0, expense: 0 });
+      }
 
-      if (!dailySummaryMap.has(dateKey)) continue;
+      for (const row of period) {
+        const dateKey = row.date.toISOString().split('T')[0];
+        const day = dailyMap.get(dateKey);
+        if (!day) continue;
 
-      const effectiveType = resolveType(transaction.type, transaction.destType);
-      const summary = dailySummaryMap.get(dateKey)!;
-      if (effectiveType === 'INCOME') summary.income += transaction.amount;
-      if (effectiveType === 'EXPENSE') summary.expense += transaction.amount;
-    }
+        const effectiveType = resolve(row.type, row.sourceType, row.destType);
+        if (effectiveType === 'INCOME') day.income += row.amount;
+        if (effectiveType === 'EXPENSE') day.expense += row.amount;
+      }
 
-    const summaryResult = [];
+      const result: DaySummary[] = [];
 
-    for (const [dateKey, dayData] of dailySummaryMap.entries()) {
-      accumulatedBalance += dayData.income - dayData.expense;
+      for (const [dateKey, dayData] of dailyMap.entries()) {
+        accumulatedBalance += dayData.income - dayData.expense;
 
-      summaryResult.push({
-        date: dateKey,
-        income: MoneyUtils.centsToDecimal(dayData.income),
-        expense: MoneyUtils.centsToDecimal(dayData.expense),
-        balance: MoneyUtils.centsToDecimal(accumulatedBalance),
-      });
-    }
+        result.push({
+          date: dateKey,
+          income: MoneyUtils.centsToDecimal(dayData.income),
+          expense: MoneyUtils.centsToDecimal(dayData.expense),
+          balance: MoneyUtils.centsToDecimal(accumulatedBalance),
+        });
+      }
 
-    await this.redisService.set(
-      cacheKey,
-      JSON.stringify(summaryResult),
-      CACHE_TTL,
+      return result;
+    };
+
+    const evolution = buildDailySummary(
+      generalOpening,
+      generalPeriod,
+      resolveGeneralType,
     );
 
-    return right(summaryResult);
+    const investments = buildDailySummary(
+      investmentOpening,
+      investmentPeriod,
+      resolveInvestmentType,
+    );
+
+    const totalInvested = MoneyUtils.centsToDecimal(totalInvestedResult);
+
+    const response: Response = { evolution, investments, totalInvested };
+
+    await this.redisService.set(cacheKey, JSON.stringify(response), CACHE_TTL);
+
+    return right(response);
   }
 }
