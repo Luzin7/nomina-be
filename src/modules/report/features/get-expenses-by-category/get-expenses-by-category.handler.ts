@@ -1,3 +1,4 @@
+import { AccountType } from '@constants/enums';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
@@ -5,7 +6,8 @@ import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { MoneyUtils } from '@utils/MoneyUtils';
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { GetExpensesByCategoryRequest } from './get-expenses-by-category.dto';
 
 type Request = GetExpensesByCategoryRequest &
@@ -44,12 +46,22 @@ export class GetExpensesByCategoryService {
       workspaceTimezone,
     );
 
+    const destAccount = alias(schema.accounts, 'dest_account');
+
+    const reportFilter = or(
+      eq(schema.transactions.type, 'EXPENSE'),
+      and(
+        eq(schema.transactions.type, 'TRANSFER'),
+        eq(destAccount.type, AccountType.CREDIT_CARD),
+      ),
+    );
+
     const whereConditions = and(
       eq(schema.transactions.workspaceId, workspaceId),
       gte(schema.transactions.date, startDate),
       eq(schema.transactions.status, 'COMPLETED'),
-      eq(schema.transactions.type, 'EXPENSE'),
       lte(schema.transactions.date, endDate),
+      reportFilter,
     );
 
     const totalAmountSql =
@@ -61,6 +73,10 @@ export class GetExpensesByCategoryService {
       this.drizzle.db
         .select({ grandTotal: totalAmountSql })
         .from(schema.transactions)
+        .leftJoin(
+          destAccount,
+          eq(schema.transactions.destinationAccountId, destAccount.id),
+        )
         .where(whereConditions),
 
       this.drizzle.db
@@ -70,6 +86,10 @@ export class GetExpensesByCategoryService {
           totalAmount: totalAmountSql,
         })
         .from(schema.transactions)
+        .leftJoin(
+          destAccount,
+          eq(schema.transactions.destinationAccountId, destAccount.id),
+        )
         .leftJoin(
           schema.categories,
           eq(schema.transactions.categoryId, schema.categories.id),

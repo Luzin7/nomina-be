@@ -41,6 +41,10 @@ export const createAccountSchema = z.discriminatedUnion('type', [
     type: z.literal(AccountType.CASH),
     balance: z.coerce.number().optional().default(0),
   }),
+  baseAccountSchema.extend({
+    type: z.literal(AccountType.INVESTMENT),
+    balance: z.coerce.number().optional().default(0),
+  }),
 ]);
 
 export type CreateAccountRequest = z.infer<typeof createAccountSchema>;

@@ -3,6 +3,7 @@ import * as schema from '@infra/databases/drizzle/schema';
 import { CashAccount } from '@modules/account/entities/CashAccounts';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
+import { InvestmentAccount } from '@modules/account/entities/InvestmentAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 type AccountDrizzle = typeof schema.accounts.$inferSelect;
 type AccountDrizzleInsert = typeof schema.accounts.$inferInsert;
@@ -46,6 +47,15 @@ export class AccountMapper {
 
       case AccountType.CASH:
         return CashAccount.reconstitute(
+          {
+            ...baseProps,
+            timezone: raw.timezone,
+          },
+          raw.id,
+        );
+
+      case AccountType.INVESTMENT:
+        return InvestmentAccount.reconstitute(
           {
             ...baseProps,
             timezone: raw.timezone,

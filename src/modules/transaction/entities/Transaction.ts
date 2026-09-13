@@ -29,6 +29,8 @@ export interface TransactionProps {
   installmentNumber: number | null;
   installmentCount: number | null;
   recurringId: string | null;
+  invoicePeriodMonth: number | null;
+  invoicePeriodYear: number | null;
   createdAt: Date;
   updatedAt: Date | null;
 }
@@ -50,6 +52,8 @@ export class Transaction extends AggregateRoot<TransactionProps> {
       | 'installmentGroupId'
       | 'installmentNumber'
       | 'installmentCount'
+      | 'invoicePeriodMonth'
+      | 'invoicePeriodYear'
     >,
     id?: string,
   ): Either<Error, Transaction> {
@@ -100,6 +104,8 @@ export class Transaction extends AggregateRoot<TransactionProps> {
       installmentGroupId: props.installmentGroupId ?? null,
       installmentNumber: props.installmentNumber ?? null,
       installmentCount: props.installmentCount ?? null,
+      invoicePeriodMonth: props.invoicePeriodMonth ?? null,
+      invoicePeriodYear: props.invoicePeriodYear ?? null,
     };
 
     return right(new Transaction(transactionProps, id));
@@ -175,6 +181,14 @@ export class Transaction extends AggregateRoot<TransactionProps> {
 
   get installmentCount(): number | null {
     return this.props.installmentCount;
+  }
+
+  get invoicePeriodMonth(): number | null {
+    return this.props.invoicePeriodMonth;
+  }
+
+  get invoicePeriodYear(): number | null {
+    return this.props.invoicePeriodYear;
   }
 
   /**

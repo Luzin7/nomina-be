@@ -68,27 +68,20 @@ export class PayCreditCardInvoiceService implements Service<
       creditCardAccount.timezone,
     );
 
-    const paymentDate = this.resolvePaymentDate(
-      props,
-      creditCardAccount,
-      today,
-    );
-
     const transactionOrError = Transaction.create({
       workspaceId: props.workspaceId,
       accountId: props.sourceAccountId,
       destinationAccountId: props.creditCardAccountId,
-      // Pagamento de fatura é movimentação interna: o usuário não escolhe
-      // categoria. O ID da categoria de sistema é fixo (garantido pela
-      // migration 0013), então não custa uma consulta ao banco.
       categoryId: props.categoryId ?? SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
       title: 'Pagamento de Fatura',
       description:
         props.description ?? `Pagamento da fatura: ${creditCardAccount.name}`,
       amount: amountBigInt,
-      date: paymentDate,
+      date: today,
       type: 'TRANSFER',
       status: TransactionStatus.COMPLETED,
+      invoicePeriodMonth: props.month ?? null,
+      invoicePeriodYear: props.year ?? null,
     });
 
     if (transactionOrError.isLeft()) return left(transactionOrError.value);
@@ -107,32 +100,5 @@ export class PayCreditCardInvoiceService implements Service<
     );
 
     return right(transaction);
-  }
-
-  /**
-   * A fatura de um cartão é calculada por período (ver GetCreditCardInvoiceService),
-   * somando cobranças e pagamentos cuja `date` cai dentro do ciclo. Se o pagamento
-   * for datado com "hoje" mesmo quando o usuário está quitando uma fatura de um
-   * ciclo já fechado (ex.: pagar em agosto a fatura de julho), a transação de
-   * pagamento cai no ciclo errado e a fatura paga nunca reflete o pagamento.
-   * Quando o cliente informa `month`/`year`, ancoramos o pagamento no fim daquele
-   * ciclo para que ele seja contabilizado na fatura correta.
-   */
-  private resolvePaymentDate(
-    props: Request,
-    creditCardAccount: CreditCard,
-    today: Date,
-  ): Date {
-    if (!props.month || !props.year) return today;
-
-    const referenceDate = new Date(Date.UTC(props.year, props.month - 1, 1));
-    const { periodEnd } = this.dateProvider.calculateInvoiceCycle({
-      referenceDate,
-      closingDaysBeforeDue: creditCardAccount.closingDaysBeforeDue,
-      dueDay: creditCardAccount.dueDay,
-      timezone: creditCardAccount.timezone,
-    });
-
-    return periodEnd < today ? periodEnd : today;
   }
 }

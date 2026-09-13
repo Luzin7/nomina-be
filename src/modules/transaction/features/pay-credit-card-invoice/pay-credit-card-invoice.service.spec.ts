@@ -195,47 +195,15 @@ describe('PayCreditCardInvoiceService', () => {
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.date).toEqual(today);
+      expect(result.value.invoicePeriodMonth).toBeNull();
+      expect(result.value.invoicePeriodYear).toBeNull();
     }
-    expect(dateProvider.calculateInvoiceCycle).not.toHaveBeenCalled();
   });
 
-  it('should anchor the payment date to the end of a closed invoice cycle when month/year target a past period', async () => {
-    // Regressão do bug: pagar em agosto a fatura de julho não podia usar
-    // "hoje" como data, senão o pagamento cairia no ciclo de agosto e a
-    // fatura de julho jamais refletiria o pagamento.
+  it('should set invoicePeriod when month/year are provided and use today as the transaction date', async () => {
     const today = new Date('2024-08-05');
-    const closedPeriodEnd = new Date('2024-07-10');
     dateProvider.now.mockReturnValue(today);
     dateProvider.startOfDay.mockReturnValue(today);
-    dateProvider.calculateInvoiceCycle.mockReturnValue({
-      periodStart: new Date('2024-06-11'),
-      periodEnd: closedPeriodEnd,
-      dueDate: new Date('2024-07-15'),
-    });
-    accountRepository.findById
-      .mockResolvedValueOnce(
-        makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
-      )
-      .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
-    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
-
-    const result = await service.execute(makeRequest({ month: 7, year: 2024 }));
-    expect(result.isRight()).toBe(true);
-    if (result.isRight()) {
-      expect(result.value.date).toEqual(closedPeriodEnd);
-    }
-  });
-
-  it('should keep today as the payment date when month/year target the still-open current cycle', async () => {
-    const today = new Date('2024-07-05');
-    const openPeriodEnd = new Date('2024-07-10');
-    dateProvider.now.mockReturnValue(today);
-    dateProvider.startOfDay.mockReturnValue(today);
-    dateProvider.calculateInvoiceCycle.mockReturnValue({
-      periodStart: new Date('2024-06-11'),
-      periodEnd: openPeriodEnd,
-      dueDate: new Date('2024-07-15'),
-    });
     accountRepository.findById
       .mockResolvedValueOnce(
         makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
@@ -247,6 +215,8 @@ describe('PayCreditCardInvoiceService', () => {
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.date).toEqual(today);
+      expect(result.value.invoicePeriodMonth).toBe(7);
+      expect(result.value.invoicePeriodYear).toBe(2024);
     }
   });
 

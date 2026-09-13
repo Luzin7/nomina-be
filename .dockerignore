@@ -5,3 +5,7 @@ dist
 Dockerfile
 docker-compose.yml
 .env
+coverage
+.docker
+CHANGELOG.md
+*.md

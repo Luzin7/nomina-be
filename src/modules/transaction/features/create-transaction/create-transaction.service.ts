@@ -1,4 +1,8 @@
-import { TransactionStatus, TransactionType } from '@constants/enums';
+import {
+  AccountType,
+  TransactionStatus,
+  TransactionType,
+} from '@constants/enums';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -38,7 +42,10 @@ export class CreateTransactionService implements Service<
     if (accountsResult.isLeft()) return left(accountsResult.value);
     const { account, destinationAccount } = accountsResult.value;
 
-    const categoryResult = await this.resolveCategoryId(request);
+    const categoryResult = await this.resolveCategoryId(
+      request,
+      destinationAccount,
+    );
     if (categoryResult.isLeft()) return left(categoryResult.value);
     const categoryId = categoryResult.value;
 
@@ -123,9 +130,18 @@ export class CreateTransactionService implements Service<
    */
   private async resolveCategoryId(
     request: Request,
+    destinationAccount: AnyAccount | null,
   ): Promise<Either<Error, string>> {
     if (!request.categoryId) {
-      return right(SYSTEM_CATEGORY.TRANSFER.id);
+      const isCreditCardPayment =
+        request.type === TransactionType.TRANSFER &&
+        destinationAccount?.type === AccountType.CREDIT_CARD;
+
+      return right(
+        isCreditCardPayment
+          ? SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id
+          : SYSTEM_CATEGORY.TRANSFER.id,
+      );
     }
 
     const category = await this.categoryRepository.findById(request.categoryId);
