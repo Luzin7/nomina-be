@@ -1,4 +1,5 @@
 import { UserRole } from '@constants/enums';
+import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { CreateWorkspaceService } from './create-workspace.service';
 
@@ -15,6 +16,7 @@ function makeRequest(overrides = {}) {
 describe('CreateWorkspaceService', () => {
   let service: CreateWorkspaceService;
   let workspaceRepository: jest.Mocked<WorkspaceRepository>;
+  let categoryRepository: jest.Mocked<CategoryRepository>;
 
   beforeEach(() => {
     workspaceRepository = {
@@ -27,13 +29,32 @@ describe('CreateWorkspaceService', () => {
       countOwnedByUserId: jest.fn(),
     } as jest.Mocked<WorkspaceRepository>;
 
-    service = new CreateWorkspaceService(workspaceRepository);
+    categoryRepository = {
+      create: jest.fn(),
+      findManyByWorkspaceId: jest.fn(),
+      findById: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+      countByWorkspaceId: jest.fn(),
+      findUniqueByAttributes: jest.fn(),
+      countChildren: jest.fn(),
+      countTransactions: jest.fn(),
+      reassignChildren: jest.fn(),
+      findManyByIds: jest.fn(),
+      findSystemCategoryByName: jest.fn(),
+    } as jest.Mocked<CategoryRepository>;
+
+    service = new CreateWorkspaceService(
+      workspaceRepository,
+      categoryRepository,
+    );
   });
 
   afterEach(() => jest.clearAllMocks());
 
   it('should create workspace and workspaceUser successfully', async () => {
     workspaceRepository.createWithOwnerAndAccount.mockResolvedValue();
+    categoryRepository.create.mockResolvedValue({ id: 'cat-1' } as any);
 
     const result = await service.execute(makeRequest());
     expect(result.isRight()).toBe(true);
@@ -54,5 +75,45 @@ describe('CreateWorkspaceService', () => {
     expect(
       workspaceRepository.createWithOwnerAndAccount,
     ).not.toHaveBeenCalled();
+  });
+
+  it('should seed default categories after workspace creation', async () => {
+    workspaceRepository.createWithOwnerAndAccount.mockResolvedValue();
+    categoryRepository.create.mockResolvedValue({ id: 'cat-1' } as any);
+
+    await service.execute(makeRequest());
+
+    const createdCalls = categoryRepository.create.mock.calls;
+    expect(createdCalls.length).toBeGreaterThan(1);
+
+    const firstCall = createdCalls[0][0];
+    expect(firstCall.isSystemCategory).toBe(false);
+    expect(firstCall.workspaceId).toBeDefined();
+    expect(firstCall.parentId).toBeNull();
+  });
+
+  it('should map parentId correctly for child categories', async () => {
+    let callCount = 0;
+    const idMap = new Map<string, string>();
+
+    workspaceRepository.createWithOwnerAndAccount.mockResolvedValue();
+
+    categoryRepository.create.mockImplementation(async (category) => {
+      const id = `ws-cat-${++callCount}`;
+      idMap.set(category.name, id);
+      return { id } as any;
+    });
+
+    await service.execute(makeRequest());
+
+    const childCalls = categoryRepository.create.mock.calls.filter(
+      ([cat]: any[]) => cat.parentId !== null,
+    );
+
+    for (const [child] of childCalls) {
+      expect(child.parentId).toBeDefined();
+      expect(typeof child.parentId).toBe('string');
+      expect(child.parentId).not.toBeNull();
+    }
   });
 });

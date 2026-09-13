@@ -30,6 +30,13 @@ export class ListCategoriesController {
     required: false,
     enum: ['INCOME', 'EXPENSE', 'TRANSFER'],
   })
+  @ApiQuery({
+    name: 'parentId',
+    required: false,
+    type: String,
+    description:
+      'Filtrar por categoria pai. "null" retorna raízes. Omite para listagem hierárquica completa.',
+  })
   async handle(
     @CurrentLoggedUser() { workspaceId }: TokenPayloadSchema,
     @Query(ListCategoriesPipe) query: ListCategoriesRequest,
@@ -41,6 +48,22 @@ export class ListCategoriesController {
 
     if (data.isLeft()) {
       return ErrorPresenter.toHTTP(data.value);
+    }
+
+    if (data.value.hierarchy) {
+      const hierarchy = data.value.hierarchy;
+
+      return {
+        data: {
+          categories: data.value.categories.map((parent) =>
+            CategoryPresenter.toHTTPHierarchy(
+              parent,
+              hierarchy[parent.id] ?? [],
+            ),
+          ),
+          total: data.value.total,
+        },
+      };
     }
 
     return {

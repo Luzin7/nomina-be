@@ -3,7 +3,7 @@ import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { Injectable } from '@nestjs/common';
-import { and, count, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { CategoryMapper } from '../mappers/category.mapper';
 import * as schema from '../schema';
 
@@ -61,7 +61,6 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
           eq(schema.categories.workspaceId, workspaceId),
           eq(schema.categories.name, name),
           eq(schema.categories.type, type),
-          // Proteção estrita do SQL contra comparações falhas de NULL
           parentId
             ? eq(schema.categories.parentId, parentId)
             : isNull(schema.categories.parentId),
@@ -78,7 +77,10 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
     filters?: { type?: TransactionType; parentId?: string | null },
     page?: number,
     limit?: number,
-  ): Promise<{ categories: Category[]; total: number }> {
+  ): Promise<{ categories: Category[]; total: number; usageCounts: Record<string, number> }> {
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
     const parentIdCondition =
       filters?.parentId === undefined
         ? undefined
@@ -96,15 +98,42 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
     );
 
     const query = this.drizzle.db
-      .select()
+      .select({
+        id: schema.categories.id,
+        workspaceId: schema.categories.workspaceId,
+        name: schema.categories.name,
+        type: schema.categories.type,
+        isSystemCategory: schema.categories.isSystemCategory,
+        parentId: schema.categories.parentId,
+        usageCount: sql<number>`count(${schema.transactions.id})`.mapWith(Number),
+      })
       .from(schema.categories)
-      .where(conditions);
+      .leftJoin(
+        schema.transactions,
+        and(
+          eq(schema.transactions.categoryId, schema.categories.id),
+          gte(schema.transactions.date, sixMonthsAgo),
+        ),
+      )
+      .where(conditions)
+      .groupBy(
+        schema.categories.id,
+        schema.categories.workspaceId,
+        schema.categories.name,
+        schema.categories.type,
+        schema.categories.isSystemCategory,
+        schema.categories.parentId,
+      )
+      .orderBy(
+        desc(sql`count(${schema.transactions.id})`),
+        asc(schema.categories.name),
+      );
 
     if (page !== undefined && limit !== undefined) {
       query.limit(limit).offset((page - 1) * limit);
     }
 
-    const [categories, [{ totalCount }]] = await Promise.all([
+    const [rows, [{ totalCount }]] = await Promise.all([
       query,
       this.drizzle.db
         .select({ totalCount: count() })
@@ -112,9 +141,17 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
         .where(conditions),
     ]);
 
+    const usageCounts: Record<string, number> = {};
+    for (const row of rows) {
+      usageCounts[row.id] = row.usageCount;
+    }
+
     return {
-      categories: categories.map(CategoryMapper.toDomain),
+      categories: rows.map((row) =>
+        CategoryMapper.toDomain(row as unknown as typeof schema.categories.$inferSelect),
+      ),
       total: totalCount,
+      usageCounts,
     };
   }
 
@@ -164,7 +201,7 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
   }
 
   async findManyByIds(categoryIds: string[]): Promise<Category[]> {
-    if (!categoryIds.length) return []; // Retorno rápido para não quebrar a query 'inArray' com array vazio
+    if (!categoryIds.length) return [];
 
     const categories = await this.drizzle.db
       .select()
