@@ -13,6 +13,7 @@ interface CreditCardInvoiceData {
   dueDate: Date;
   periodStart: Date;
   periodEnd: Date;
+  invoiceStatus: 'current' | 'closed' | 'overdue';
 }
 
 export class CreditCardInvoicePresenter {
@@ -29,6 +30,7 @@ export class CreditCardInvoicePresenter {
       dueDate: data.dueDate.toISOString(),
       periodStart: data.periodStart.toISOString(),
       periodEnd: data.periodEnd.toISOString(),
+      invoiceStatus: data.invoiceStatus,
     };
   }
 }
