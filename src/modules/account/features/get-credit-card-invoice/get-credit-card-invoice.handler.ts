@@ -73,6 +73,9 @@ export class GetCreditCardInvoiceService implements Service<
         props.workspaceId,
         periodStart,
         periodEnd,
+        props.month && props.year
+          ? { month: props.month, year: props.year }
+          : undefined,
       );
 
     const chargesTotal = transactions

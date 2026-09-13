@@ -71,5 +71,6 @@ export abstract class TransactionRepository {
     workspaceId: string,
     startDate: Date,
     endDate: Date,
+    invoicePeriod?: { month: number; year: number },
   ): Promise<Transaction[]>;
 }
