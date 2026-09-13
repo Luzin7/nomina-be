@@ -314,7 +314,21 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     workspaceId: string,
     startDate: Date,
     endDate: Date,
+    invoicePeriod?: { month: number; year: number },
   ): Promise<Transaction[]> {
+    const dateFilter = and(
+      gte(schema.transactions.date, startDate),
+      lte(schema.transactions.date, endDate),
+    );
+
+    const periodFilter = invoicePeriod
+      ? and(
+          eq(schema.transactions.invoicePeriodMonth, invoicePeriod.month),
+          eq(schema.transactions.invoicePeriodYear, invoicePeriod.year),
+          eq(schema.transactions.destinationAccountId, accountId),
+        )
+      : undefined;
+
     const rows = await this.drizzle.db
       .select()
       .from(schema.transactions)
@@ -325,8 +339,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
             eq(schema.transactions.destinationAccountId, accountId),
           ),
           eq(schema.transactions.workspaceId, workspaceId),
-          gte(schema.transactions.date, startDate),
-          lte(schema.transactions.date, endDate),
+          or(dateFilter, periodFilter),
         ),
       )
       .orderBy(desc(schema.transactions.date));

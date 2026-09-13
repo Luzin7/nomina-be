@@ -99,6 +99,13 @@
       "when": 1785892689206,
       "tag": "0013_wild_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789260774138,
+      "tag": "0014_foamy_blink",
+      "breakpoints": true
     }
   ]
 }

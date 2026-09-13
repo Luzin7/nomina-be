@@ -16,6 +16,8 @@ export class TransactionPresenter {
       type: transaction.type,
       status: transaction.status,
       recurringId: transaction.recurringId,
+      invoicePeriodMonth: transaction.invoicePeriodMonth,
+      invoicePeriodYear: transaction.invoicePeriodYear,
       createdAt: transaction.createdAt,
       updatedAt: transaction.updatedAt,
     };

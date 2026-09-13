@@ -23,6 +23,8 @@ export class TransactionMapper {
         installmentGroupId: raw.installmentGroupId ?? null,
         installmentNumber: raw.installmentNumber ?? null,
         installmentCount: raw.installmentCount ?? null,
+        invoicePeriodMonth: raw.invoicePeriodMonth ?? null,
+        invoicePeriodYear: raw.invoicePeriodYear ?? null,
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt ?? null,
       },
@@ -47,6 +49,8 @@ export class TransactionMapper {
       installmentGroupId: entity.installmentGroupId,
       installmentNumber: entity.installmentNumber,
       installmentCount: entity.installmentCount,
+      invoicePeriodMonth: entity.invoicePeriodMonth,
+      invoicePeriodYear: entity.invoicePeriodYear,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt ?? null,
     };

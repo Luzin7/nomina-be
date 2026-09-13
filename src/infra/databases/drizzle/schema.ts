@@ -261,6 +261,9 @@ export const transactions = pgTable(
       { onDelete: 'set null' },
     ),
 
+    invoicePeriodMonth: integer('invoice_period_month'),
+    invoicePeriodYear: integer('invoice_period_year'),
+
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .defaultNow()
       .notNull(),
