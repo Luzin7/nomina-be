@@ -17,6 +17,8 @@ import { GetCreditCardInvoiceRequest } from './get-credit-card-invoice.dto';
 
 type Request = GetCreditCardInvoiceRequest &
   TokenPayloadBase & { accountId: string };
+type InvoiceStatus = 'current' | 'closed' | 'overdue';
+
 type Response = {
   account: CreditCard;
   transactions: Transaction[];
@@ -28,6 +30,7 @@ type Response = {
   dueYear: number;
   periodStart: Date;
   periodEnd: Date;
+  invoiceStatus: InvoiceStatus;
 };
 
 @Injectable()
@@ -66,6 +69,17 @@ export class GetCreditCardInvoiceService implements Service<
         dueDay: account.dueDay,
         timezone: institutionTimezone,
       });
+
+    const now = this.dateProvider.now();
+
+    let invoiceStatus: InvoiceStatus;
+    if (periodEnd >= now) {
+      invoiceStatus = 'current';
+    } else if (dueDate >= now) {
+      invoiceStatus = 'closed';
+    } else {
+      invoiceStatus = 'overdue';
+    }
 
     const transactions =
       await this.transactionRepository.findByAccountAndDateRange(
@@ -123,6 +137,7 @@ export class GetCreditCardInvoiceService implements Service<
       dueYear: dueDate.getUTCFullYear(),
       periodStart,
       periodEnd,
+      invoiceStatus,
     });
   }
 }

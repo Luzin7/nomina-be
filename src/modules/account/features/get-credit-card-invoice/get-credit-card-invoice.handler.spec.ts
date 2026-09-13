@@ -132,6 +132,7 @@ describe('GetCreditCardInvoiceService', () => {
       expect(result.value.transactions).toEqual([]);
       expect(result.value.totalAmount).toBe(0);
       expect(result.value.dueDate).toBe(invoiceCycle.dueDate);
+      expect(result.value.invoiceStatus).toBe('current');
     }
     expect(dateProvider.calculateInvoiceCycle).toHaveBeenCalledWith(
       expect.objectContaining({
