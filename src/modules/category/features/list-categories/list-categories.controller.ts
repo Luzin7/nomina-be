@@ -51,12 +51,14 @@ export class ListCategoriesController {
     }
 
     if (data.value.hierarchy) {
+      const hierarchy = data.value.hierarchy;
+
       return {
         data: {
           categories: data.value.categories.map((parent) =>
             CategoryPresenter.toHTTPHierarchy(
               parent,
-              data.value.hierarchy[parent.id] ?? [],
+              hierarchy[parent.id] ?? [],
             ),
           ),
           total: data.value.total,

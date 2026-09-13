@@ -205,14 +205,21 @@ export const SEED_CATEGORIES = {
   },
 } as const;
 
-export type SeedCategoryRef =
-  (typeof SEED_CATEGORIES)[keyof typeof SEED_CATEGORIES];
+type CategoryUnion = (typeof SEED_CATEGORIES)[keyof typeof SEED_CATEGORIES];
+
+type CategoryWithParent = CategoryUnion & { parentId: string };
+
+export type SeedCategoryRef = CategoryUnion;
 
 export const SEED_CATEGORIES_LIST: readonly SeedCategoryRef[] =
   Object.values(SEED_CATEGORIES);
 
 export const SEED_PARENT_CATEGORIES: readonly SeedCategoryRef[] =
-  SEED_CATEGORIES_LIST.filter((cat) => !('parentId' in cat));
+  SEED_CATEGORIES_LIST.filter(
+    (cat): cat is CategoryUnion => !('parentId' in cat),
+  );
 
-export const SEED_CHILD_CATEGORIES: readonly SeedCategoryRef[] =
-  SEED_CATEGORIES_LIST.filter((cat) => 'parentId' in cat);
+export const SEED_CHILD_CATEGORIES: readonly CategoryWithParent[] =
+  SEED_CATEGORIES_LIST.filter(
+    (cat): cat is CategoryWithParent => 'parentId' in cat,
+  );

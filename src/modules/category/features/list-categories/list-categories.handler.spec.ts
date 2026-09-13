@@ -45,7 +45,8 @@ function makeRedisService(): jest.Mocked<RedisService> {
     releaseLock: jest.fn().mockResolvedValue(true),
     getClient: jest.fn(),
     isAvailable: jest.fn().mockReturnValue(true),
-  } as jest.Mocked<RedisService>;
+    onModuleDestroy: jest.fn(),
+  } as unknown as jest.Mocked<RedisService>;
 }
 
 describe('ListCategoriesService', () => {
