@@ -3,6 +3,8 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.1.0](https://github.com/Luzin7/nomina-be/compare/v1.0.1...v1.1.0) (2026-09-13)
+
 ## [1.0.1](https://github.com/Luzin7/nomina-be/compare/v1.0.0...v1.0.1) (2026-08-27)
 
 ## 1.0.0 (2026-08-06)
