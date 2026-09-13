@@ -2,6 +2,7 @@ import { AccountType } from '@constants/enums';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { ConflictAccountError } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { RedisService } from '@infra/cache/redis/RedisService';
 import { User } from '@modules/user/entities/User';
 import { UserNotFoundError } from '@modules/user/errors';
 import { UserRepository } from '@modules/user/repositories/contracts/user.repository';
@@ -49,6 +50,7 @@ describe('CreateAccountService', () => {
   let service: CreateAccountService;
   let accountRepository: jest.Mocked<AccountRepository>;
   let userRepository: jest.Mocked<UserRepository>;
+  let redisService: jest.Mocked<RedisService>;
 
   beforeEach(() => {
     accountRepository = {
@@ -70,7 +72,14 @@ describe('CreateAccountService', () => {
       delete: jest.fn(),
     } as jest.Mocked<UserRepository>;
 
-    service = new CreateAccountService(accountRepository, userRepository);
+    redisService = {
+      delByPattern: jest.fn(),
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+    } as unknown as jest.Mocked<RedisService>;
+
+    service = new CreateAccountService(accountRepository, userRepository, redisService);
   });
 
   afterEach(() => jest.clearAllMocks());
