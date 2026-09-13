@@ -26,7 +26,11 @@ export abstract class CategoryRepository {
     },
     page?: number,
     limit?: number,
-  ): Promise<{ categories: Category[]; total: number }>;
+  ): Promise<{
+    categories: Category[];
+    total: number;
+    usageCounts: Record<string, number>;
+  }>;
 
   abstract countChildren(categoryId: string): Promise<number>;
 

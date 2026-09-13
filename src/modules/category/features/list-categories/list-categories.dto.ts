@@ -15,6 +15,7 @@ const listCategoriesSchema = z.object({
     .max(100, 'Tamanho da página muito grande')
     .default(20),
   type: z.nativeEnum(TransactionType).optional(),
+  parentId: z.string().optional(),
 });
 
 export const ListCategoriesPipe = new ZodValidationPipe(listCategoriesSchema);

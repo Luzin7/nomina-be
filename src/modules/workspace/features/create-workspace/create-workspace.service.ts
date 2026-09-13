@@ -1,4 +1,10 @@
 import { UserRole } from '@constants/enums';
+import { Category } from '@modules/category/entities/Category';
+import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import {
+  SEED_CHILD_CATEGORIES,
+  SEED_PARENT_CATEGORIES,
+} from '@modules/category/constants/seed-categories';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
@@ -21,7 +27,10 @@ export class CreateWorkspaceService implements Service<
   Error,
   Response
 > {
-  constructor(private readonly workspaceRepository: WorkspaceRepository) {}
+  constructor(
+    private readonly workspaceRepository: WorkspaceRepository,
+    private readonly categoryRepository: CategoryRepository,
+  ) {}
 
   async execute({
     currency = 'BRL',
@@ -62,9 +71,61 @@ export class CreateWorkspaceService implements Service<
       workspaceUser,
     );
 
+    await this.seedWorkspaceCategories(workspace.id);
+
     return right({
       workspace,
       workspaceUser,
     });
+  }
+
+  private async seedWorkspaceCategories(workspaceId: string): Promise<void> {
+    const systemIdToWorkspaceId = new Map<string, string>();
+
+    for (const seedCat of SEED_PARENT_CATEGORIES) {
+      const categoryOrError = Category.create(
+        {
+          workspaceId,
+          name: seedCat.name,
+          type: seedCat.type,
+          parentId: null,
+          isSystemCategory: false,
+        },
+        crypto.randomUUID(),
+      );
+
+      if (categoryOrError.isLeft()) {
+        continue;
+      }
+
+      const created = await this.categoryRepository.create(
+        categoryOrError.value,
+      );
+      systemIdToWorkspaceId.set(seedCat.id, created.id);
+    }
+
+    for (const seedCat of SEED_CHILD_CATEGORIES) {
+      const workspaceParentId = systemIdToWorkspaceId.get(seedCat.parentId);
+      if (!workspaceParentId) {
+        continue;
+      }
+
+      const categoryOrError = Category.create(
+        {
+          workspaceId,
+          name: seedCat.name,
+          type: seedCat.type,
+          parentId: workspaceParentId,
+          isSystemCategory: false,
+        },
+        crypto.randomUUID(),
+      );
+
+      if (categoryOrError.isLeft()) {
+        continue;
+      }
+
+      await this.categoryRepository.create(categoryOrError.value);
+    }
   }
 }
