@@ -38,7 +38,13 @@ export class FindMonthSummaryService implements Service<
     if (cached) {
       const parsed = JSON.parse(cached);
       return right(
-        MonthSummary.create({ ...parsed, month: new Date(parsed.month) }),
+        MonthSummary.create({
+          ...parsed,
+          month: new Date(parsed.month),
+          totalCheckingBalance: parsed.totalCheckingBalance ?? 0,
+          totalInvestmentBalance: parsed.totalInvestmentBalance ?? 0,
+          totalCreditCardBalance: parsed.totalCreditCardBalance ?? 0,
+        }),
       );
     }
 
@@ -96,7 +102,6 @@ export class FindMonthSummaryService implements Service<
       month: now,
       totalIncome: currentMonthData.totalIncome,
       totalExpense: currentMonthData.totalExpense,
-      totalInvestments: totalInvestmentBalance,
       totalCheckingBalance,
       totalInvestmentBalance,
       totalCreditCardBalance,
@@ -123,7 +128,6 @@ export class FindMonthSummaryService implements Service<
         month: monthSummary.month,
         totalIncome: monthSummary.totalIncome,
         totalExpense: monthSummary.totalExpense,
-        totalInvestments: monthSummary.totalInvestments,
         totalCheckingBalance: monthSummary.totalCheckingBalance,
         totalInvestmentBalance: monthSummary.totalInvestmentBalance,
         totalCreditCardBalance: monthSummary.totalCreditCardBalance,
