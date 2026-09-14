@@ -85,6 +85,92 @@ describe('DayJsDateProvider', () => {
     });
   });
 
+  describe('calculateInvoiceCycle', () => {
+    it('should stay on current month cycle when reference date is before closing', () => {
+      const referenceDate = new Date('2026-09-05T12:00:00Z');
+      const result = provider.calculateInvoiceCycle({
+        referenceDate,
+        closingDaysBeforeDue: 5,
+        dueDay: 15,
+        timezone: 'America/Sao_Paulo',
+      });
+
+      const localStart = new Date(
+        result.periodStart.toLocaleString('en-US', {
+          timeZone: 'America/Sao_Paulo',
+        }),
+      );
+      const localEnd = new Date(
+        result.periodEnd.toLocaleString('en-US', {
+          timeZone: 'America/Sao_Paulo',
+        }),
+      );
+      const localDue = new Date(
+        result.dueDate.toLocaleString('en-US', {
+          timeZone: 'America/Sao_Paulo',
+        }),
+      );
+
+      expect(localStart.getMonth()).toBe(7); // August
+      expect(localStart.getDate()).toBe(11);
+      expect(localEnd.getMonth()).toBe(8); // September
+      expect(localEnd.getDate()).toBe(10);
+      expect(localDue.getMonth()).toBe(8); // September
+      expect(localDue.getDate()).toBe(15);
+    });
+
+    it('should advance to next month cycle when closing date has already passed', () => {
+      const referenceDate = new Date('2026-09-13T12:00:00Z');
+      const result = provider.calculateInvoiceCycle({
+        referenceDate,
+        closingDaysBeforeDue: 5,
+        dueDay: 15,
+        timezone: 'America/Sao_Paulo',
+      });
+
+      const localStart = new Date(
+        result.periodStart.toLocaleString('en-US', {
+          timeZone: 'America/Sao_Paulo',
+        }),
+      );
+      const localEnd = new Date(
+        result.periodEnd.toLocaleString('en-US', {
+          timeZone: 'America/Sao_Paulo',
+        }),
+      );
+      const localDue = new Date(
+        result.dueDate.toLocaleString('en-US', {
+          timeZone: 'America/Sao_Paulo',
+        }),
+      );
+
+      expect(localStart.getMonth()).toBe(8); // September
+      expect(localStart.getDate()).toBe(11);
+      expect(localEnd.getMonth()).toBe(9); // October
+      expect(localEnd.getDate()).toBe(10);
+      expect(localDue.getMonth()).toBe(9); // October
+      expect(localDue.getDate()).toBe(15);
+    });
+
+    it('should handle dueDay beyond month length', () => {
+      const referenceDate = new Date('2026-02-20T12:00:00Z');
+      const result = provider.calculateInvoiceCycle({
+        referenceDate,
+        closingDaysBeforeDue: 5,
+        dueDay: 31,
+        timezone: 'America/Sao_Paulo',
+      });
+
+      const localDue = new Date(
+        result.dueDate.toLocaleString('en-US', {
+          timeZone: 'America/Sao_Paulo',
+        }),
+      );
+
+      expect(localDue.getDate()).toBe(28); // clamped to Feb 2026
+    });
+  });
+
   describe('startOfMonth', () => {
     it('should return the first day of the given month in the specified timezone', () => {
       const result = provider.startOfMonth('2026-05-15', 'America/Sao_Paulo');

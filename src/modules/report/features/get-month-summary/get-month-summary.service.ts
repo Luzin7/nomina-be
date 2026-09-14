@@ -1,6 +1,8 @@
+import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { MonthSummary } from '@modules/transaction/valueObjects/MonthSumarryWithPercentage';
+import { AccountType } from '@constants/enums';
 import { HttpException, Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
@@ -22,6 +24,7 @@ export class FindMonthSummaryService implements Service<
 > {
   constructor(
     private readonly transactionRepository: TransactionRepository,
+    private readonly accountRepository: AccountRepository,
     private readonly redisService: RedisService,
   ) {}
 
@@ -35,7 +38,13 @@ export class FindMonthSummaryService implements Service<
     if (cached) {
       const parsed = JSON.parse(cached);
       return right(
-        MonthSummary.create({ ...parsed, month: new Date(parsed.month) }),
+        MonthSummary.create({
+          ...parsed,
+          month: new Date(parsed.month),
+          totalCheckingBalance: parsed.totalCheckingBalance ?? 0,
+          totalInvestmentBalance: parsed.totalInvestmentBalance ?? 0,
+          totalCreditCardBalance: parsed.totalCreditCardBalance ?? 0,
+        }),
       );
     }
 
@@ -49,7 +58,7 @@ export class FindMonthSummaryService implements Service<
       Date.UTC(year, month, 0, 23, 59, 59, 999),
     );
 
-    const [currentMonthData, previousMonthData] = await Promise.all([
+    const [currentMonthData, previousMonthData, accounts] = await Promise.all([
       this.transactionRepository.sumTransactionsByDateRange(
         workspaceId,
         currentMonthStart,
@@ -60,7 +69,24 @@ export class FindMonthSummaryService implements Service<
         previousMonthStart,
         previousMonthEnd,
       ),
+      this.accountRepository.findAllByWorkspaceId(workspaceId),
     ]);
+
+    let totalCheckingBalance = 0;
+    let totalInvestmentBalance = 0;
+    let totalCreditCardBalance = 0;
+
+    for (const account of accounts) {
+      const balance = Number(account.balance);
+
+      if (account.type === AccountType.CHECKING || account.type === AccountType.CASH) {
+        totalCheckingBalance += balance;
+      } else if (account.type === AccountType.INVESTMENT) {
+        totalInvestmentBalance += balance;
+      } else if (account.type === AccountType.CREDIT_CARD) {
+        totalCreditCardBalance += balance;
+      }
+    }
 
     const calculatePercentageChange = (
       current: number,
@@ -76,7 +102,9 @@ export class FindMonthSummaryService implements Service<
       month: now,
       totalIncome: currentMonthData.totalIncome,
       totalExpense: currentMonthData.totalExpense,
-      totalInvestments: 0, // will be implemented
+      totalCheckingBalance,
+      totalInvestmentBalance,
+      totalCreditCardBalance,
       rate: {
         currentMonthSaving:
           currentMonthData.totalIncome > 0
@@ -100,7 +128,9 @@ export class FindMonthSummaryService implements Service<
         month: monthSummary.month,
         totalIncome: monthSummary.totalIncome,
         totalExpense: monthSummary.totalExpense,
-        totalInvestments: monthSummary.totalInvestments,
+        totalCheckingBalance: monthSummary.totalCheckingBalance,
+        totalInvestmentBalance: monthSummary.totalInvestmentBalance,
+        totalCreditCardBalance: monthSummary.totalCreditCardBalance,
         rate: monthSummary.rate,
       }),
       CACHE_TTL,

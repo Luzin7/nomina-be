@@ -232,6 +232,31 @@ export class BalanceEvolutionService {
       return type;
     };
 
+    const calculateNetPeriodEffect = (
+      period: Array<{
+        type: string;
+        sourceType: string;
+        destType: string | null;
+        amount: number;
+        date: Date;
+      }>,
+      resolve: (
+        type: string,
+        sourceType: string,
+        destType: string | null,
+      ) => string,
+    ): number => {
+      let net = 0;
+
+      for (const row of period) {
+        const effectiveType = resolve(row.type, row.sourceType, row.destType);
+        if (effectiveType === 'INCOME') net += row.amount;
+        if (effectiveType === 'EXPENSE') net -= row.amount;
+      }
+
+      return net;
+    };
+
     const buildDailySummary = (
       opening: Array<{
         type: string;
@@ -251,13 +276,16 @@ export class BalanceEvolutionService {
         sourceType: string,
         destType: string | null,
       ) => string,
+      explicitStartBalance?: number,
     ): DaySummary[] => {
-      let accumulatedBalance = 0;
+      let accumulatedBalance = explicitStartBalance ?? 0;
 
-      for (const row of opening) {
-        const effectiveType = resolve(row.type, row.sourceType, row.destType);
-        if (effectiveType === 'INCOME') accumulatedBalance += row.amount;
-        if (effectiveType === 'EXPENSE') accumulatedBalance -= row.amount;
+      if (explicitStartBalance === undefined) {
+        for (const row of opening) {
+          const effectiveType = resolve(row.type, row.sourceType, row.destType);
+          if (effectiveType === 'INCOME') accumulatedBalance += row.amount;
+          if (effectiveType === 'EXPENSE') accumulatedBalance -= row.amount;
+        }
       }
 
       const dailyMap = new Map<string, { income: number; expense: number }>();
@@ -307,6 +335,8 @@ export class BalanceEvolutionService {
       investmentOpening,
       investmentPeriod,
       resolveInvestmentType,
+      totalInvestedResult -
+        calculateNetPeriodEffect(investmentPeriod, resolveInvestmentType),
     );
 
     const totalInvested = MoneyUtils.centsToDecimal(totalInvestedResult);

@@ -4,7 +4,9 @@ export type MonthSummaryType = {
   month: Date;
   totalIncome: number;
   totalExpense: number;
-  totalInvestments: number;
+  totalCheckingBalance: number;
+  totalInvestmentBalance: number;
+  totalCreditCardBalance: number;
   rate: {
     currentMonthSaving: number;
     previousMonthCompareSaving: number;
@@ -32,8 +34,16 @@ export class MonthSummary extends ValueObject<MonthSummaryType> {
     return this.props.totalExpense;
   }
 
-  get totalInvestments() {
-    return this.props.totalInvestments;
+  get totalCheckingBalance() {
+    return this.props.totalCheckingBalance;
+  }
+
+  get totalInvestmentBalance() {
+    return this.props.totalInvestmentBalance;
+  }
+
+  get totalCreditCardBalance() {
+    return this.props.totalCreditCardBalance;
   }
 
   get rate() {
