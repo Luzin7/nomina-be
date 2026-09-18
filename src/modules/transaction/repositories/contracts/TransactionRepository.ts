@@ -20,12 +20,12 @@ export abstract class TransactionRepository {
     params: ListTransactionsParams,
   ): Promise<{ transactions: Transaction[]; total: number }>;
 
-  abstract getTopExpensesByCategory(
-    workspaceId: string,
-    startDate: Date,
-    endDate: Date,
-    pageSize: number,
-  ): Promise<TopExpensesByCategory[]>;
+  abstract getTopExpensesByCategory(params: {
+    workspaceId: string;
+    startDate: Date;
+    endDate: Date;
+    pageSize: number;
+  }): Promise<{ expenses: TopExpensesByCategory[]; totalExpense: number }>;
 
   abstract sumTransactionsByDateRange(
     workspaceId: string,

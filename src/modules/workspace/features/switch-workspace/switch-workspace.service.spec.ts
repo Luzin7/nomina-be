@@ -88,6 +88,7 @@ describe('SwitchWorkspaceService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       findById: jest.fn(),
+      findTimezoneById: jest.fn(),
       findOwnedByUserId: jest.fn(),
       countOwnedByUserId: jest.fn(),
     } as jest.Mocked<WorkspaceRepository>;

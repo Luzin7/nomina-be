@@ -3,7 +3,7 @@ import {
   TransactionStatus,
   TransactionType,
 } from '@constants/enums';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
@@ -34,7 +34,7 @@ export class CreateTransactionService implements Service<
     private readonly categoryRepository: CategoryRepository,
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
-    private readonly redisService: RedisService,
+    private readonly redisService: CacheProvider,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Transaction>> {

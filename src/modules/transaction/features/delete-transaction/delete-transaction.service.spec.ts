@@ -5,7 +5,7 @@ import { AccountRepository } from '@modules/account/repositories/contracts/Accou
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionNotFoundError } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { DeleteTransactionService } from './delete-transaction.service';
 
@@ -109,7 +109,7 @@ describe('DeleteTransactionService', () => {
         delByPattern: jest.fn().mockResolvedValue(0),
         getClient: jest.fn().mockReturnValue(null),
         isAvailable: jest.fn().mockReturnValue(false),
-      } as unknown as jest.Mocked<RedisService>,
+      } as unknown as jest.Mocked<CacheProvider>,
     );
   });
 

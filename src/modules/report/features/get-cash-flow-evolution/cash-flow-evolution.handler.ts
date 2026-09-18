@@ -1,6 +1,7 @@
 import { AccountType } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -23,6 +24,7 @@ export class CashFlowEvolutionService {
   constructor(
     private readonly drizzle: DrizzleService,
     private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
   ) {}
 
   async execute({
@@ -30,16 +32,16 @@ export class CashFlowEvolutionService {
     startDate,
     endDate,
   }: Request): Promise<Response> {
-    const workspaceTimezone = 'America/Sao_Paulo'; // TODO: Buscar timezone real do workspace no banco e usar aqui, ao invés de hardcoded
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
 
-    const start = this.dateProvider.startOfDay(startDate, workspaceTimezone);
-    const end = this.dateProvider.endOfDay(endDate, workspaceTimezone);
+    const start = this.dateProvider.startOfDay(startDate, timezone);
+    const end = this.dateProvider.endOfDay(endDate, timezone);
 
     const destAccount = alias(schema.accounts, 'dest_account');
 
     const effectiveType = sql<string>`CASE WHEN ${schema.transactions.type} = 'TRANSFER' AND ${destAccount.type} = ${AccountType.CREDIT_CARD} THEN 'EXPENSE' ELSE ${schema.transactions.type} END`;
 
-    const dateFormatted = sql<string>`to_char(${schema.transactions.date} AT TIME ZONE 'UTC' AT TIME ZONE ${workspaceTimezone}, 'YYYY-MM-DD')`;
+    const dateFormatted = sql<string>`to_char(${schema.transactions.date} AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'YYYY-MM-DD')`;
 
     const incomes =
       sql<number>`COALESCE(SUM(CASE WHEN ${effectiveType} = 'INCOME' THEN ${schema.transactions.amount} ELSE 0 END), 0)`.mapWith(
