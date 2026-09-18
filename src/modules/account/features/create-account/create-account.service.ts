@@ -4,7 +4,7 @@ import { AnyAccount } from '@modules/account/entities/types';
 
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { UserRepository } from '@modules/user/repositories/contracts/user.repository';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 
 import { CashAccount } from '@modules/account/entities/CashAccounts';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
@@ -28,7 +28,7 @@ export class CreateAccountService implements Service<
   constructor(
     private readonly accountRepository: AccountRepository,
     private readonly userRepository: UserRepository,
-    private readonly redisService: RedisService,
+    private readonly redisService: CacheProvider,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, AnyAccount>> {
@@ -105,7 +105,9 @@ export class CreateAccountService implements Service<
 
     const account = await this.accountRepository.create(accountOrError.value);
 
-    await this.redisService.delByPattern(`report:month-summary:${workspaceId}:*`);
+    await this.redisService.delByPattern(
+      `report:month-summary:${workspaceId}:*`,
+    );
 
     return right(account);
   }

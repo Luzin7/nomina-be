@@ -1,5 +1,5 @@
 import { TransactionType } from '@constants/enums';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { ListCategoriesService } from './list-categories.handler';
@@ -33,7 +33,7 @@ function makeCategory(
   return result.value;
 }
 
-function makeRedisService(): jest.Mocked<RedisService> {
+function makeRedisService(): jest.Mocked<CacheProvider> {
   return {
     get: jest.fn().mockResolvedValue(null),
     set: jest.fn().mockResolvedValue(true),
@@ -46,13 +46,13 @@ function makeRedisService(): jest.Mocked<RedisService> {
     getClient: jest.fn(),
     isAvailable: jest.fn().mockReturnValue(true),
     onModuleDestroy: jest.fn(),
-  } as unknown as jest.Mocked<RedisService>;
+  } as unknown as jest.Mocked<CacheProvider>;
 }
 
 describe('ListCategoriesService', () => {
   let service: ListCategoriesService;
   let categoryRepository: jest.Mocked<CategoryRepository>;
-  let redisService: jest.Mocked<RedisService>;
+  let redisService: jest.Mocked<CacheProvider>;
 
   beforeEach(() => {
     categoryRepository = {
@@ -328,9 +328,7 @@ describe('ListCategoriesService', () => {
         usageCounts: {},
       });
 
-      const result = await service.execute(
-        makeRequest({ parentId: 'null' }),
-      );
+      const result = await service.execute(makeRequest({ parentId: 'null' }));
 
       expect(result.isRight()).toBe(true);
       if (result.isRight()) {

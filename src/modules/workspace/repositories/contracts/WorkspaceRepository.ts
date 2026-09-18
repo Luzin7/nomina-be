@@ -12,6 +12,7 @@ export abstract class WorkspaceRepository {
   abstract update(workspace: Workspace): Promise<Workspace>;
   abstract delete(id: string): Promise<void>;
   abstract findById(id: string): Promise<Workspace | null>;
+  abstract findTimezoneById(id: string): Promise<string | null>;
 
   abstract findOwnedByUserId(
     userId: string,

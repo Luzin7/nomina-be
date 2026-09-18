@@ -30,6 +30,7 @@ import { UpdateWorkspaceUserController } from './features/update-workspace-user/
 import { UpdateWorkspaceUserService } from './features/update-workspace-user/update-workspace-user.service';
 import { UpdateWorkspaceController } from './features/update-workspace/update-workspace.controller';
 import { UpdateWorkspaceService } from './features/update-workspace/update-workspace.service';
+import { GetWorkspaceTimezoneService } from './services/get-workspace-timezone.service';
 
 @Module({
   imports: [
@@ -68,7 +69,12 @@ import { UpdateWorkspaceService } from './features/update-workspace/update-works
     CreateWorkspaceInviteService,
     AcceptWorkspaceInviteService,
     SetDefaultWorkspaceService,
+    GetWorkspaceTimezoneService,
   ],
-  exports: [FindWorkspaceByIdService, ListWorkspacesService],
+  exports: [
+    FindWorkspaceByIdService,
+    ListWorkspacesService,
+    GetWorkspaceTimezoneService,
+  ],
 })
 export class WorkspaceModule {}

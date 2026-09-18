@@ -13,9 +13,9 @@ import {
   eq,
   gte,
   ilike,
-  isNotNull,
   lte,
   or,
+  sql,
   sum,
 } from 'drizzle-orm';
 import { TransactionMapper } from '../mappers/transaction.mapper';
@@ -89,44 +89,61 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     };
   }
 
-  async getTopExpensesByCategory(
-    workspaceId: string,
-    startDate: Date,
-    endDate: Date,
-    pageSize: number,
-  ): Promise<TopExpensesByCategory[]> {
-    const results = await this.drizzle.db
-      .select({
-        categoryId: schema.transactions.categoryId,
-        categoryName: schema.categories.name,
-        totalAmount: sum(schema.transactions.amount).mapWith(Number),
-      })
-      .from(schema.transactions)
-      .innerJoin(
-        schema.categories,
-        eq(schema.categories.id, schema.transactions.categoryId),
-      )
-      .where(
-        and(
-          eq(schema.transactions.workspaceId, workspaceId),
-          eq(schema.transactions.type, 'EXPENSE'),
-          isNotNull(schema.transactions.categoryId),
-          gte(schema.transactions.date, startDate),
-          lte(schema.transactions.date, endDate),
-        ),
-      )
-      .groupBy(schema.transactions.categoryId, schema.categories.name)
-      .orderBy(desc(sum(schema.transactions.amount)))
-      .limit(pageSize);
+  async getTopExpensesByCategory(params: {
+    workspaceId: string;
+    startDate: Date;
+    endDate: Date;
+    pageSize: number;
+  }): Promise<{ expenses: TopExpensesByCategory[]; totalExpense: number }> {
+    const { workspaceId, startDate, endDate, pageSize } = params;
 
-    return results.map(
-      (r) =>
-        new TopExpensesByCategory({
-          categoryId: r.categoryId!,
-          categoryName: r.categoryName,
-          amount: r.totalAmount,
-        }),
+    const periodFilter = and(
+      eq(schema.transactions.workspaceId, workspaceId),
+      eq(schema.transactions.type, 'EXPENSE'),
+      eq(schema.transactions.status, 'COMPLETED'),
+      gte(schema.transactions.date, startDate),
+      lte(schema.transactions.date, endDate),
     );
+
+    const [results, [{ totalExpense }]] = await Promise.all([
+      this.drizzle.db
+        .select({
+          categoryId: schema.transactions.categoryId,
+          categoryName: schema.categories.name,
+          totalAmount: sum(schema.transactions.amount).mapWith(Number),
+        })
+        .from(schema.transactions)
+        .innerJoin(
+          schema.categories,
+          eq(schema.categories.id, schema.transactions.categoryId),
+        )
+        .where(periodFilter)
+        .groupBy(schema.transactions.categoryId, schema.categories.name)
+        .orderBy(desc(sum(schema.transactions.amount)))
+        .limit(pageSize),
+
+      this.drizzle.db
+        .select({
+          totalExpense:
+            sql<number>`COALESCE(SUM(${schema.transactions.amount}), 0)`.mapWith(
+              Number,
+            ),
+        })
+        .from(schema.transactions)
+        .where(periodFilter),
+    ]);
+
+    return {
+      expenses: results.map(
+        (r) =>
+          new TopExpensesByCategory({
+            categoryId: r.categoryId,
+            categoryName: r.categoryName,
+            amount: r.totalAmount,
+          }),
+      ),
+      totalExpense,
+    };
   }
 
   async sumTransactionsByDateRange(

@@ -6,6 +6,7 @@ export class WorkspacePresenter {
       id: workspace.id,
       name: workspace.name,
       currency: workspace.currency,
+      timezone: workspace.timezone,
       createdAt: workspace.createdAt,
     };
   }

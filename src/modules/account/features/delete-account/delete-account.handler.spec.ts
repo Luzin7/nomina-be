@@ -1,5 +1,5 @@
 import { AccountType } from '@constants/enums';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -26,7 +26,7 @@ function makeAccount(workspaceId = 'ws-1') {
 describe('DeleteAccountService', () => {
   let service: DeleteAccountService;
   let accountRepository: jest.Mocked<AccountRepository>;
-  let redisService: jest.Mocked<Pick<RedisService, 'delByPattern'>>;
+  let redisService: jest.Mocked<Pick<CacheProvider, 'delByPattern'>>;
 
   beforeEach(() => {
     accountRepository = {
@@ -46,7 +46,7 @@ describe('DeleteAccountService', () => {
 
     service = new DeleteAccountService(
       accountRepository,
-      redisService as unknown as RedisService,
+      redisService as unknown as CacheProvider,
     );
   });
 

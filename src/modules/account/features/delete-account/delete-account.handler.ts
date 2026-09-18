@@ -1,5 +1,5 @@
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
@@ -13,7 +13,7 @@ type Request = DeleteAccountRequest & Pick<TokenPayloadSchema, 'workspaceId'>;
 export class DeleteAccountService implements Service<Request, Error, void> {
   constructor(
     private readonly accountRepository: AccountRepository,
-    private readonly redisService: RedisService,
+    private readonly redisService: CacheProvider,
   ) {}
 
   async execute({

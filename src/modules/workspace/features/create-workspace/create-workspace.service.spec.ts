@@ -1,7 +1,21 @@
-import { UserRole } from '@constants/enums';
+import { TransactionType, UserRole } from '@constants/enums';
+import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { CreateWorkspaceService } from './create-workspace.service';
+
+function makeCategory(id: string): Category {
+  return Category.reconstitute(
+    {
+      workspaceId: 'ws-1',
+      name: 'Categoria',
+      type: TransactionType.EXPENSE,
+      parentId: null,
+      isSystemCategory: false,
+    },
+    id,
+  );
+}
 
 function makeRequest(overrides = {}) {
   return {
@@ -25,6 +39,7 @@ describe('CreateWorkspaceService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       findById: jest.fn(),
+      findTimezoneById: jest.fn(),
       findOwnedByUserId: jest.fn(),
       countOwnedByUserId: jest.fn(),
     } as jest.Mocked<WorkspaceRepository>;
@@ -54,7 +69,7 @@ describe('CreateWorkspaceService', () => {
 
   it('should create workspace and workspaceUser successfully', async () => {
     workspaceRepository.createWithOwnerAndAccount.mockResolvedValue();
-    categoryRepository.create.mockResolvedValue({ id: 'cat-1' } as any);
+    categoryRepository.create.mockResolvedValue(makeCategory('cat-1'));
 
     const result = await service.execute(makeRequest());
     expect(result.isRight()).toBe(true);
@@ -79,7 +94,7 @@ describe('CreateWorkspaceService', () => {
 
   it('should seed default categories after workspace creation', async () => {
     workspaceRepository.createWithOwnerAndAccount.mockResolvedValue();
-    categoryRepository.create.mockResolvedValue({ id: 'cat-1' } as any);
+    categoryRepository.create.mockResolvedValue(makeCategory('cat-1'));
 
     await service.execute(makeRequest());
 
@@ -101,13 +116,13 @@ describe('CreateWorkspaceService', () => {
     categoryRepository.create.mockImplementation(async (category) => {
       const id = `ws-cat-${++callCount}`;
       idMap.set(category.name, id);
-      return { id } as any;
+      return makeCategory(id);
     });
 
     await service.execute(makeRequest());
 
     const childCalls = categoryRepository.create.mock.calls.filter(
-      ([cat]: any[]) => cat.parentId !== null,
+      ([cat]) => cat.parentId !== null,
     );
 
     for (const [child] of childCalls) {

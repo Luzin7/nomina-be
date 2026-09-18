@@ -99,6 +99,16 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
     return workspace ? WorkspaceMapper.toDomain(workspace) : null;
   }
 
+  async findTimezoneById(id: string): Promise<string | null> {
+    const [workspace] = await this.drizzle.db
+      .select({ timezone: schema.workspaces.timezone })
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.id, id))
+      .limit(1);
+
+    return workspace?.timezone ?? null;
+  }
+
   async findOwnedByUserId(
     userId: string,
     page: number,
