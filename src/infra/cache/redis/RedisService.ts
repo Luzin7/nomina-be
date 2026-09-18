@@ -2,9 +2,10 @@ import { env } from '@infra/env';
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { CacheProvider } from '../contracts/CacheProvider';
 
 @Injectable()
-export class RedisService implements OnModuleDestroy {
+export class RedisService implements CacheProvider, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private client: Redis | null = null;
   private readonly isEnabled: boolean;

@@ -1,5 +1,5 @@
 import { RecurrenceFrequency, TransactionStatus } from '@constants/enums';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Either, right } from '@shared/core/errors/Either';
@@ -39,7 +39,7 @@ export class GenerateRecurringTransactionsJobService {
   constructor(
     private readonly recurringRepository: RecurringTransactionRepository,
     private readonly calculateNextDateService: CalculateNextGenerationDateService,
-    private readonly redis: RedisService,
+    private readonly redis: CacheProvider,
     private readonly dateProvider: DateProvider,
   ) {}
 

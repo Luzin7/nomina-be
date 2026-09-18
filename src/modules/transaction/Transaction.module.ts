@@ -2,6 +2,7 @@ import { DatabaseModule } from '@infra/databases/Database.module';
 import { FindMonthSummaryController } from '@modules/report/features/get-month-summary/get-month-summary.controller';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import { UserModule } from '@modules/user/User.module';
+import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
 import { DateModule } from '@providers/date/Date.module';
 import { CreateRecurringTransactionController } from './features/create-recurring-transaction/create-recurring-transaction.controller';
@@ -49,7 +50,7 @@ import { CalculateNextGenerationDateService } from './services/calculate-next-ge
     FindRecurringTransactionController,
     ToggleActiveRecurringTransactionController,
   ],
-  imports: [DatabaseModule, UserModule, DateModule],
+  imports: [DatabaseModule, UserModule, WorkspaceModule, DateModule],
   providers: [
     CreateTransactionService,
     DeleteTransactionService,

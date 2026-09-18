@@ -1,5 +1,5 @@
 import { TransactionType } from '@constants/enums';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { Injectable } from '@nestjs/common';
@@ -49,7 +49,7 @@ export class ListCategoriesService implements Service<
 > {
   constructor(
     private readonly categoryRepository: CategoryRepository,
-    private readonly redisService: RedisService,
+    private readonly redisService: CacheProvider,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Response>> {
@@ -92,10 +92,9 @@ export class ListCategoriesService implements Service<
     }
 
     const { categories, usageCounts } =
-      await this.categoryRepository.findManyByWorkspaceId(
-        workspaceId,
-        { type },
-      );
+      await this.categoryRepository.findManyByWorkspaceId(workspaceId, {
+        type,
+      });
 
     const parents: Category[] = [];
     const childrenByParentId: Record<string, Category[]> = {};
@@ -132,9 +131,7 @@ export class ListCategoriesService implements Service<
         (sum, c) => sum + (usageCounts[c.id] ?? 0),
         0,
       );
-      return sumB !== sumA
-        ? sumB - sumA
-        : a.name.localeCompare(b.name);
+      return sumB !== sumA ? sumB - sumA : a.name.localeCompare(b.name);
     });
 
     return right({

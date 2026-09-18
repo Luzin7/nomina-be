@@ -1,5 +1,6 @@
 import { Controller, Get, HttpCode, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { TopExpensesByCategoryPresenter } from '@modules/report/presenters/TopExpensesByCategory.presenter';
 import { CurrentLoggedUser } from '@providers/auth/decorators/CurrentLoggedUser.decorator';
 import { type TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { statusCode } from '@shared/core/types/statusCode';
@@ -25,6 +26,6 @@ export class GetExpensesByCategoryController {
       workspaceId,
     });
 
-    return { data };
+    return { data: TopExpensesByCategoryPresenter.toHTTP(data) };
   }
 }

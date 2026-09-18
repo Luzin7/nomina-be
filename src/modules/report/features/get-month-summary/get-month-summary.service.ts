@@ -1,10 +1,13 @@
+import { AccountType } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
-import { RedisService } from '@infra/cache/redis/RedisService';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { MonthSummary } from '@modules/transaction/valueObjects/MonthSumarryWithPercentage';
-import { AccountType } from '@constants/enums';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { HttpException, Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, right } from '@shared/core/errors/Either';
 
@@ -16,6 +19,54 @@ type Response = MonthSummary;
 
 const CACHE_TTL = 5 * 60;
 
+type AccountBalances = {
+  totalCheckingBalance: number;
+  totalInvestmentBalance: number;
+  totalCreditCardBalance: number;
+};
+
+function aggregateAccountBalances(accounts: AnyAccount[]): AccountBalances {
+  const balances: AccountBalances = {
+    totalCheckingBalance: 0,
+    totalInvestmentBalance: 0,
+    totalCreditCardBalance: 0,
+  };
+
+  for (const account of accounts) {
+    const balance = Number(account.balance);
+
+    switch (account.type) {
+      case AccountType.CHECKING:
+      case AccountType.CASH:
+        balances.totalCheckingBalance += balance;
+        break;
+      case AccountType.INVESTMENT:
+        balances.totalInvestmentBalance += balance;
+        break;
+      case AccountType.CREDIT_CARD:
+        balances.totalCreditCardBalance += balance;
+        break;
+    }
+  }
+
+  return balances;
+}
+
+function calculatePercentageChange(current: number, previous: number): number {
+  if (previous === 0) return current > 0 ? 100 : 0;
+
+  return ((current - previous) / previous) * 100;
+}
+
+function calculateSavingRate(
+  totalIncome: number,
+  totalExpense: number,
+): number {
+  if (totalIncome <= 0) return 0;
+
+  return Math.round(((totalIncome - totalExpense) / totalIncome) * 100);
+}
+
 @Injectable()
 export class FindMonthSummaryService implements Service<
   Request,
@@ -25,16 +76,18 @@ export class FindMonthSummaryService implements Service<
   constructor(
     private readonly transactionRepository: TransactionRepository,
     private readonly accountRepository: AccountRepository,
-    private readonly redisService: RedisService,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
+    private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute({ workspaceId }: Request): Promise<Either<Errors, Response>> {
-    const now = new Date();
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth();
+    const now = this.dateProvider.now();
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
 
-    const cacheKey = `report:month-summary:${workspaceId}:${year}-${month}`;
-    const cached = await this.redisService.get(cacheKey);
+    const currentMonthStart = this.dateProvider.startOfMonth(now, timezone);
+    const cacheKey = `report:month-summary:${workspaceId}:${this.dateProvider.format(currentMonthStart, 'YYYY-MM', timezone)}`;
+    const cached = await this.cache.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
       return right(
@@ -48,14 +101,20 @@ export class FindMonthSummaryService implements Service<
       );
     }
 
-    const currentMonthStart = new Date(Date.UTC(year, month, 1));
-    const currentMonthEnd = new Date(
-      Date.UTC(year, month + 1, 0, 23, 59, 59, 999),
+    const currentMonthEnd = this.dateProvider.endOfMonth(now, timezone);
+    const previousMonthReference = this.dateProvider.add(
+      currentMonthStart,
+      -1,
+      'month',
+      timezone,
     );
-
-    const previousMonthStart = new Date(Date.UTC(year, month - 1, 1));
-    const previousMonthEnd = new Date(
-      Date.UTC(year, month, 0, 23, 59, 59, 999),
+    const previousMonthStart = this.dateProvider.startOfMonth(
+      previousMonthReference,
+      timezone,
+    );
+    const previousMonthEnd = this.dateProvider.endOfMonth(
+      previousMonthReference,
+      timezone,
     );
 
     const [currentMonthData, previousMonthData, accounts] = await Promise.all([
@@ -72,49 +131,16 @@ export class FindMonthSummaryService implements Service<
       this.accountRepository.findAllByWorkspaceId(workspaceId),
     ]);
 
-    let totalCheckingBalance = 0;
-    let totalInvestmentBalance = 0;
-    let totalCreditCardBalance = 0;
-
-    for (const account of accounts) {
-      const balance = Number(account.balance);
-
-      if (account.type === AccountType.CHECKING || account.type === AccountType.CASH) {
-        totalCheckingBalance += balance;
-      } else if (account.type === AccountType.INVESTMENT) {
-        totalInvestmentBalance += balance;
-      } else if (account.type === AccountType.CREDIT_CARD) {
-        totalCreditCardBalance += balance;
-      }
-    }
-
-    const calculatePercentageChange = (
-      current: number,
-      previous: number,
-    ): number => {
-      if (previous === 0) {
-        return current > 0 ? 100 : 0;
-      }
-      return ((current - previous) / previous) * 100;
-    };
-
     const monthSummary = MonthSummary.create({
-      month: now,
+      month: currentMonthStart,
       totalIncome: currentMonthData.totalIncome,
       totalExpense: currentMonthData.totalExpense,
-      totalCheckingBalance,
-      totalInvestmentBalance,
-      totalCreditCardBalance,
+      ...aggregateAccountBalances(accounts),
       rate: {
-        currentMonthSaving:
-          currentMonthData.totalIncome > 0
-            ? Math.round(
-                ((currentMonthData.totalIncome -
-                  currentMonthData.totalExpense) /
-                  currentMonthData.totalIncome) *
-                  100,
-              )
-            : 0,
+        currentMonthSaving: calculateSavingRate(
+          currentMonthData.totalIncome,
+          currentMonthData.totalExpense,
+        ),
         previousMonthCompareSaving: calculatePercentageChange(
           currentMonthData.totalIncome - currentMonthData.totalExpense,
           previousMonthData.totalIncome - previousMonthData.totalExpense,
@@ -122,7 +148,7 @@ export class FindMonthSummaryService implements Service<
       },
     });
 
-    await this.redisService.set(
+    await this.cache.set(
       cacheKey,
       JSON.stringify({
         month: monthSummary.month,

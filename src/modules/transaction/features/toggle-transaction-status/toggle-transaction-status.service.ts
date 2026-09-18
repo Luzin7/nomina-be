@@ -1,5 +1,5 @@
 import { TransactionStatus } from '@constants/enums';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountNotFoundError } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -25,7 +25,7 @@ export class ToggleTransactionStatusService implements Service<
   constructor(
     private readonly transactionRepository: TransactionRepository,
     private readonly accountRepository: AccountRepository,
-    private readonly redisService: RedisService,
+    private readonly redisService: CacheProvider,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Transaction>> {

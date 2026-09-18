@@ -1,5 +1,5 @@
 import { RecurrenceFrequency } from '@constants/enums';
-import { RedisService } from '@infra/cache/redis/RedisService';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { RecurringTransaction } from '../entities/RecurringTransaction';
@@ -29,7 +29,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
   let service: GenerateRecurringTransactionsJobService;
   let recurringRepository: jest.Mocked<RecurringTransactionRepository>;
   let calculateNextDateService: jest.Mocked<CalculateNextGenerationDateService>;
-  let redis: jest.Mocked<RedisService>;
+  let redis: jest.Mocked<CacheProvider>;
   let dateProvider: jest.Mocked<DateProvider>;
 
   const NOW = new Date('2024-01-15T00:00:00.000Z');
@@ -62,7 +62,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       delByPattern: jest.fn().mockResolvedValue(0),
       getClient: jest.fn().mockReturnValue(null),
       isAvailable: jest.fn().mockReturnValue(true),
-    } as unknown as jest.Mocked<RedisService>;
+    } as unknown as jest.Mocked<CacheProvider>;
 
     dateProvider = {
       now: jest.fn().mockReturnValue(NOW),
