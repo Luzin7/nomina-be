@@ -4,12 +4,15 @@ import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.int
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import '../../instrument.js';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn'],
   });
+
+  app.enableShutdownHooks();
 
   app.use(helmet());
 
@@ -19,17 +22,17 @@ async function bootstrap() {
     defaultVersion: '1',
   });
 
-  const allowedOrigins = new Set([env.PROD_URL, env.DEV_URL]);
+  const allowedOrigins = new Set([env.PROD_URL, env.DEV_URL].filter(Boolean));
 
   const corsOptions: CorsOptions = {
     origin: (
       origin: string | undefined,
       callback: (err: Error | null, allow?: boolean) => void,
     ) => {
-      if (allowedOrigins.has(origin!) || !origin) {
+      if (!origin || allowedOrigins.has(origin)) {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        callback(null, false);
       }
     },
     credentials: true,
@@ -39,7 +42,9 @@ async function bootstrap() {
 
   app.enableCors(corsOptions);
 
-  if (env.NODE_ENV === 'dev') {
+  const isDev = env.NODE_ENV === 'dev';
+
+  if (isDev) {
     const config = new DocumentBuilder()
       .setTitle('Nomina API')
       .setDescription('O peso real do seu patrimônio')
@@ -50,6 +55,10 @@ async function bootstrap() {
     SwaggerModule.setup('api/docs', app, document);
   }
 
-  await app.listen(env.PORT);
+  await app.listen(env.PORT, '0.0.0.0');
 }
-bootstrap();
+
+bootstrap().catch((err) => {
+  console.error('Failed to start application:', err);
+  process.exit(1);
+});

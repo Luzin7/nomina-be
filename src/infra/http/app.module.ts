@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '@providers/auth/guards/jwtAuth.guard';
 import { RolesGuard } from '@providers/auth/guards/Roles.guard';
 import { CryptographyModule } from '@providers/cryptography/Cryptography.module';
 import { DateModule } from '@providers/date/Date.module';
+import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup'; // <--- IMPORTAÇÃO ADICIONADA
 import { RedisModule } from '../cache/Redis.module';
 import { DatabaseModule } from '../databases/Database.module';
 import { AllExceptionsFilter } from './filters/AllExceptions.filter';
@@ -23,8 +24,8 @@ import { LoggingInterceptor } from './interceptors/Logging.interceptor';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    SentryModule.forRoot(),
     ThrottlerModule.forRoot(
-      // Rate limiting only in production — no artificial limits during local dev
       process.env.NODE_ENV === 'production'
         ? [
             { name: 'default', ttl: 60_000, limit: 600 },
@@ -49,6 +50,10 @@ import { LoggingInterceptor } from './interceptors/Logging.interceptor';
     SubscriptionModule,
   ],
   providers: [
+    {
+      provide: APP_FILTER,
+      useClass: SentryGlobalFilter,
+    },
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
