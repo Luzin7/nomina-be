@@ -137,4 +137,40 @@ describe('buildDailySummary', () => {
       { date: '2026-09-01', income: 0, expense: 0, balance: 1 },
     ]);
   });
+
+  it('anchors the final balance to the real account balance', () => {
+    const period: PeriodRow[] = [
+      {
+        type: 'INCOME',
+        sourceType: 'CHECKING',
+        destType: null,
+        amount: 5000,
+        date: new Date('2026-09-01T12:00:00.000Z'),
+      },
+      {
+        type: 'EXPENSE',
+        sourceType: 'CHECKING',
+        destType: null,
+        amount: 2000,
+        date: new Date('2026-09-02T12:00:00.000Z'),
+      },
+    ];
+    const totalGeneralBalance = 2999;
+    const explicitStartBalance =
+      totalGeneralBalance -
+      calculateNetPeriodEffect(period, resolveGeneralType);
+
+    const result = buildDailySummary({
+      opening: [],
+      period,
+      resolve: resolveGeneralType,
+      dateProvider,
+      timezone: 'UTC',
+      startDate: START,
+      endDate: END,
+      explicitStartBalance,
+    });
+
+    expect(result.at(-1)?.balance).toBe(29.99);
+  });
 });
