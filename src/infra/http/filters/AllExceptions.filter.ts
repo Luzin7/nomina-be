@@ -1,30 +1,20 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  Logger,
-} from '@nestjs/common';
+import { Catch, ExceptionFilter, HttpException, Logger } from '@nestjs/common';
+import type { ArgumentsHost } from '@nestjs/common/interfaces/features/arguments-host.interface';
+import { SentryExceptionCaptured } from '@sentry/nestjs';
 import { Request, Response } from 'express';
 
-/**
- * Global exception filter that unwraps the full `Error.cause` chain so the
- * real underlying error (e.g. the original postgres / drizzle error) is always
- * visible in the logs — not just the outermost wrapper.
- */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionsFilter');
 
+  @SentryExceptionCaptured()
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    // Log the full cause chain if there is one
     this.logCauseChain(exception);
 
-    // Delegate HTTP response to the standard Nest behaviour
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       response.status(status).json(exception.getResponse());

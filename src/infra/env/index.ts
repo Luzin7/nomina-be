@@ -24,7 +24,6 @@ const envSchema = z.object({
 });
 
 type EnvSchema = z.infer<typeof envSchema>;
-export type Env = EnvSchema;
 const _env = envSchema.safeParse(process.env);
 
 if (_env.success === false) {

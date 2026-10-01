@@ -20,11 +20,16 @@ export class HealthController {
   @Public()
   @Get()
   @HttpCode(statusCode.OK)
-  async check() {
+  checkLiveness() {
+    return { status: 'ok', timestamp: new Date().toISOString() };
+  }
+
+  @Public()
+  @Get('ready')
+  @HttpCode(statusCode.OK)
+  async checkReadiness() {
     try {
-      await this.drizzle.db.transaction(async (tx) => {
-        await tx.execute(sql`SELECT 1`);
-      });
+      await this.drizzle.db.execute(sql`SELECT 1`);
 
       const isRedisEnabled = process.env.REDIS_ENABLED === 'true';
       if (isRedisEnabled) {
