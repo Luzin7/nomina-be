@@ -1,10 +1,14 @@
 import { RecurrenceFrequency } from '@constants/enums';
+import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { CategoryNotFoundError } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
-import { StartDateCannotBeTodayOrPastError } from '@modules/transaction/errors';
+import {
+  CreditCardTransferNotAllowedError,
+  StartDateCannotBeTodayOrPastError,
+} from '@modules/transaction/errors';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
@@ -114,6 +118,9 @@ export class CreateRecurringTransactionService implements Service<
       await this.accountRepository.findById(destinationAccountId);
     if (destAccount?.workspaceId !== workspaceId) {
       return new UnauthorizedError();
+    }
+    if (destAccount instanceof CreditCard) {
+      return new CreditCardTransferNotAllowedError();
     }
 
     return null;

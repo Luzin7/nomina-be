@@ -1,6 +1,7 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
+  InvoicePaymentFilter,
   ListTransactionsParams,
   TransactionRepository,
 } from '@modules/transaction/repositories/contracts/TransactionRepository';
@@ -11,10 +12,13 @@ import {
   count,
   desc,
   eq,
+  gt,
   gte,
   ilike,
+  isNull,
   lt,
   lte,
+  or,
   sql,
   sum,
 } from 'drizzle-orm';
@@ -351,8 +355,22 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   async findPaymentsByInvoice(
     accountId: string,
     workspaceId: string,
-    invoicePeriod: { month: number; year: number },
+    filter: InvoicePaymentFilter,
   ): Promise<Transaction[]> {
+    const tagged = and(
+      eq(schema.transactions.invoicePeriodMonth, filter.month),
+      eq(schema.transactions.invoicePeriodYear, filter.year),
+    );
+
+    const untagged = filter.untaggedWindow
+      ? and(
+          isNull(schema.transactions.invoicePeriodMonth),
+          isNull(schema.transactions.invoicePeriodYear),
+          gt(schema.transactions.date, filter.untaggedWindow.startExclusive),
+          lte(schema.transactions.date, filter.untaggedWindow.endInclusive),
+        )
+      : undefined;
+
     const rows = await this.drizzle.db
       .select()
       .from(schema.transactions)
@@ -360,8 +378,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
         and(
           eq(schema.transactions.destinationAccountId, accountId),
           eq(schema.transactions.workspaceId, workspaceId),
-          eq(schema.transactions.invoicePeriodMonth, invoicePeriod.month),
-          eq(schema.transactions.invoicePeriodYear, invoicePeriod.year),
+          or(tagged, untagged),
         ),
       )
       .orderBy(desc(schema.transactions.date));

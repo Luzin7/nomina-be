@@ -13,6 +13,12 @@ export interface ListTransactionsParams {
   title?: string;
   status?: string;
 }
+
+export interface InvoicePaymentFilter {
+  month: number;
+  year: number;
+  untaggedWindow?: { startExclusive: Date; endInclusive: Date };
+}
 export abstract class TransactionRepository {
   abstract create(transaction: Transaction): Promise<void>;
   abstract findUniqueById(id: string): Promise<Transaction | null>;
@@ -76,6 +82,6 @@ export abstract class TransactionRepository {
   abstract findPaymentsByInvoice(
     accountId: string,
     workspaceId: string,
-    invoicePeriod: { month: number; year: number },
+    filter: InvoicePaymentFilter,
   ): Promise<Transaction[]>;
 }

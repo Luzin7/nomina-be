@@ -53,6 +53,14 @@ export class DestinationAccountRequiredForTransferError extends BusinessRuleDoma
   }
 }
 
+export class CreditCardTransferNotAllowedError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'Transferência para cartão de crédito não é permitida. Use o pagamento de fatura.',
+    );
+  }
+}
+
 export class SourceAndDestinationAccountMustBeDifferentError extends BusinessRuleDomainError {
   constructor() {
     super(

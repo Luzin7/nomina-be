@@ -5,6 +5,7 @@ import {
   InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { allocateInvoice } from '@modules/account/valueObjects/InvoiceAllocation';
 import { InvoiceCalendar } from '@modules/account/valueObjects/InvoiceCalendar';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { Transaction } from '@modules/transaction/entities/Transaction';
@@ -67,17 +68,18 @@ export class PayCreditCardInvoiceService implements Service<
     const now = this.dateProvider.now();
     const today = this.dateProvider.startOfDay(now, creditCardAccount.timezone);
 
-    const calendar = new InvoiceCalendar({
-      closingDaysBeforeDue: creditCardAccount.closingDaysBeforeDue,
-      dueDay: creditCardAccount.dueDay,
+    const invoiceKey = allocateInvoice({
+      calendar: new InvoiceCalendar({
+        closingDaysBeforeDue: creditCardAccount.closingDaysBeforeDue,
+        dueDay: creditCardAccount.dueDay,
+      }),
+      paymentDate: this.dateProvider.format(
+        now,
+        'YYYY-MM-DD',
+        creditCardAccount.timezone,
+      ),
+      explicitTarget: this.explicitInvoiceKey(props),
     });
-    const currentInvoiceKey = calendar.invoiceKeyFor(
-      this.dateProvider.format(now, 'YYYY-MM-DD', creditCardAccount.timezone),
-    );
-    const invoiceKey =
-      props.month && props.year
-        ? `${props.year}-${String(props.month).padStart(2, '0')}`
-        : currentInvoiceKey;
 
     const transactionOrError = Transaction.create({
       workspaceId: props.workspaceId,
@@ -111,5 +113,10 @@ export class PayCreditCardInvoiceService implements Service<
     );
 
     return right(transaction);
+  }
+
+  private explicitInvoiceKey(props: Request): string | undefined {
+    if (!props.month || !props.year) return undefined;
+    return `${props.year}-${String(props.month).padStart(2, '0')}`;
   }
 }
