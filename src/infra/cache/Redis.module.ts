@@ -2,7 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { CacheProvider } from './contracts/CacheProvider';
 import { RedisService } from './redis/RedisService';
 
-@Global() // Disponível em toda aplicação
+@Global()
 @Module({
   providers: [
     RedisService,

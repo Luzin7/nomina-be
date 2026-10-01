@@ -6,6 +6,7 @@ import { CacheProvider } from '../contracts/CacheProvider';
 
 @Injectable()
 export class RedisService implements CacheProvider, OnModuleDestroy {
+  private static readonly SCAN_BATCH_SIZE = 100;
   private readonly logger = new Logger(RedisService.name);
   private client: Redis | null = null;
   private readonly isEnabled: boolean;
@@ -148,28 +149,27 @@ export class RedisService implements CacheProvider, OnModuleDestroy {
     if (!this.client) return 0;
 
     try {
-      let cursor = '0';
-      let deleted = 0;
+      let totalDeleted = 0;
+      const stream = this.client.scanStream({
+        match: pattern,
+        count: RedisService.SCAN_BATCH_SIZE,
+      });
 
-      do {
-        const [nextCursor, keys] = await this.client.scan(
-          cursor,
-          'MATCH',
-          pattern,
-          'COUNT',
-          100,
-        );
-        cursor = nextCursor;
-
+      for await (const keys of stream) {
         if (keys.length > 0) {
-          await this.client.del(...keys);
-          deleted += keys.length;
+          const pipeline = this.client.pipeline();
+          keys.forEach((key: string) => pipeline.unlink(key));
+          await pipeline.exec();
+          totalDeleted += keys.length;
         }
-      } while (cursor !== '0');
+      }
 
-      return deleted;
+      return totalDeleted;
     } catch (error) {
-      this.logger.warn(`Redis SCAN+DEL failed for pattern ${pattern}:`, error);
+      this.logger.warn(
+        `Redis scanStream/unlink failed for pattern "${pattern}":`,
+        error,
+      );
       return 0;
     }
   }
