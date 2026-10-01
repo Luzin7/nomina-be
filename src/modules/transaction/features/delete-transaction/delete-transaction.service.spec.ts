@@ -80,7 +80,8 @@ describe('DeleteTransactionService', () => {
       updateWithBalanceUpdate: jest.fn(),
       deleteWithBalanceReversion: jest.fn(),
       toggleStatusWithBalanceUpdate: jest.fn(),
-      findByAccountAndDateRange: jest.fn(),
+      findChargesByPeriod: jest.fn(),
+      findPaymentsByInvoice: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
     accountRepository = {

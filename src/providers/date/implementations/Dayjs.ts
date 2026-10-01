@@ -2,11 +2,7 @@ import { Injectable } from '@nestjs/common';
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
-import {
-  DateProvider,
-  InvoiceCycle,
-  InvoiceCycleParams,
-} from '../contracts/DateProvider';
+import { DateProvider } from '../contracts/DateProvider';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -68,35 +64,6 @@ export class DayJsDateProvider implements DateProvider {
 
   toTimezone(date: Date, timezone: string): Date {
     return dayjs(date).tz(timezone).toDate();
-  }
-
-  calculateInvoiceCycle(params: InvoiceCycleParams): InvoiceCycle {
-    const { referenceDate, closingDaysBeforeDue, dueDay, timezone } = params;
-
-    const ref = dayjs(referenceDate);
-    let anchor = dayjs(referenceDate).tz(timezone);
-
-    const safeDueDay = Math.min(dueDay, anchor.daysInMonth());
-    const dueDate = anchor.date(safeDueDay).startOf('day');
-    const closingDate = dueDate.subtract(closingDaysBeforeDue, 'day');
-
-    if (closingDate.isBefore(ref)) {
-      anchor = anchor.add(1, 'month');
-    }
-
-    const finalSafeDueDay = Math.min(dueDay, anchor.daysInMonth());
-    const finalDueDate = anchor.date(finalSafeDueDay).startOf('day');
-    const finalClosingDate = finalDueDate.subtract(closingDaysBeforeDue, 'day');
-
-    const periodEnd = finalClosingDate.endOf('day').toDate();
-    const previousClosingDate = finalClosingDate.subtract(1, 'month');
-    const periodStart = previousClosingDate.add(1, 'day').startOf('day').toDate();
-
-    return {
-      periodStart,
-      periodEnd,
-      dueDate: finalDueDate.toDate(),
-    };
   }
 
   addDaysInCurrentDate(days: number): Date {

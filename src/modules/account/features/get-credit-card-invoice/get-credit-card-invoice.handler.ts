@@ -5,6 +5,7 @@ import {
   AccountTypeError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { InvoiceCalendar } from '@modules/account/valueObjects/InvoiceCalendar';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { Injectable } from '@nestjs/common';
@@ -25,13 +26,16 @@ type Response = {
   totalAmount: number;
   pendingAmount: number;
   availableLimit: number | null;
-  dueDate: Date;
+  dueDate: string;
   dueMonth: number;
   dueYear: number;
-  periodStart: Date;
-  periodEnd: Date;
+  periodStart: string;
+  periodEnd: string;
   invoiceStatus: InvoiceStatus;
 };
+
+const invoiceKeyOf = (year: number, month: number): string =>
+  `${year}-${String(month).padStart(2, '0')}`;
 
 @Injectable()
 export class GetCreditCardInvoiceService implements Service<
@@ -55,67 +59,53 @@ export class GetCreditCardInvoiceService implements Service<
 
     if (!(account instanceof CreditCard)) return left(new AccountTypeError());
 
-    const institutionTimezone = account.timezone ?? 'America/Sao_Paulo';
+    const timezone = account.timezone ?? 'America/Sao_Paulo';
+    const calendar = new InvoiceCalendar({
+      closingDaysBeforeDue: account.closingDaysBeforeDue,
+      dueDay: account.dueDay,
+    });
 
-    const referenceDate =
+    const today = this.dateProvider.format(
+      this.dateProvider.now(),
+      'YYYY-MM-DD',
+      timezone,
+    );
+    const currentKey = calendar.invoiceKeyFor(today);
+    const key =
       props.month && props.year
-        ? new Date(Date.UTC(props.year, props.month - 1, 1))
-        : this.dateProvider.now();
+        ? invoiceKeyOf(props.year, props.month)
+        : currentKey;
+    const bounds = calendar.bounds(key);
+    const [year, month] = key.split('-').map(Number);
 
-    const { periodStart, periodEnd, dueDate } =
-      this.dateProvider.calculateInvoiceCycle({
-        referenceDate,
-        closingDaysBeforeDue: account.closingDaysBeforeDue,
-        dueDay: account.dueDay,
-        timezone: institutionTimezone,
-      });
-
-    const now = this.dateProvider.now();
-
-    let invoiceStatus: InvoiceStatus;
-    if (periodEnd >= now) {
-      invoiceStatus = 'current';
-    } else if (dueDate >= now) {
-      invoiceStatus = 'closed';
-    } else {
-      invoiceStatus = 'overdue';
-    }
-
-    const transactions =
-      await this.transactionRepository.findByAccountAndDateRange(
+    const [charges, payments] = await Promise.all([
+      this.transactionRepository.findChargesByPeriod(
         props.accountId,
         props.workspaceId,
-        periodStart,
-        periodEnd,
-        props.month && props.year
-          ? { month: props.month, year: props.year }
-          : undefined,
-      );
+        this.dateProvider.startOfDay(bounds.periodStart, timezone),
+        this.dateProvider.startOfDay(bounds.endExclusive, timezone),
+      ),
+      this.transactionRepository.findPaymentsByInvoice(
+        props.accountId,
+        props.workspaceId,
+        { month, year },
+      ),
+    ]);
 
-    const chargesTotal = transactions
-      .filter(
-        (t) =>
-          t.status === TransactionStatus.COMPLETED &&
-          t.accountId === props.accountId,
-      )
+    const transactions = [...charges, ...payments];
+
+    const chargesTotal = charges
+      .filter((t) => t.status === TransactionStatus.COMPLETED)
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
-    const paymentsTotal = transactions
-      .filter(
-        (t) =>
-          t.status === TransactionStatus.COMPLETED &&
-          t.destinationAccountId === props.accountId,
-      )
+    const paymentsTotal = payments
+      .filter((t) => t.status === TransactionStatus.COMPLETED)
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const totalAmount = Math.max(chargesTotal - paymentsTotal, 0);
 
-    const pendingAmount = transactions
-      .filter(
-        (t) =>
-          t.status === TransactionStatus.PENDING &&
-          t.accountId === props.accountId,
-      )
+    const pendingAmount = charges
+      .filter((t) => t.status === TransactionStatus.PENDING)
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const availableLimit =
@@ -126,17 +116,26 @@ export class GetCreditCardInvoiceService implements Service<
             Number(account.creditLimit) - totalAmount - pendingAmount,
           );
 
+    let invoiceStatus: InvoiceStatus;
+    if (key === currentKey) {
+      invoiceStatus = 'current';
+    } else if (bounds.dueDate < today) {
+      invoiceStatus = 'overdue';
+    } else {
+      invoiceStatus = 'closed';
+    }
+
     return right({
       account,
       transactions,
       totalAmount,
       pendingAmount,
       availableLimit,
-      dueDate,
-      dueMonth: dueDate.getUTCMonth() + 1,
-      dueYear: dueDate.getUTCFullYear(),
-      periodStart,
-      periodEnd,
+      dueDate: bounds.dueDate,
+      dueMonth: month,
+      dueYear: year,
+      periodStart: bounds.periodStart,
+      periodEnd: bounds.periodEnd,
       invoiceStatus,
     });
   }
