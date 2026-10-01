@@ -3,6 +3,15 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.3.1](https://github.com/Luzin7/nomina-be/compare/v1.3.0...v1.3.1) (2026-10-01)
+
+### Bug Fixes
+
+* **invoice:** corrige ciclo da fatura e separa cobranças de pagamentos ([a4e0093](https://github.com/Luzin7/nomina-be/commit/a4e0093e1d13ea6efc1193fc21147dd40bdf3ddd))
+* **release:** corrige notas vazias, tag maiúscula no GHCR e integra release ao push em main ([3baef1f](https://github.com/Luzin7/nomina-be/commit/3baef1f63d32b30671852357f13c4ae1238eb02d))
+* **release:** regenera package-lock com npm 10 para bater com o npm ci do CI ([f2a03fb](https://github.com/Luzin7/nomina-be/commit/f2a03fbaef01391c7c0916afa8a164c4d8df299d))
+* **report:** ancora saldo de contas correntes na evolucao patrimonial ([38e43be](https://github.com/Luzin7/nomina-be/commit/38e43beb0fad413a9cf35495d4d5eed13d52b0d1))
+
 ## [1.3.0](https://github.com/Luzin7/nomina-be/compare/v1.2.1...v1.3.0) (2026-10-01)
 
 ## [1.2.1](https://github.com/Luzin7/nomina-be/compare/v1.2.0...v1.2.1) (2026-09-18)
