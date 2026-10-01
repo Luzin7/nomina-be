@@ -10,9 +10,9 @@ interface CreditCardInvoiceData {
   totalAmount: number;
   pendingAmount: number;
   availableLimit: number | null;
-  dueDate: Date;
-  periodStart: Date;
-  periodEnd: Date;
+  dueDate: string;
+  periodStart: string;
+  periodEnd: string;
   invoiceStatus: 'current' | 'closed' | 'overdue';
 }
 
@@ -27,9 +27,9 @@ export class CreditCardInvoicePresenter {
         data.availableLimit === null
           ? null
           : MoneyUtils.centsToDecimal(data.availableLimit),
-      dueDate: data.dueDate.toISOString(),
-      periodStart: data.periodStart.toISOString(),
-      periodEnd: data.periodEnd.toISOString(),
+      dueDate: data.dueDate,
+      periodStart: data.periodStart,
+      periodEnd: data.periodEnd,
       invoiceStatus: data.invoiceStatus,
     };
   }

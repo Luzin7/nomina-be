@@ -1,16 +1,3 @@
-export type InvoiceCycleParams = {
-  referenceDate: Date;
-  closingDaysBeforeDue: number;
-  dueDay: number;
-  timezone: string;
-};
-
-export type InvoiceCycle = {
-  periodStart: Date;
-  periodEnd: Date;
-  dueDate: Date;
-};
-
 export abstract class DateProvider {
   abstract now(): Date;
   abstract add(
@@ -22,7 +9,6 @@ export abstract class DateProvider {
 
   abstract format(date: Date, formatString: string, timezone: string): string;
   abstract toTimezone(date: Date, timezone: string): Date;
-  abstract calculateInvoiceCycle(params: InvoiceCycleParams): InvoiceCycle;
   abstract addDaysInCurrentDate(days: number): Date;
   abstract parse(date: string | Date): Date;
   abstract startOfDay(date: string | Date, tz?: string): Date;

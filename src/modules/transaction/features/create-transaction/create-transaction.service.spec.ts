@@ -88,7 +88,8 @@ describe('CreateTransactionService', () => {
       updateWithBalanceUpdate: jest.fn(),
       deleteWithBalanceReversion: jest.fn(),
       toggleStatusWithBalanceUpdate: jest.fn(),
-      findByAccountAndDateRange: jest.fn(),
+      findChargesByPeriod: jest.fn(),
+      findPaymentsByInvoice: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
     dateProvider = {
@@ -97,7 +98,6 @@ describe('CreateTransactionService', () => {
       add: jest.fn(),
       format: jest.fn(),
       toTimezone: jest.fn(),
-      calculateInvoiceCycle: jest.fn(),
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
       endOfDay: jest.fn(),

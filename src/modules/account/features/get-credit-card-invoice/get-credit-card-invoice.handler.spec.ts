@@ -14,10 +14,7 @@ import {
   makeCompletedCharge,
   makeCompletedPayment,
 } from '@modules/transaction/test-helpers/mock-factories';
-import {
-  DateProvider,
-  InvoiceCycle,
-} from '@providers/date/contracts/DateProvider';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { GetCreditCardInvoiceService } from './get-credit-card-invoice.handler';
 
@@ -42,11 +39,7 @@ describe('GetCreditCardInvoiceService', () => {
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let dateProvider: jest.Mocked<DateProvider>;
 
-  const invoiceCycle: InvoiceCycle = {
-    periodStart: new Date('2024-01-06'),
-    periodEnd: new Date('2024-02-05'),
-    dueDate: new Date('2024-02-15'),
-  };
+  const today = '2026-10-15';
 
   beforeEach(() => {
     accountRepository = {
@@ -70,20 +63,21 @@ describe('GetCreditCardInvoiceService', () => {
       updateWithBalanceUpdate: jest.fn(),
       deleteWithBalanceReversion: jest.fn(),
       toggleStatusWithBalanceUpdate: jest.fn(),
-      findByAccountAndDateRange: jest.fn(),
+      findChargesByPeriod: jest.fn(),
+      findPaymentsByInvoice: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
     dateProvider = {
-      now: jest.fn().mockReturnValue(new Date('2024-01-15')),
+      now: jest.fn().mockReturnValue(new Date('2026-10-15T12:00:00Z')),
       add: jest.fn(),
-      format: jest.fn(),
+      format: jest.fn().mockReturnValue(today),
       toTimezone: jest.fn(),
-      calculateInvoiceCycle: jest.fn().mockReturnValue(invoiceCycle),
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
-      startOfDay: jest.fn(),
+      startOfDay: jest.fn((date: string | Date) => new Date(String(date))),
       endOfDay: jest.fn(),
       startOfMonth: jest.fn(),
+      endOfMonth: jest.fn(),
     } as unknown as jest.Mocked<DateProvider>;
 
     service = new GetCreditCardInvoiceService(
@@ -121,43 +115,66 @@ describe('GetCreditCardInvoiceService', () => {
     expect(result.value).toBeInstanceOf(AccountTypeError);
   });
 
-  it('should return invoice data on success', async () => {
+  it('should return the current invoice data on success', async () => {
     accountRepository.findById.mockResolvedValue(makeCreditCard());
-    transactionRepository.findByAccountAndDateRange.mockResolvedValue([]);
+    transactionRepository.findChargesByPeriod.mockResolvedValue([]);
+    transactionRepository.findPaymentsByInvoice.mockResolvedValue([]);
 
     const result = await service.execute(makeRequest());
+
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.account).toBeInstanceOf(CreditCard);
       expect(result.value.transactions).toEqual([]);
       expect(result.value.totalAmount).toBe(0);
-      expect(result.value.dueDate).toBe(invoiceCycle.dueDate);
+      expect(result.value.periodStart).toBe('2026-10-11');
+      expect(result.value.periodEnd).toBe('2026-11-10');
+      expect(result.value.dueDate).toBe('2026-11-15');
       expect(result.value.invoiceStatus).toBe('current');
     }
-    expect(dateProvider.calculateInvoiceCycle).toHaveBeenCalledWith(
-      expect.objectContaining({
-        closingDaysBeforeDue: 5,
-        dueDay: 15,
-      }),
+
+    expect(transactionRepository.findChargesByPeriod).toHaveBeenCalledWith(
+      'acc-1',
+      'ws-1',
+      new Date('2026-10-11'),
+      new Date('2026-11-11'),
+    );
+  });
+
+  it('should resolve a requested invoice by its due month', async () => {
+    accountRepository.findById.mockResolvedValue(makeCreditCard());
+    transactionRepository.findChargesByPeriod.mockResolvedValue([]);
+    transactionRepository.findPaymentsByInvoice.mockResolvedValue([]);
+
+    const result = await service.execute(makeRequest({ month: 9, year: 2026 }));
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.periodStart).toBe('2026-08-11');
+      expect(result.value.periodEnd).toBe('2026-09-10');
+      expect(result.value.dueDate).toBe('2026-09-15');
+      expect(result.value.invoiceStatus).toBe('overdue');
+    }
+
+    expect(transactionRepository.findPaymentsByInvoice).toHaveBeenCalledWith(
+      'acc-1',
+      'ws-1',
+      { month: 9, year: 2026 },
     );
   });
 
   it('should subtract completed payments made toward this invoice from totalAmount', async () => {
-    // Bug reportado: o pagamento de uma fatura não refletia no totalAmount
-    // porque o cálculo usava Math.min(chargesTotal, account.balance) — o
-    // saldo GLOBAL do cartão, que também inclui cobranças de outros ciclos.
-    // Pagar uma fatura antiga não reduzia o saldo abaixo do total daquele
-    // ciclo específico, então nada parecia acontecer. Agora o pagamento é
-    // uma transação (destinationAccountId = cartão) buscada no mesmo range
-    // de datas e subtraída diretamente das cobranças daquele ciclo.
     accountRepository.findById.mockResolvedValue(makeCreditCard());
-    transactionRepository.findByAccountAndDateRange.mockResolvedValue([
+    transactionRepository.findChargesByPeriod.mockResolvedValue([
       makeCompletedCharge(5000n),
       makeCompletedCharge(5000n),
+    ]);
+    transactionRepository.findPaymentsByInvoice.mockResolvedValue([
       makeCompletedPayment(3000n),
     ]);
 
     const result = await service.execute(makeRequest());
+
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.totalAmount).toBe(7000);
@@ -166,12 +183,15 @@ describe('GetCreditCardInvoiceService', () => {
 
   it('should not let totalAmount go negative when payments exceed charges', async () => {
     accountRepository.findById.mockResolvedValue(makeCreditCard());
-    transactionRepository.findByAccountAndDateRange.mockResolvedValue([
+    transactionRepository.findChargesByPeriod.mockResolvedValue([
       makeCompletedCharge(5000n),
+    ]);
+    transactionRepository.findPaymentsByInvoice.mockResolvedValue([
       makeCompletedPayment(9000n),
     ]);
 
     const result = await service.execute(makeRequest());
+
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.totalAmount).toBe(0);
@@ -182,18 +202,22 @@ describe('GetCreditCardInvoiceService', () => {
     const card = makeCreditCard();
     Object.defineProperty(card, 'creditLimit', { value: 10000n });
     accountRepository.findById.mockResolvedValue(card);
+
     const charge = makeCompletedCharge(8000n);
     const pending = makeCompletedCharge(1000n);
     Object.defineProperty(pending, 'status', {
       value: TransactionStatus.PENDING,
     });
     Object.defineProperty(pending, 'amount', { value: 6000n });
-    transactionRepository.findByAccountAndDateRange.mockResolvedValue([
+
+    transactionRepository.findChargesByPeriod.mockResolvedValue([
       charge,
       pending,
     ]);
+    transactionRepository.findPaymentsByInvoice.mockResolvedValue([]);
 
     const result = await service.execute(makeRequest());
+
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.availableLimit).toBe(0);

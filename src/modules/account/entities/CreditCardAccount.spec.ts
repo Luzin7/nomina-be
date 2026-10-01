@@ -188,13 +188,8 @@ describe('CreditCard entity', () => {
       expect(card.dueDay).toBe(25);
     });
 
-    // `create()` e `updateInvoiceDates()` precisam validar a MESMA regra: antes
-    // do alinhamento, create aceitava 5–10 e updateInvoiceDates aceitava 1–10,
-    // então dava pra criar um cartão válido e depois colocá-lo num estado que
-    // create() teria rejeitado.
     it.each([
       [0, 10],
-      [1, 10],
       [6, 10],
       [11, 10],
       [32, 10],

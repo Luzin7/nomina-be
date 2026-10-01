@@ -13,8 +13,8 @@ import {
   eq,
   gte,
   ilike,
+  lt,
   lte,
-  or,
   sql,
   sum,
 } from 'drizzle-orm';
@@ -326,37 +326,42 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     });
   }
 
-  async findByAccountAndDateRange(
+  async findChargesByPeriod(
     accountId: string,
     workspaceId: string,
     startDate: Date,
-    endDate: Date,
-    invoicePeriod?: { month: number; year: number },
+    endExclusive: Date,
   ): Promise<Transaction[]> {
-    const dateFilter = and(
-      gte(schema.transactions.date, startDate),
-      lte(schema.transactions.date, endDate),
-    );
-
-    const periodFilter = invoicePeriod
-      ? and(
-          eq(schema.transactions.invoicePeriodMonth, invoicePeriod.month),
-          eq(schema.transactions.invoicePeriodYear, invoicePeriod.year),
-          eq(schema.transactions.destinationAccountId, accountId),
-        )
-      : undefined;
-
     const rows = await this.drizzle.db
       .select()
       .from(schema.transactions)
       .where(
         and(
-          or(
-            eq(schema.transactions.accountId, accountId),
-            eq(schema.transactions.destinationAccountId, accountId),
-          ),
+          eq(schema.transactions.accountId, accountId),
           eq(schema.transactions.workspaceId, workspaceId),
-          or(dateFilter, periodFilter),
+          gte(schema.transactions.date, startDate),
+          lt(schema.transactions.date, endExclusive),
+        ),
+      )
+      .orderBy(desc(schema.transactions.date));
+
+    return rows.map(TransactionMapper.toDomain);
+  }
+
+  async findPaymentsByInvoice(
+    accountId: string,
+    workspaceId: string,
+    invoicePeriod: { month: number; year: number },
+  ): Promise<Transaction[]> {
+    const rows = await this.drizzle.db
+      .select()
+      .from(schema.transactions)
+      .where(
+        and(
+          eq(schema.transactions.destinationAccountId, accountId),
+          eq(schema.transactions.workspaceId, workspaceId),
+          eq(schema.transactions.invoicePeriodMonth, invoicePeriod.month),
+          eq(schema.transactions.invoicePeriodYear, invoicePeriod.year),
         ),
       )
       .orderBy(desc(schema.transactions.date));

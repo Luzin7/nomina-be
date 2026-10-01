@@ -66,11 +66,16 @@ export abstract class TransactionRepository {
     destinationNewBalance?: number,
   ): Promise<Transaction>;
 
-  abstract findByAccountAndDateRange(
+  abstract findChargesByPeriod(
     accountId: string,
     workspaceId: string,
     startDate: Date,
-    endDate: Date,
-    invoicePeriod?: { month: number; year: number },
+    endExclusive: Date,
+  ): Promise<Transaction[]>;
+
+  abstract findPaymentsByInvoice(
+    accountId: string,
+    workspaceId: string,
+    invoicePeriod: { month: number; year: number },
   ): Promise<Transaction[]>;
 }
