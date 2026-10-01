@@ -128,7 +128,6 @@ describe('SwitchWorkspaceService', () => {
       add: jest.fn(),
       format: jest.fn(),
       toTimezone: jest.fn(),
-      calculateInvoiceCycle: jest.fn(),
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
       startOfDay: jest.fn(),

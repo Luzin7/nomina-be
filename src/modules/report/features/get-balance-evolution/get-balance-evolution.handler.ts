@@ -305,27 +305,30 @@ export class BalanceEvolutionService {
     const context: QueryContext = { workspaceId, startDate, endDate };
 
     const [
-      generalOpening,
       generalPeriod,
       investmentOpening,
       investmentPeriod,
       totalInvestedResult,
+      totalGeneralBalance,
     ] = await Promise.all([
-      this.queryOpening(context, generalFilter),
       this.queryPeriod(context, generalFilter),
       this.queryOpening(context, investmentFilter),
       this.queryPeriod(context, investmentFilter),
       this.queryTotalInvested(workspaceId),
+      this.queryTotalGeneralBalance(workspaceId),
     ]);
 
     const evolution = buildDailySummary({
-      opening: generalOpening,
+      opening: [],
       period: generalPeriod,
       resolve: resolveGeneralType,
       dateProvider: this.dateProvider,
       timezone,
       startDate,
       endDate,
+      explicitStartBalance:
+        totalGeneralBalance -
+        calculateNetPeriodEffect(generalPeriod, resolveGeneralType),
     });
 
     const investments = buildDailySummary({
@@ -418,6 +421,24 @@ export class BalanceEvolutionService {
         and(
           eq(schema.accounts.workspaceId, workspaceId),
           eq(schema.accounts.type, AccountType.INVESTMENT),
+        ),
+      );
+
+    return result[0]?.total ?? 0;
+  }
+
+  private async queryTotalGeneralBalance(workspaceId: string): Promise<number> {
+    const result = await this.drizzle.db
+      .select({
+        total: sql<number>`COALESCE(SUM(${schema.accounts.balance}), 0)`
+          .mapWith(Number)
+          .as('total_general'),
+      })
+      .from(schema.accounts)
+      .where(
+        and(
+          eq(schema.accounts.workspaceId, workspaceId),
+          sql`${schema.accounts.type} IN (${AccountType.CHECKING}, ${AccountType.CASH})`,
         ),
       );
 

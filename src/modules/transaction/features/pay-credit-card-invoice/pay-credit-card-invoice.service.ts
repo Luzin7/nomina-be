@@ -5,6 +5,7 @@ import {
   InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { InvoiceCalendar } from '@modules/account/valueObjects/InvoiceCalendar';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
@@ -63,10 +64,20 @@ export class PayCreditCardInvoiceService implements Service<
     }
 
     const amountBigInt = BigInt(props.amount);
-    const today = this.dateProvider.startOfDay(
-      this.dateProvider.now(),
-      creditCardAccount.timezone,
+    const now = this.dateProvider.now();
+    const today = this.dateProvider.startOfDay(now, creditCardAccount.timezone);
+
+    const calendar = new InvoiceCalendar({
+      closingDaysBeforeDue: creditCardAccount.closingDaysBeforeDue,
+      dueDay: creditCardAccount.dueDay,
+    });
+    const currentInvoiceKey = calendar.invoiceKeyFor(
+      this.dateProvider.format(now, 'YYYY-MM-DD', creditCardAccount.timezone),
     );
+    const invoiceKey =
+      props.month && props.year
+        ? `${props.year}-${String(props.month).padStart(2, '0')}`
+        : currentInvoiceKey;
 
     const transactionOrError = Transaction.create({
       workspaceId: props.workspaceId,
@@ -80,8 +91,8 @@ export class PayCreditCardInvoiceService implements Service<
       date: today,
       type: 'TRANSFER',
       status: TransactionStatus.COMPLETED,
-      invoicePeriodMonth: props.month ?? null,
-      invoicePeriodYear: props.year ?? null,
+      invoicePeriodMonth: Number(invoiceKey.slice(5, 7)),
+      invoicePeriodYear: Number(invoiceKey.slice(0, 4)),
     });
 
     if (transactionOrError.isLeft()) return left(transactionOrError.value);

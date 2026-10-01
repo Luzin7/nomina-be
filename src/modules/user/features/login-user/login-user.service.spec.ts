@@ -93,7 +93,6 @@ describe('LoginUserService', () => {
       add: jest.fn(),
       format: jest.fn(),
       toTimezone: jest.fn(),
-      calculateInvoiceCycle: jest.fn(),
       parse: jest.fn(),
       startOfDay: jest.fn(),
       endOfDay: jest.fn(),

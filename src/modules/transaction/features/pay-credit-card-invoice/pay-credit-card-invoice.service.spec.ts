@@ -65,16 +65,16 @@ describe('PayCreditCardInvoiceService', () => {
       updateWithBalanceUpdate: jest.fn(),
       deleteWithBalanceReversion: jest.fn(),
       toggleStatusWithBalanceUpdate: jest.fn(),
-      findByAccountAndDateRange: jest.fn(),
+      findChargesByPeriod: jest.fn(),
+      findPaymentsByInvoice: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
     dateProvider = {
       now: jest.fn().mockReturnValue(new Date()),
       startOfDay: jest.fn().mockReturnValue(new Date()),
       add: jest.fn(),
-      format: jest.fn(),
+      format: jest.fn().mockReturnValue('2024-08-05'),
       toTimezone: jest.fn(),
-      calculateInvoiceCycle: jest.fn(),
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
       endOfDay: jest.fn(),
@@ -143,7 +143,7 @@ describe('PayCreditCardInvoiceService', () => {
         name: 'Another CC',
         timezone: 'UTC',
         creditLimit: 100000n,
-        closingDaysBeforeDue: 10,
+        closingDaysBeforeDue: 5,
         dueDay: 20,
       },
       'acc-src',
@@ -195,8 +195,8 @@ describe('PayCreditCardInvoiceService', () => {
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.date).toEqual(today);
-      expect(result.value.invoicePeriodMonth).toBeNull();
-      expect(result.value.invoicePeriodYear).toBeNull();
+      expect(result.value.invoicePeriodMonth).toBe(8);
+      expect(result.value.invoicePeriodYear).toBe(2024);
     }
   });
 
