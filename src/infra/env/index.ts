@@ -8,7 +8,7 @@ const envSchema = z.object({
   PROD_URL: z.string().url(),
   DEV_URL: z.string().url(),
   DEPLOY_URL: z.string().url(),
-  NODE_ENV: z.enum(['dev', 'production']).default('production'),
+  NODE_ENV: z.enum(['dev', 'production']),
   JWT_PRIVATE_KEY: z.string(),
   JWT_PUBLIC_KEY: z.string(),
   JWT_USER_ACCESS_EXPIRES_IN: z.coerce.number(),

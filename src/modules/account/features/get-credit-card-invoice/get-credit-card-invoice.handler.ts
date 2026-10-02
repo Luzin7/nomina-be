@@ -18,7 +18,7 @@ import { GetCreditCardInvoiceRequest } from './get-credit-card-invoice.dto';
 
 type Request = GetCreditCardInvoiceRequest &
   TokenPayloadBase & { accountId: string };
-type InvoiceStatus = 'current' | 'closed' | 'overdue';
+type InvoiceStatus = 'current' | 'closed' | 'overdue' | 'paid';
 
 type Response = {
   account: CreditCard;
@@ -88,7 +88,17 @@ export class GetCreditCardInvoiceService implements Service<
       this.transactionRepository.findPaymentsByInvoice(
         props.accountId,
         props.workspaceId,
-        { month, year },
+        {
+          month,
+          year,
+          untaggedWindow: {
+            startExclusive: this.dateProvider.startOfDay(
+              bounds.periodEnd,
+              timezone,
+            ),
+            endInclusive: this.dateProvider.endOfDay(bounds.dueDate, timezone),
+          },
+        },
       ),
     ]);
 
@@ -116,8 +126,12 @@ export class GetCreditCardInvoiceService implements Service<
             Number(account.creditLimit) - totalAmount - pendingAmount,
           );
 
+    const isSettled = chargesTotal > 0 && paymentsTotal >= chargesTotal;
+
     let invoiceStatus: InvoiceStatus;
-    if (key === currentKey) {
+    if (isSettled) {
+      invoiceStatus = 'paid';
+    } else if (key === currentKey) {
       invoiceStatus = 'current';
     } else if (bounds.dueDate < today) {
       invoiceStatus = 'overdue';

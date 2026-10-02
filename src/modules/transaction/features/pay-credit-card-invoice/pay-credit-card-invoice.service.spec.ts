@@ -195,8 +195,34 @@ describe('PayCreditCardInvoiceService', () => {
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.date).toEqual(today);
-      expect(result.value.invoicePeriodMonth).toBe(8);
+      expect(result.value.invoicePeriodMonth).toBe(7);
       expect(result.value.invoicePeriodYear).toBe(2024);
+    }
+  });
+
+  it('should anchor the default invoice on the most recently closed one', async () => {
+    const today = new Date('2026-09-02T12:00:00Z');
+    dateProvider.now.mockReturnValue(today);
+    dateProvider.startOfDay.mockReturnValue(today);
+    dateProvider.format.mockReturnValue('2026-09-02');
+    accountRepository.findById
+      .mockResolvedValueOnce(
+        makeCreditCard({
+          id: 'acc-cc',
+          timezone: 'UTC',
+          balance: 100000n,
+          dueDay: 7,
+          closingDaysBeforeDue: 7,
+        }),
+      )
+      .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+
+    const result = await service.execute(makeRequest());
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.invoicePeriodMonth).toBe(9);
+      expect(result.value.invoicePeriodYear).toBe(2026);
     }
   });
 

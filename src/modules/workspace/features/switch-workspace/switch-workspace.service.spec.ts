@@ -12,6 +12,7 @@ import {
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
 import { Encrypter } from '@providers/cryptography/contracts/Encrypter';
+import { TokenHasher } from '@providers/cryptography/contracts/TokenHasher';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { SwitchWorkspaceService } from './switch-workspace.service';
 
@@ -67,6 +68,7 @@ describe('SwitchWorkspaceService', () => {
   let encrypter: jest.Mocked<Encrypter>;
   let refreshTokensRepository: jest.Mocked<RefreshTokensRepository>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let tokenHasher: jest.Mocked<TokenHasher>;
 
   function arrangeSuccessMocks() {
     workspaceRepository.findById.mockResolvedValue(makeWorkspace());
@@ -77,8 +79,7 @@ describe('SwitchWorkspaceService', () => {
     encrypter.encrypt.mockResolvedValue('token');
     dateProvider.now.mockReturnValue(new Date());
     dateProvider.add.mockReturnValue(new Date(Date.now() + 604800000));
-    refreshTokensRepository.deleteManyByUserId.mockResolvedValue();
-    refreshTokensRepository.create.mockResolvedValue();
+    refreshTokensRepository.replaceAllByUserId.mockResolvedValue();
   }
 
   beforeEach(() => {
@@ -115,12 +116,15 @@ describe('SwitchWorkspaceService', () => {
     } as jest.Mocked<UserRepository>;
 
     encrypter = { encrypt: jest.fn() } as jest.Mocked<Encrypter>;
+    tokenHasher = {
+      hash: jest.fn((token: string) => `hashed-${token}`),
+    } as jest.Mocked<TokenHasher>;
 
     refreshTokensRepository = {
-      create: jest.fn(),
       findUniqueByUserIdAndToken: jest.fn(),
+      replaceByToken: jest.fn(),
+      replaceAllByUserId: jest.fn(),
       delete: jest.fn(),
-      deleteManyByUserId: jest.fn(),
     } as jest.Mocked<RefreshTokensRepository>;
 
     dateProvider = {
@@ -142,6 +146,7 @@ describe('SwitchWorkspaceService', () => {
       encrypter,
       refreshTokensRepository,
       dateProvider,
+      tokenHasher,
     );
   });
 
@@ -187,6 +192,6 @@ describe('SwitchWorkspaceService', () => {
       expect(result.value.accessToken).toBeDefined();
       expect(result.value.refreshToken).toBeDefined();
     }
-    expect(refreshTokensRepository.create).toHaveBeenCalledTimes(1);
+    expect(refreshTokensRepository.replaceAllByUserId).toHaveBeenCalledTimes(1);
   });
 });
