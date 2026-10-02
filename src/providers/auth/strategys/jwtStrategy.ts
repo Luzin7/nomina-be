@@ -11,7 +11,13 @@ export const tokenPayloadSchema = z.object({
   role: z.nativeEnum(UserRole),
 });
 
+export const refreshTokenPayloadSchema = z.object({
+  sub: z.string().uuid(),
+});
+
 export type TokenPayloadSchema = z.infer<typeof tokenPayloadSchema>;
+
+export type RefreshTokenPayload = z.infer<typeof refreshTokenPayloadSchema>;
 
 export type TokenPayloadBase = Omit<TokenPayloadSchema, 'role'>;
 

@@ -7,6 +7,7 @@ import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
 import { Encrypter } from '@providers/cryptography/contracts/Encrypter';
 import { HashComparer } from '@providers/cryptography/contracts/HashComparer';
+import { TokenHasher } from '@providers/cryptography/contracts/TokenHasher';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { LoginUserService } from './login-user.service';
@@ -54,6 +55,7 @@ describe('LoginUserService', () => {
   let hashComparer: jest.Mocked<HashComparer>;
   let encrypter: jest.Mocked<Encrypter>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let tokenHasher: jest.Mocked<TokenHasher>;
 
   beforeEach(() => {
     userRepository = {
@@ -76,15 +78,18 @@ describe('LoginUserService', () => {
       findUserByWorkspaceAndUserId: jest.fn(),
     } as jest.Mocked<WorkspaceUserRepository>;
     refreshTokensRepository = {
-      create: jest.fn(),
       findUniqueByUserIdAndToken: jest.fn(),
+      replaceByToken: jest.fn(),
+      replaceAllByUserId: jest.fn(),
       delete: jest.fn(),
-      deleteManyByUserId: jest.fn(),
     } as jest.Mocked<RefreshTokensRepository>;
     hashComparer = { compare: jest.fn() } as jest.Mocked<HashComparer>;
     encrypter = {
       encrypt: jest.fn().mockResolvedValue('token'),
     } as jest.Mocked<Encrypter>;
+    tokenHasher = {
+      hash: jest.fn((token: string) => `hashed-${token}`),
+    } as jest.Mocked<TokenHasher>;
     dateProvider = {
       addDaysInCurrentDate: jest
         .fn()
@@ -107,6 +112,7 @@ describe('LoginUserService', () => {
       hashComparer,
       encrypter,
       dateProvider,
+      tokenHasher,
     );
   });
 
@@ -118,8 +124,7 @@ describe('LoginUserService', () => {
     workspaceUserRepository.findDefaultWorkspaceByUserId.mockResolvedValue(
       makeWorkspaceUser(),
     );
-    refreshTokensRepository.deleteManyByUserId.mockResolvedValue();
-    refreshTokensRepository.create.mockResolvedValue();
+    refreshTokensRepository.replaceAllByUserId.mockResolvedValue();
   }
 
   it('should return left(WrongCredentialsError) when user is not found', async () => {
@@ -162,32 +167,27 @@ describe('LoginUserService', () => {
     }
   });
 
-  it('should delete old tokens before creating the new one', async () => {
+  it('should replace previous sessions when login succeeds', async () => {
     arrangeSuccessMocks();
-    const order: string[] = [];
-    refreshTokensRepository.deleteManyByUserId.mockImplementation(async () => {
-      order.push('delete');
-    });
-    refreshTokensRepository.create.mockImplementation(async () => {
-      order.push('create');
-    });
 
     await service.execute(makeRequest());
 
-    expect(order).toEqual(['delete', 'create']);
+    expect(refreshTokensRepository.replaceAllByUserId).toHaveBeenCalledWith(
+      'user-1',
+      expect.anything(),
+    );
   });
 
-  it('should not create a refresh token when default workspace is not found', async () => {
+  it('should not persist a refresh token when default workspace is not found', async () => {
     userRepository.findUniqueByEmail.mockResolvedValue(makeUser());
     hashComparer.compare.mockResolvedValue(true);
     workspaceUserRepository.findDefaultWorkspaceByUserId.mockResolvedValue(
       null,
     );
-    refreshTokensRepository.deleteManyByUserId.mockResolvedValue();
 
     await service.execute(makeRequest());
 
-    expect(refreshTokensRepository.create).not.toHaveBeenCalled();
+    expect(refreshTokensRepository.replaceAllByUserId).not.toHaveBeenCalled();
   });
 
   it('should encrypt access token with workspace payload', async () => {

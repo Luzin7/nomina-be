@@ -1,5 +1,4 @@
 import { UserRole } from '@constants/enums';
-import { RefreshToken } from '@modules/user/entities/RefreshToken';
 import { User } from '@modules/user/entities/User';
 import { UserNotFoundError } from '@modules/user/errors';
 import { RefreshTokensRepository } from '@modules/user/repositories/contracts/refresh-token.repository';
@@ -8,6 +7,7 @@ import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
 import { Decoder } from '@providers/cryptography/contracts/Decoder';
 import { Encrypter } from '@providers/cryptography/contracts/Encrypter';
+import { TokenHasher } from '@providers/cryptography/contracts/TokenHasher';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { SessionExpiredError } from '@shared/errors/SessionExpiredError';
 import { RefreshTokenService } from './refresh-token.service';
@@ -20,23 +20,12 @@ jest.mock('@infra/env', () => ({
   },
 }));
 
+const USER_ID = '10000000-0000-4000-8000-000000000000';
+
 function makeUser(): User {
   const r = User.create(
     { name: 'Test User', email: 'test@test.com', passwordHash: 'hashed' },
-    'user-1',
-  );
-  if (r.isLeft()) throw r.value;
-  return r.value;
-}
-
-function makeRefreshToken(): RefreshToken {
-  const r = RefreshToken.create(
-    {
-      userId: 'user-1',
-      token: 'valid-token',
-      expiresIn: new Date(Date.now() + 100000),
-    },
-    'rt-1',
+    USER_ID,
   );
   if (r.isLeft()) throw r.value;
   return r.value;
@@ -45,7 +34,7 @@ function makeRefreshToken(): RefreshToken {
 function makeWorkspaceUser(): WorkspaceUser {
   const r = WorkspaceUser.create({
     workspaceId: 'ws-1',
-    userId: 'user-1',
+    userId: USER_ID,
     role: UserRole.OWNER,
     isDefault: true,
   });
@@ -61,17 +50,15 @@ describe('RefreshTokenService', () => {
   let encrypter: jest.Mocked<Encrypter>;
   let dateProvider: jest.Mocked<DateProvider>;
   let workspaceUserRepository: jest.Mocked<WorkspaceUserRepository>;
+  let tokenHasher: jest.Mocked<TokenHasher>;
 
   function arrangeSuccessMocks() {
     decrypter.decrypt.mockResolvedValue({
       isValid: true,
-      payload: { sub: 'user-1', workspaceId: 'ws-1', role: UserRole.OWNER },
+      payload: { sub: USER_ID },
     });
     userRepository.findUniqueById.mockResolvedValue(makeUser());
-    refreshTokensRepository.findUniqueByUserIdAndToken.mockResolvedValue(
-      makeRefreshToken(),
-    );
-    refreshTokensRepository.delete.mockResolvedValue();
+    refreshTokensRepository.replaceByToken.mockResolvedValue(true);
     workspaceUserRepository.findDefaultWorkspaceByUserId.mockResolvedValue({
       user: makeWorkspaceUser(),
       workspaceName: 'My WS',
@@ -80,7 +67,6 @@ describe('RefreshTokenService', () => {
     dateProvider.addDaysInCurrentDate.mockReturnValue(
       new Date(Date.now() + 604800000),
     );
-    refreshTokensRepository.create.mockResolvedValue();
   }
 
   beforeEach(() => {
@@ -93,14 +79,17 @@ describe('RefreshTokenService', () => {
     } as jest.Mocked<UserRepository>;
 
     refreshTokensRepository = {
-      create: jest.fn(),
       findUniqueByUserIdAndToken: jest.fn(),
+      replaceByToken: jest.fn(),
+      replaceAllByUserId: jest.fn(),
       delete: jest.fn(),
-      deleteManyByUserId: jest.fn(),
     } as jest.Mocked<RefreshTokensRepository>;
 
     decrypter = { decrypt: jest.fn() } as jest.Mocked<Decoder>;
     encrypter = { encrypt: jest.fn() } as jest.Mocked<Encrypter>;
+    tokenHasher = {
+      hash: jest.fn((token: string) => `hashed-${token}`),
+    } as jest.Mocked<TokenHasher>;
 
     dateProvider = {
       now: jest.fn(),
@@ -134,6 +123,7 @@ describe('RefreshTokenService', () => {
       encrypter,
       dateProvider,
       workspaceUserRepository,
+      tokenHasher,
     );
   });
 
@@ -147,10 +137,29 @@ describe('RefreshTokenService', () => {
     expect(result.value).toBeInstanceOf(SessionExpiredError);
   });
 
+  it('should return left(SessionExpiredError) when token is missing', async () => {
+    const result = await service.execute(undefined);
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(SessionExpiredError);
+    expect(decrypter.decrypt).not.toHaveBeenCalled();
+  });
+
+  it('should return left(SessionExpiredError) when payload has no valid sub', async () => {
+    decrypter.decrypt.mockResolvedValue({
+      isValid: true,
+      payload: { sub: 'not-a-uuid' },
+    });
+
+    const result = await service.execute('valid-token');
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(SessionExpiredError);
+  });
+
   it('should return left(UserNotFoundError) when user not found', async () => {
     decrypter.decrypt.mockResolvedValue({
       isValid: true,
-      payload: { sub: 'user-1', workspaceId: 'ws-1', role: UserRole.OWNER },
+      payload: { sub: USER_ID },
     });
     userRepository.findUniqueById.mockResolvedValue(null);
 
@@ -159,28 +168,41 @@ describe('RefreshTokenService', () => {
     expect(result.value).toBeInstanceOf(UserNotFoundError);
   });
 
-  it('should return left(SessionExpiredError) when saved token not found', async () => {
+  it('should return left(SessionExpiredError) when default workspace is not found', async () => {
     decrypter.decrypt.mockResolvedValue({
       isValid: true,
-      payload: { sub: 'user-1', workspaceId: 'ws-1', role: UserRole.OWNER },
+      payload: { sub: USER_ID },
     });
     userRepository.findUniqueById.mockResolvedValue(makeUser());
-    refreshTokensRepository.findUniqueByUserIdAndToken.mockResolvedValue(null);
+    workspaceUserRepository.findDefaultWorkspaceByUserId.mockResolvedValue(
+      null,
+    );
 
     const result = await service.execute('valid-token');
     expect(result.isLeft()).toBe(true);
     expect(result.value).toBeInstanceOf(SessionExpiredError);
   });
 
-  it('should return new tokens on success', async () => {
+  it('should return left(SessionExpiredError) when the token was not found', async () => {
+    arrangeSuccessMocks();
+    refreshTokensRepository.replaceByToken.mockResolvedValue(false);
+
+    const result = await service.execute('unknown-token');
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(SessionExpiredError);
+  });
+
+  it('should rotate the token atomically and return new tokens on success', async () => {
     arrangeSuccessMocks();
 
     const result = await service.execute('valid-token');
+
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.accessToken).toBeDefined();
       expect(result.value.refreshToken).toBeDefined();
     }
-    expect(refreshTokensRepository.create).toHaveBeenCalledTimes(1);
+    expect(refreshTokensRepository.replaceByToken).toHaveBeenCalledTimes(1);
   });
 });

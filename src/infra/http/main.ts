@@ -22,18 +22,23 @@ async function bootstrap() {
     defaultVersion: '1',
   });
 
-  const allowedOrigins = new Set([env.PROD_URL, env.DEV_URL].filter(Boolean));
+  const normalizeOrigin = (url: string): string =>
+    url.replace(/\/+$/, '').toLowerCase();
+
+  const allowedOrigins = new Set(
+    [env.PROD_URL, env.DEV_URL, env.DEPLOY_URL].map(normalizeOrigin),
+  );
 
   const corsOptions: CorsOptions = {
     origin: (
       origin: string | undefined,
       callback: (err: Error | null, allow?: boolean) => void,
     ) => {
-      if (!origin || allowedOrigins.has(origin)) {
-        callback(null, true);
-      } else {
-        callback(null, false);
+      if (!origin) return callback(null, true);
+      if (!allowedOrigins.has(normalizeOrigin(origin))) {
+        return callback(null, false);
       }
+      return callback(null, true);
     },
     credentials: true,
     methods: 'GET,PUT,PATCH,POST,DELETE',

@@ -4,9 +4,11 @@ import { Encrypter } from './contracts/Encrypter';
 import { HandleHashGenerator } from './contracts/HandleHashGenerator';
 import { HashComparer } from './contracts/HashComparer';
 import { HashGenerator } from './contracts/HashGenerator';
+import { TokenHasher } from './contracts/TokenHasher';
 import { BcryptHasher } from './implementations/BcryptHasher';
 import { CryptoHasher } from './implementations/CryptoHasher';
 import { JwtEncrypter } from './implementations/jwtEncrypter';
+import { Sha256TokenHasher } from './implementations/Sha256TokenHasher';
 
 @Module({
   providers: [
@@ -15,6 +17,7 @@ import { JwtEncrypter } from './implementations/jwtEncrypter';
     { provide: HashComparer, useClass: BcryptHasher },
     { provide: HashGenerator, useClass: BcryptHasher },
     { provide: HandleHashGenerator, useClass: CryptoHasher },
+    { provide: TokenHasher, useClass: Sha256TokenHasher },
   ],
   exports: [
     Encrypter,
@@ -22,6 +25,7 @@ import { JwtEncrypter } from './implementations/jwtEncrypter';
     HashGenerator,
     Decoder,
     HandleHashGenerator,
+    TokenHasher,
   ],
 })
 export class CryptographyModule {}
