@@ -7,6 +7,7 @@ import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
+  CreditCardTransferNotAllowedError,
   SourceAndDestinationAccountMustBeDifferentError,
   TransactionNotFoundError,
 } from '@modules/transaction/errors';
@@ -131,6 +132,13 @@ export class UpdateTransactionService implements Service<
       request.accountId === request.destinationAccountId
     ) {
       return left(new SourceAndDestinationAccountMustBeDifferentError());
+    }
+
+    const destination = request.destinationAccountId
+      ? accountsMap.get(request.destinationAccountId)
+      : null;
+    if (request.type === 'TRANSFER' && destination instanceof CreditCard) {
+      return left(new CreditCardTransferNotAllowedError());
     }
 
     return right(accountsMap);

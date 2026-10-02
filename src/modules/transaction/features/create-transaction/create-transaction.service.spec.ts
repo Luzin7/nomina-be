@@ -2,9 +2,11 @@ import { AccountType, TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { CreditCardTransferNotAllowedError } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -233,6 +235,23 @@ describe('CreateTransactionService', () => {
       }
       // O ID é constante, então nem chega a consultar o repositório.
       expect(categoryRepository.findById).not.toHaveBeenCalled();
+    });
+
+    it('should reject a TRANSFER whose destination is a credit card', async () => {
+      accountRepository.findById
+        .mockResolvedValueOnce(makeAccount())
+        .mockResolvedValueOnce(makeCreditCard({ id: 'acc-cc' }));
+
+      const result = await service.execute(
+        makeRequest({
+          type: TransactionType.TRANSFER,
+          destinationAccountId: 'acc-cc',
+          categoryId: undefined,
+        }),
+      );
+
+      expect(result.isLeft()).toBe(true);
+      expect(result.value).toBeInstanceOf(CreditCardTransferNotAllowedError);
     });
   });
 });

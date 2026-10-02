@@ -16,7 +16,10 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 
 import { CategoryNotFoundError } from '@modules/category/errors';
-import { DestinationAccountRequiredForTransferError } from '@modules/transaction/errors';
+import {
+  CreditCardTransferNotAllowedError,
+  DestinationAccountRequiredForTransferError,
+} from '@modules/transaction/errors';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { CreateTransactionRequest } from './create-transaction.dto';
@@ -42,10 +45,7 @@ export class CreateTransactionService implements Service<
     if (accountsResult.isLeft()) return left(accountsResult.value);
     const { account, destinationAccount } = accountsResult.value;
 
-    const categoryResult = await this.resolveCategoryId(
-      request,
-      destinationAccount,
-    );
+    const categoryResult = await this.resolveCategoryId(request);
     if (categoryResult.isLeft()) return left(categoryResult.value);
     const categoryId = categoryResult.value;
 
@@ -117,6 +117,9 @@ export class CreateTransactionService implements Service<
       if (destinationAccount?.workspaceId !== request.workspaceId) {
         return left(new UnauthorizedError('Conta destino inválida.'));
       }
+      if (destinationAccount.type === AccountType.CREDIT_CARD) {
+        return left(new CreditCardTransferNotAllowedError());
+      }
     }
 
     return right({ account, destinationAccount });
@@ -130,19 +133,8 @@ export class CreateTransactionService implements Service<
    */
   private async resolveCategoryId(
     request: Request,
-    destinationAccount: AnyAccount | null,
   ): Promise<Either<Error, string>> {
-    if (!request.categoryId) {
-      const isCreditCardPayment =
-        request.type === TransactionType.TRANSFER &&
-        destinationAccount?.type === AccountType.CREDIT_CARD;
-
-      return right(
-        isCreditCardPayment
-          ? SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id
-          : SYSTEM_CATEGORY.TRANSFER.id,
-      );
-    }
+    if (!request.categoryId) return right(SYSTEM_CATEGORY.TRANSFER.id);
 
     const category = await this.categoryRepository.findById(request.categoryId);
     if (!category) return left(new CategoryNotFoundError());

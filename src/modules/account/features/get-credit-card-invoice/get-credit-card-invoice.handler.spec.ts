@@ -75,7 +75,7 @@ describe('GetCreditCardInvoiceService', () => {
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
       startOfDay: jest.fn((date: string | Date) => new Date(String(date))),
-      endOfDay: jest.fn(),
+      endOfDay: jest.fn((date: string | Date) => new Date(String(date))),
       startOfMonth: jest.fn(),
       endOfMonth: jest.fn(),
     } as unknown as jest.Mocked<DateProvider>;
@@ -159,7 +159,14 @@ describe('GetCreditCardInvoiceService', () => {
     expect(transactionRepository.findPaymentsByInvoice).toHaveBeenCalledWith(
       'acc-1',
       'ws-1',
-      { month: 9, year: 2026 },
+      {
+        month: 9,
+        year: 2026,
+        untaggedWindow: {
+          startExclusive: expect.any(Date),
+          endInclusive: expect.any(Date),
+        },
+      },
     );
   });
 
@@ -195,6 +202,23 @@ describe('GetCreditCardInvoiceService', () => {
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.totalAmount).toBe(0);
+    }
+  });
+
+  it('should mark the invoice as paid when completed payments settle the charges', async () => {
+    accountRepository.findById.mockResolvedValue(makeCreditCard());
+    transactionRepository.findChargesByPeriod.mockResolvedValue([
+      makeCompletedCharge(5000n),
+    ]);
+    transactionRepository.findPaymentsByInvoice.mockResolvedValue([
+      makeCompletedPayment(5000n),
+    ]);
+
+    const result = await service.execute(makeRequest({ month: 9, year: 2026 }));
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) {
+      expect(result.value.invoiceStatus).toBe('paid');
     }
   });
 
