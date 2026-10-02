@@ -3,6 +3,16 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.4.0](https://github.com/Luzin7/nomina-be/compare/v1.3.1...v1.4.0) (2026-10-02)
+
+### Features
+
+* **auth:** refresh token em cookie httpOnly com rotação atômica ([58ce58e](https://github.com/Luzin7/nomina-be/commit/58ce58ed665d06bf73e1899381c9a150e071c595))
+
+### Bug Fixes
+
+* **invoice:** corrige pagamento de fatura e transferência para cartão ([979d143](https://github.com/Luzin7/nomina-be/commit/979d143e17ccb104030ef1dea0f96389ed58f4cf))
+
 ## [1.3.1](https://github.com/Luzin7/nomina-be/compare/v1.3.0...v1.3.1) (2026-10-01)
 
 ### Bug Fixes
