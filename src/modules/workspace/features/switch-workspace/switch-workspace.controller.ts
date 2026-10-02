@@ -1,9 +1,11 @@
+import { setRefreshTokenCookie } from '@infra/http/cookies/authCookie';
 import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
-import { Body, Controller, HttpCode, Patch } from '@nestjs/common';
+import { Body, Controller, HttpCode, Patch, Res } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentLoggedUser } from '@providers/auth/decorators/CurrentLoggedUser.decorator';
 import { type TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { statusCode } from '@shared/core/types/statusCode';
+import type { Response } from 'express';
 import {
   SwitchWorkspacePipe,
   type SwitchWorkspaceRequest,
@@ -37,6 +39,7 @@ export class SwitchWorkspaceController {
   async handle(
     @CurrentLoggedUser() { sub }: TokenPayloadSchema,
     @Body(SwitchWorkspacePipe) body: SwitchWorkspaceRequest,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const data = await this.service.execute({
       ...body,
@@ -47,8 +50,10 @@ export class SwitchWorkspaceController {
       return ErrorPresenter.toHTTP(data.value);
     }
 
+    setRefreshTokenCookie(res, data.value.refreshToken);
+
     return {
-      data: data.value,
+      data: { accessToken: data.value.accessToken },
     };
   }
 }

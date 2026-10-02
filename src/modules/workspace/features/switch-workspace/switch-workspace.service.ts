@@ -12,6 +12,7 @@ import { WorkspaceUserRepository } from '@modules/workspace/repositories/contrac
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { Encrypter } from '@providers/cryptography/contracts/Encrypter';
+import { TokenHasher } from '@providers/cryptography/contracts/TokenHasher';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
@@ -36,6 +37,7 @@ export class SwitchWorkspaceService implements Service<
     private readonly encrypter: Encrypter,
     private readonly refreshTokensRepository: RefreshTokensRepository,
     private readonly dateProvider: DateProvider,
+    private readonly tokenHasher: TokenHasher,
   ) {}
 
   async execute({
@@ -66,7 +68,7 @@ export class SwitchWorkspaceService implements Service<
       { expiresIn: env.JWT_USER_ACCESS_EXPIRES_IN },
     );
 
-    const _refreshToken = await this.encrypter.encrypt(
+    const rawRefreshToken = await this.encrypter.encrypt(
       { sub: user.id },
       { expiresIn: env.JWT_USER_REFRESH_EXPIRES_IN },
     );
@@ -81,7 +83,7 @@ export class SwitchWorkspaceService implements Service<
 
     const refreshTokenOrError = RefreshToken.create({
       userId: user.id,
-      token: _refreshToken,
+      token: this.tokenHasher.hash(rawRefreshToken),
       expiresIn: expirationDate,
     });
 
@@ -89,13 +91,14 @@ export class SwitchWorkspaceService implements Service<
       return left(refreshTokenOrError.value);
     }
 
-    await this.refreshTokensRepository.deleteManyByUserId(sub);
-
-    await this.refreshTokensRepository.create(refreshTokenOrError.value);
+    await this.refreshTokensRepository.replaceAllByUserId(
+      sub,
+      refreshTokenOrError.value,
+    );
 
     return right({
       accessToken,
-      refreshToken: refreshTokenOrError.value.token,
+      refreshToken: rawRefreshToken,
     });
   }
 }
