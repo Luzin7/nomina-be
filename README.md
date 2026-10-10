@@ -193,8 +193,10 @@ remover depois).
 
 ### Serviço no Render
 
-- Source: imagem `ghcr.io/luzin7/nomina-be:latest`
-- Health check path: `/api/v1/health`
+- Source: imagem `ghcr.io/luzin7/nomina-be` (pública, sem credencial). O
+  workflow sempre manda o digest; a tag configurada no painel só vale para
+  "Manual Deploy", então um deploy manual volta para ela
+- Health check path: `/api/v1/health` (o Render injeta `PORT=10000`)
 - Variáveis: as do schema em `src/infra/env/index.ts`, com `NODE_ENV=production`
 
 ### Secrets do GitHub Actions
