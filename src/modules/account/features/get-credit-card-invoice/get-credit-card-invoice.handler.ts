@@ -1,11 +1,21 @@
-import { TransactionStatus } from '@constants/enums';
+import { TransactionStatus, TransactionType } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
   AccountNotFoundError,
   AccountTypeError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
-import { InvoiceCalendar } from '@modules/account/valueObjects/InvoiceCalendar';
+import {
+  InvoiceBounds,
+  InvoiceCalendar,
+  InvoiceKey,
+  PlainDate,
+} from '@modules/account/valueObjects/InvoiceCalendar';
+import {
+  buildInvoiceStatement,
+  InvoiceStatement,
+  StatementEntryKind,
+} from '@modules/account/valueObjects/InvoiceStatement';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { Injectable } from '@nestjs/common';
@@ -23,9 +33,11 @@ type InvoiceStatus = 'current' | 'closed' | 'overdue' | 'paid';
 type Response = {
   account: CreditCard;
   transactions: Transaction[];
-  totalAmount: number;
-  pendingAmount: number;
-  availableLimit: number | null;
+  totalAmount: bigint;
+  previousBalance: bigint;
+  statementTotal: bigint;
+  pendingAmount: bigint;
+  availableLimit: bigint | null;
   dueDate: string;
   dueMonth: number;
   dueYear: number;
@@ -34,8 +46,46 @@ type Response = {
   invoiceStatus: InvoiceStatus;
 };
 
-const invoiceKeyOf = (year: number, month: number): string =>
+type DatedTransaction = { transaction: Transaction; date: PlainDate };
+
+type InvoiceStatusInput = {
+  statement: InvoiceStatement;
+  key: InvoiceKey;
+  currentKey: InvoiceKey;
+  dueDate: PlainDate;
+  today: PlainDate;
+};
+
+const invoiceKeyOf = (year: number, month: number): InvoiceKey =>
   `${year}-${String(month).padStart(2, '0')}`;
+
+const entryKindOf = (
+  transaction: Transaction,
+  accountId: string,
+): StatementEntryKind => {
+  if (transaction.destinationAccountId === accountId) return 'payment';
+  if (transaction.type === TransactionType.INCOME) return 'payment';
+  return 'charge';
+};
+
+const isWithinPeriod = (date: PlainDate, bounds: InvoiceBounds): boolean =>
+  date >= bounds.periodStart && date <= bounds.periodEnd;
+
+const atLeastZero = (amount: bigint): bigint => (amount > 0n ? amount : 0n);
+
+const invoiceStatusOf = ({
+  statement,
+  key,
+  currentKey,
+  dueDate,
+  today,
+}: InvoiceStatusInput): InvoiceStatus => {
+  const hadAmountDue = statement.previousBalance > 0n || statement.charges > 0n;
+  if (hadAmountDue && statement.remaining === 0n) return 'paid';
+  if (key === currentKey) return 'current';
+  if (dueDate < today) return 'overdue';
+  return 'closed';
+};
 
 @Injectable()
 export class GetCreditCardInvoiceService implements Service<
@@ -59,7 +109,6 @@ export class GetCreditCardInvoiceService implements Service<
 
     if (!(account instanceof CreditCard)) return left(new AccountTypeError());
 
-    const timezone = account.timezone ?? 'America/Sao_Paulo';
     const calendar = new InvoiceCalendar({
       closingDaysBeforeDue: account.closingDaysBeforeDue,
       dueDay: account.dueDay,
@@ -68,7 +117,7 @@ export class GetCreditCardInvoiceService implements Service<
     const today = this.dateProvider.format(
       this.dateProvider.now(),
       'YYYY-MM-DD',
-      timezone,
+      account.timezone,
     );
     const currentKey = calendar.invoiceKeyFor(today);
     const key =
@@ -78,79 +127,84 @@ export class GetCreditCardInvoiceService implements Service<
     const bounds = calendar.bounds(key);
     const [year, month] = key.split('-').map(Number);
 
-    const [charges, payments] = await Promise.all([
-      this.transactionRepository.findChargesByPeriod(
-        props.accountId,
-        props.workspaceId,
-        this.dateProvider.startOfDay(bounds.periodStart, timezone),
-        this.dateProvider.startOfDay(bounds.endExclusive, timezone),
-      ),
-      this.transactionRepository.findPaymentsByInvoice(
-        props.accountId,
-        props.workspaceId,
-        {
-          month,
-          year,
-          untaggedWindow: {
-            startExclusive: this.dateProvider.startOfDay(
-              bounds.periodEnd,
-              timezone,
-            ),
-            endInclusive: this.dateProvider.endOfDay(bounds.dueDate, timezone),
-          },
-        },
-      ),
-    ]);
+    const ledger = await this.datedLedgerOf(account, props.workspaceId);
+    const statement = buildInvoiceStatement({
+      calendar,
+      key,
+      today,
+      entries: ledger
+        .filter(
+          ({ transaction }) =>
+            transaction.status === TransactionStatus.COMPLETED,
+        )
+        .map(({ transaction, date }) => ({
+          date,
+          amount: transaction.amount,
+          kind: entryKindOf(transaction, account.id),
+        })),
+    });
 
-    const transactions = [...charges, ...payments];
-
-    const chargesTotal = charges
-      .filter((t) => t.status === TransactionStatus.COMPLETED)
-      .reduce((sum, t) => sum + Number(t.amount), 0);
-
-    const paymentsTotal = payments
-      .filter((t) => t.status === TransactionStatus.COMPLETED)
-      .reduce((sum, t) => sum + Number(t.amount), 0);
-
-    const totalAmount = Math.max(chargesTotal - paymentsTotal, 0);
-
-    const pendingAmount = charges
-      .filter((t) => t.status === TransactionStatus.PENDING)
-      .reduce((sum, t) => sum + Number(t.amount), 0);
-
-    const availableLimit =
-      account.creditLimit === null
-        ? null
-        : Math.max(
-            0,
-            Number(account.creditLimit) - totalAmount - pendingAmount,
-          );
-
-    const isSettled = chargesTotal > 0 && paymentsTotal >= chargesTotal;
-
-    let invoiceStatus: InvoiceStatus;
-    if (isSettled) {
-      invoiceStatus = 'paid';
-    } else if (key === currentKey) {
-      invoiceStatus = 'current';
-    } else if (bounds.dueDate < today) {
-      invoiceStatus = 'overdue';
-    } else {
-      invoiceStatus = 'closed';
-    }
+    const transactions = ledger
+      .filter(({ date }) => isWithinPeriod(date, bounds))
+      .map(({ transaction }) => transaction);
+    const pendingAmount = this.pendingChargesOf(transactions, account.id);
+    const totalAmount = statement.remaining;
 
     return right({
       account,
       transactions,
       totalAmount,
+      previousBalance: statement.previousBalance,
+      statementTotal: statement.total,
       pendingAmount,
-      availableLimit,
+      availableLimit:
+        account.creditLimit === null
+          ? null
+          : atLeastZero(account.creditLimit - totalAmount - pendingAmount),
       dueDate: bounds.dueDate,
       dueMonth: month,
       dueYear: year,
       periodStart: bounds.periodStart,
       periodEnd: bounds.periodEnd,
-      invoiceStatus,
+      invoiceStatus: invoiceStatusOf({
+        statement,
+        key,
+        currentKey,
+        dueDate: bounds.dueDate,
+        today,
+      }),
     });
+  }
+
+  private async datedLedgerOf(
+    account: CreditCard,
+    workspaceId: string,
+  ): Promise<DatedTransaction[]> {
+    const ledger = await this.transactionRepository.findCreditCardLedger(
+      account.id,
+      workspaceId,
+    );
+
+    return ledger.map((transaction) => ({
+      transaction,
+      date: this.dateProvider.format(
+        transaction.date,
+        'YYYY-MM-DD',
+        account.timezone,
+      ),
+    }));
+  }
+
+  private pendingChargesOf(
+    transactions: Transaction[],
+    accountId: string,
+  ): bigint {
+    return transactions
+      .filter(
+        (transaction) =>
+          transaction.status === TransactionStatus.PENDING &&
+          entryKindOf(transaction, accountId) === 'charge',
+      )
+      .reduce((sum, transaction) => sum + transaction.amount, 0n);
   }
 }
