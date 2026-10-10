@@ -3,6 +3,16 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.5.0](https://github.com/Luzin7/nomina-be/compare/v1.4.0...v1.5.0) (2026-10-10)
+
+### Features
+
+* **invoice:** monta o extrato da fatura com saldo anterior ([bbf3fce](https://github.com/Luzin7/nomina-be/commit/bbf3fcea4da7378fbf602e8a96203c02ccf1d699))
+
+### Bug Fixes
+
+* **invoice:** calcula a fatura do cartão pelo extrato, não pelo carimbo do pagamento ([6943326](https://github.com/Luzin7/nomina-be/commit/69433268c2263cfc03b525a914f218eb77297499))
+
 ## [1.4.0](https://github.com/Luzin7/nomina-be/compare/v1.3.1...v1.4.0) (2026-10-02)
 
 ### Features
