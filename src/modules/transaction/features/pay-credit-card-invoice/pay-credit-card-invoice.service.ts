@@ -1,5 +1,6 @@
 import { TransactionStatus } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
+import { AnyAccount } from '@modules/account/entities/types';
 import {
   AccountNotFoundError,
   InvalidAccountError,
@@ -36,12 +37,34 @@ export class PayCreditCardInvoiceService implements Service<
     private readonly dateProvider: DateProvider,
   ) {}
 
-  async execute(props: Request): Promise<Either<Error, Transaction>> {
-    const creditCardAccount = await this.accountRepository.findById(
-      props.creditCardAccountId,
-    );
-    if (creditCardAccount?.workspaceId !== props.workspaceId) {
+  private async validateSourceAccount({
+    sourceAccountId,
+    workspaceId,
+  }: Request): Promise<Either<Error, AnyAccount>> {
+    const sourceAccount =
+      await this.accountRepository.findById(sourceAccountId);
+    if (sourceAccount?.workspaceId !== workspaceId) {
+      return left(new AccountNotFoundError('Conta de origem não encontrada.'));
+    }
+    if (sourceAccount instanceof CreditCard) {
+      return left(new CannotPayInvoiceWithCreditCardError());
+    }
+
+    return right(sourceAccount);
+  }
+
+  private async validateDestinationAccount({
+    creditCardAccountId,
+    workspaceId,
+    sourceAccountId,
+  }: Request): Promise<Either<Error, CreditCard>> {
+    const creditCardAccount =
+      await this.accountRepository.findById(creditCardAccountId);
+    if (creditCardAccount?.workspaceId !== workspaceId) {
       return left(new AccountNotFoundError());
+    }
+    if (sourceAccountId === creditCardAccountId) {
+      return left(new SourceAndDestinationAccountMustBeDifferentError());
     }
     if (!(creditCardAccount instanceof CreditCard)) {
       return left(
@@ -51,22 +74,28 @@ export class PayCreditCardInvoiceService implements Service<
       );
     }
 
-    if (props.sourceAccountId === props.creditCardAccountId) {
-      return left(new SourceAndDestinationAccountMustBeDifferentError());
-    }
-    const sourceAccount = await this.accountRepository.findById(
-      props.sourceAccountId,
-    );
-    if (sourceAccount?.workspaceId !== props.workspaceId) {
-      return left(new AccountNotFoundError('Conta de origem não encontrada.'));
-    }
-    if (sourceAccount instanceof CreditCard) {
-      return left(new CannotPayInvoiceWithCreditCardError());
-    }
+    return right(creditCardAccount);
+  }
+
+  async execute(props: Request): Promise<Either<Error, Transaction>> {
+    const creditCardAccountOrError =
+      await this.validateDestinationAccount(props);
+    if (creditCardAccountOrError.isLeft())
+      return left(creditCardAccountOrError.value);
+    const creditCardAccount = creditCardAccountOrError.value;
+
+    const sourceAccountOrError = await this.validateSourceAccount(props);
+    if (sourceAccountOrError.isLeft()) return left(sourceAccountOrError.value);
+    const sourceAccount = sourceAccountOrError.value;
 
     const amountBigInt = BigInt(props.amount);
     const now = this.dateProvider.now();
     const today = this.dateProvider.startOfDay(now, creditCardAccount.timezone);
+    const paidAt = this.dateProvider.format(
+      now,
+      'DD/MM/YYYY - HH:mm:ss',
+      creditCardAccount.timezone,
+    );
 
     const invoiceKey = allocateInvoice({
       calendar: new InvoiceCalendar({
@@ -86,9 +115,10 @@ export class PayCreditCardInvoiceService implements Service<
       accountId: props.sourceAccountId,
       destinationAccountId: props.creditCardAccountId,
       categoryId: props.categoryId ?? SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
-      title: 'Pagamento de Fatura',
+      title: `Pagamento de Fatura ${creditCardAccount.name} (${invoiceKey})`,
       description:
-        props.description ?? `Pagamento da fatura: ${creditCardAccount.name}`,
+        props.description ??
+        `Pagamento da fatura: ${creditCardAccount.name} - (${invoiceKey}) - ${paidAt}`,
       amount: amountBigInt,
       date: today,
       type: 'TRANSFER',
