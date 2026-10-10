@@ -3,6 +3,12 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [1.5.1](https://github.com/Luzin7/nomina-be/compare/v1.5.0...v1.5.1) (2026-10-10)
+
+### Bug Fixes
+
+* **env:** lê REDIS_ENABLED como flag e fecha o job interno sem CRON_API_KEY ([8845abb](https://github.com/Luzin7/nomina-be/commit/8845abb67123c92ca4c6399bf3ba585357cae8c5))
+
 ## [1.5.0](https://github.com/Luzin7/nomina-be/compare/v1.4.0...v1.5.0) (2026-10-10)
 
 ### Features
