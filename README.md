@@ -174,36 +174,37 @@ Demais endpoints autenticados: **120 requisições por minuto**.
 
 ## Deploy
 
-```bash
-npm run build
-npm run db:migrate   # sempre antes de iniciar
-npm run start:prod
-```
+Produção roda no Render a partir da imagem publicada no GitHub Container
+Registry (`ghcr.io/luzin7/nomina-be`, pública). O Render não builda nada: só
+puxa a imagem.
 
-### Variáveis de ambiente (produção)
+A cada push na `main`, o `release.yml`:
 
-```env
-DATABASE_URL="postgresql://user:pass@host:5432/nomina"
-JWT_PRIVATE_KEY_BASE64="..."
-JWT_PUBLIC_KEY_BASE64="..."
-NODE_ENV="production"
-PORT=8080
-REDIS_ENABLED=true
-REDIS_HOST="..."
-REDIS_PORT=6379
-PROD_URL="https://seu-dominio.com"
-DEV_URL="http://localhost:3000"
-CRON_API_KEY="chave-para-job-diario"
-```
+1. roda testes, `tsc` e build;
+2. aplica as migrations pendentes no banco de produção;
+3. gera a versão com semantic-release e publica a imagem com as tags
+   `vX.Y.Z`, `sha-<commit>` e `latest`;
+4. chama o deploy hook do Render com o digest da imagem publicada.
+
+Commit que não gera versão (sem `feat`/`fix`) roda as migrations, mas não
+publica imagem nem faz deploy. Como as migrations entram antes da imagem nova,
+elas precisam funcionar com o código da versão anterior (adicionar antes,
+remover depois).
+
+### Serviço no Render
+
+- Source: imagem `ghcr.io/luzin7/nomina-be:latest`
+- Health check path: `/api/v1/health`
+- Variáveis: as do schema em `src/infra/env/index.ts`, com `NODE_ENV=production`
 
 ### Secrets do GitHub Actions
 
-Os workflows dependem de dois secrets que **precisam** ser configurados em
-**Settings → Secrets and variables → Actions**:
+Configurar em **Settings → Secrets and variables → Actions**:
 
 | Secret | Workflow | Uso |
 |--------|----------|-----|
-| `DATABASE_URL` | `run-migrations.yml` | Migrations no deploy |
+| `DATABASE_URL` | `release.yml` | Migrations antes do deploy |
+| `RENDER_DEPLOY_HOOK_URL` | `release.yml` | Deploy da imagem no Render |
 | `CRON_API_KEY` | `daily-job.yml` | Job diário de recorrências |
 
 ---
