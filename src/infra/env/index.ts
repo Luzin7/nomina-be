@@ -2,7 +2,14 @@ import { config } from 'dotenv';
 import { z } from 'zod';
 config();
 
-const envSchema = z.object({
+const booleanFlag = z
+  .preprocess(
+    (value) => (typeof value === 'string' ? value.trim().toLowerCase() : value),
+    z.enum(['true', 'false']).default('false'),
+  )
+  .transform((value) => value === 'true');
+
+export const envSchema = z.object({
   PORT: z.coerce.number().default(7777),
   DATABASE_URL: z.string().url(),
   PROD_URL: z.string().url(),
@@ -14,8 +21,9 @@ const envSchema = z.object({
   JWT_USER_ACCESS_EXPIRES_IN: z.coerce.number(),
   JWT_USER_REFRESH_EXPIRES_IN: z.coerce.number(),
   USER_REFRESH_EXPIRES_IN: z.coerce.number(),
+  CRON_API_KEY: z.string().optional(),
 
-  REDIS_ENABLED: z.coerce.boolean().default(false),
+  REDIS_ENABLED: booleanFlag,
   REDIS_URL: z.string().url().optional(),
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),

@@ -3,8 +3,10 @@ dist
 .git
 .gitignore
 Dockerfile
-docker-compose.yml
-.env
+docker-compose*.yml
+.env*
+*.key
+.github
 coverage
 .docker
 CHANGELOG.md
