@@ -1,3 +1,4 @@
+import { env } from '@infra/env';
 import {
   Controller,
   HttpCode,
@@ -10,6 +11,7 @@ import { ApiKey } from '@providers/auth/decorators/ApiKey.decorator';
 import { Public } from '@providers/auth/decorators/IsPublic.decorator';
 import { statusCode } from '@shared/core/types/statusCode';
 import { GenerateRecurringTransactionsJobService } from './create-recurring-transaction.service';
+import { isAuthorizedCronCall } from './is-authorized-cron-call';
 
 @ApiTags('Recurring Transaction')
 @Controller('internal')
@@ -26,7 +28,7 @@ export class GenerateRecurringTransactionJobController {
   @Post('generate-recurring-transactions')
   @HttpCode(statusCode.OK)
   async handle(@ApiKey() apiKey: string) {
-    if (apiKey !== process.env.CRON_API_KEY) {
+    if (!isAuthorizedCronCall(apiKey, env.CRON_API_KEY)) {
       throw new UnauthorizedException('Chave de CRON inválida ou ausente');
     }
     const data = await this.createService.execute();

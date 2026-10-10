@@ -1,27 +1,39 @@
+name: nomina
+
 services:
   postgres:
     container_name: nomina_postgres
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: nomina_db
-      PGDATA: /var/lib/postgresql/data
+      TZ: UTC
     volumes:
-      - ./.docker/pg:/var/lib/postgresql/data
+      - ./.docker/pg17:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nomina_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - nomina_net
 
   redis:
     container_name: nomina_redis
-    image: redis:alpine
+    image: redis:7-alpine
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "${REDIS_HOST_PORT:-6380}:6379"
     volumes:
       - ./.docker/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - nomina_net
 

@@ -1,5 +1,6 @@
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { env } from '@infra/env';
 import {
   Controller,
   Get,
@@ -31,8 +32,7 @@ export class HealthController {
     try {
       await this.drizzle.db.execute(sql`SELECT 1`);
 
-      const isRedisEnabled = process.env.REDIS_ENABLED === 'true';
-      if (isRedisEnabled) {
+      if (env.REDIS_ENABLED) {
         const isRedisAwake = await this.redisService.ping();
         if (!isRedisAwake) {
           throw new Error('Redis ping failed');

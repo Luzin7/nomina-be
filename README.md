@@ -26,7 +26,7 @@ API de gestão patrimonial pessoal. NestJS + PostgreSQL + Redis, arquitetura DDD
 
 ### Pré-requisitos
 
-- Node.js 18+
+- Node.js 22
 - Docker & Docker Compose
 
 ### Setup
@@ -35,23 +35,10 @@ API de gestão patrimonial pessoal. NestJS + PostgreSQL + Redis, arquitetura DDD
 # 1. Dependências
 npm install
 
-# 2. Variáveis de ambiente
+# 2. Variáveis de ambiente (preencher JWT_PRIVATE_KEY e JWT_PUBLIC_KEY)
 cp .env.example .env
-```
 
-`.env` mínimo:
-
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/nomina"
-JWT_PRIVATE_KEY_BASE64="<chave-privada-base64>"
-JWT_PUBLIC_KEY_BASE64="<chave-publica-base64>"
-NODE_ENV="dev"
-PORT=8080
-REDIS_ENABLED=false
-```
-
-```bash
-# 3. Infraestrutura (PostgreSQL + Redis)
+# 3. Infraestrutura: PostgreSQL 17 (porta 5433) e Redis 7 (porta 6380)
 docker compose -f docker-compose.dev.yml up -d
 
 # 4. Migrations
@@ -60,6 +47,11 @@ npm run db:migrate
 # 5. Servidor em watch mode
 npm run dev
 ```
+
+As portas do host fogem das padrão para não colidir com outros projetos.
+Para trocar, defina `POSTGRES_HOST_PORT` / `REDIS_HOST_PORT` no `.env` e
+ajuste `DATABASE_URL` / `REDIS_PORT` junto. Se `REDIS_URL` estiver definido,
+ele tem prioridade sobre `REDIS_HOST` / `REDIS_PORT`.
 
 API disponível em `http://localhost:8080`
 Swagger em `http://localhost:8080/api/docs` (apenas `NODE_ENV=dev`)
