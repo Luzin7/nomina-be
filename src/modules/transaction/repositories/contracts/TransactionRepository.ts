@@ -14,11 +14,6 @@ export interface ListTransactionsParams {
   status?: string;
 }
 
-export interface InvoicePaymentFilter {
-  month: number;
-  year: number;
-  untaggedWindow?: { startExclusive: Date; endInclusive: Date };
-}
 export abstract class TransactionRepository {
   abstract create(transaction: Transaction): Promise<void>;
   abstract findUniqueById(id: string): Promise<Transaction | null>;
@@ -72,16 +67,8 @@ export abstract class TransactionRepository {
     destinationNewBalance?: number,
   ): Promise<Transaction>;
 
-  abstract findChargesByPeriod(
+  abstract findCreditCardLedger(
     accountId: string,
     workspaceId: string,
-    startDate: Date,
-    endExclusive: Date,
-  ): Promise<Transaction[]>;
-
-  abstract findPaymentsByInvoice(
-    accountId: string,
-    workspaceId: string,
-    filter: InvoicePaymentFilter,
   ): Promise<Transaction[]>;
 }
