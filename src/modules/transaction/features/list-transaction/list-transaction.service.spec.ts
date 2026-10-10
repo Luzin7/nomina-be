@@ -34,8 +34,7 @@ describe('ListTransactionsService', () => {
       updateWithBalanceUpdate: jest.fn(),
       deleteWithBalanceReversion: jest.fn(),
       toggleStatusWithBalanceUpdate: jest.fn(),
-      findChargesByPeriod: jest.fn(),
-      findPaymentsByInvoice: jest.fn(),
+      findCreditCardLedger: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
     dateProvider = {

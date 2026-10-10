@@ -1,7 +1,6 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
-  InvoicePaymentFilter,
   ListTransactionsParams,
   TransactionRepository,
 } from '@modules/transaction/repositories/contracts/TransactionRepository';
@@ -12,11 +11,8 @@ import {
   count,
   desc,
   eq,
-  gt,
   gte,
   ilike,
-  isNull,
-  lt,
   lte,
   or,
   sql,
@@ -330,55 +326,20 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     });
   }
 
-  async findChargesByPeriod(
+  async findCreditCardLedger(
     accountId: string,
     workspaceId: string,
-    startDate: Date,
-    endExclusive: Date,
   ): Promise<Transaction[]> {
     const rows = await this.drizzle.db
       .select()
       .from(schema.transactions)
       .where(
         and(
-          eq(schema.transactions.accountId, accountId),
           eq(schema.transactions.workspaceId, workspaceId),
-          gte(schema.transactions.date, startDate),
-          lt(schema.transactions.date, endExclusive),
-        ),
-      )
-      .orderBy(desc(schema.transactions.date));
-
-    return rows.map(TransactionMapper.toDomain);
-  }
-
-  async findPaymentsByInvoice(
-    accountId: string,
-    workspaceId: string,
-    filter: InvoicePaymentFilter,
-  ): Promise<Transaction[]> {
-    const tagged = and(
-      eq(schema.transactions.invoicePeriodMonth, filter.month),
-      eq(schema.transactions.invoicePeriodYear, filter.year),
-    );
-
-    const untagged = filter.untaggedWindow
-      ? and(
-          isNull(schema.transactions.invoicePeriodMonth),
-          isNull(schema.transactions.invoicePeriodYear),
-          gt(schema.transactions.date, filter.untaggedWindow.startExclusive),
-          lte(schema.transactions.date, filter.untaggedWindow.endInclusive),
-        )
-      : undefined;
-
-    const rows = await this.drizzle.db
-      .select()
-      .from(schema.transactions)
-      .where(
-        and(
-          eq(schema.transactions.destinationAccountId, accountId),
-          eq(schema.transactions.workspaceId, workspaceId),
-          or(tagged, untagged),
+          or(
+            eq(schema.transactions.accountId, accountId),
+            eq(schema.transactions.destinationAccountId, accountId),
+          ),
         ),
       )
       .orderBy(desc(schema.transactions.date));
