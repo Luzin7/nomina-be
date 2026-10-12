@@ -3,7 +3,7 @@ import {
   setRefreshTokenCookie,
 } from '@infra/http/cookies/authCookie';
 import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
-import { Body, Controller, HttpCode, Post, Res } from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, Post, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '@providers/auth/decorators/IsPublic.decorator';
@@ -22,10 +22,11 @@ export class LoginUserController {
   @Post('login')
   @HttpCode(statusCode.OK)
   async handle(
+    @Headers('user-agent') agent: string | undefined,
     @Body(LoginUserPipe) body: LoginUserRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const data = await this.service.execute(body);
+    const data = await this.service.execute({ ...body, agent });
 
     if (data.isLeft()) {
       clearRefreshTokenCookie(res);

@@ -1,25 +1,32 @@
 import { env } from '@infra/env';
+import { AuthSession } from '@modules/user/entities/AuthSession';
 import { RefreshToken } from '@modules/user/entities/RefreshToken';
-import {
-  InvalidRefreshTokenError,
-  UserNotFoundError,
-} from '@modules/user/errors';
+import { User } from '@modules/user/entities/User';
+import { UserNotFoundError } from '@modules/user/errors';
+import { AuthSessionsRepository } from '@modules/user/repositories/contracts/auth-session.repository';
 import { RefreshTokensRepository } from '@modules/user/repositories/contracts/refresh-token.repository';
 import { UserRepository } from '@modules/user/repositories/contracts/user.repository';
+import { AuthTokenPairFactory } from '@modules/user/services/auth-token-pair.factory';
+import { IssuedAuthSession } from '@modules/user/services/issue-auth-session.service';
+import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
 import { Injectable } from '@nestjs/common';
-import { refreshTokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
-import { Decoder } from '@providers/cryptography/contracts/Decoder';
-import { Encrypter } from '@providers/cryptography/contracts/Encrypter';
 import { TokenHasher } from '@providers/cryptography/contracts/TokenHasher';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { SessionExpiredError } from '@shared/errors/SessionExpiredError';
 
-type Response = {
-  accessToken: string;
-  refreshToken: string;
+type Response = IssuedAuthSession;
+
+type StoredSession = {
+  storedToken: RefreshToken;
+  session: AuthSession;
+};
+
+type SessionContext = {
+  user: User;
+  workspaceUser: { user: WorkspaceUser; workspaceName: string };
 };
 
 @Injectable()
@@ -31,10 +38,10 @@ export class RefreshTokenService implements Service<
   constructor(
     private readonly userRepository: UserRepository,
     private readonly refreshTokensRepository: RefreshTokensRepository,
-    private readonly decrypter: Decoder,
-    private readonly encrypter: Encrypter,
-    private readonly dateProvider: DateProvider,
+    private readonly authSessionsRepository: AuthSessionsRepository,
     private readonly workspaceUserRepository: WorkspaceUserRepository,
+    private readonly authTokenPairFactory: AuthTokenPairFactory,
+    private readonly dateProvider: DateProvider,
     private readonly tokenHasher: TokenHasher,
   ) {}
 
@@ -43,69 +50,96 @@ export class RefreshTokenService implements Service<
   ): Promise<Either<Error, Response>> {
     if (!refreshToken) return left(new SessionExpiredError());
 
-    const userId = await this.resolveUserId(refreshToken);
+    const storedOrError = await this.loadStoredSession(refreshToken);
+    if (storedOrError.isLeft()) return left(storedOrError.value);
 
-    if (!userId) return left(new SessionExpiredError());
+    const { storedToken, session } = storedOrError.value;
+    if (storedToken.isReused()) return this.revokeFamily(session);
 
-    const user = await this.userRepository.findUniqueById(userId);
+    const contextOrError = await this.resolveContext(storedToken, session);
+    if (contextOrError.isLeft()) return left(contextOrError.value);
 
-    if (!user) return left(new UserNotFoundError());
+    return this.rotate(storedToken, session, contextOrError.value);
+  }
 
-    const defaultWorkspaceUser =
-      await this.workspaceUserRepository.findDefaultWorkspaceByUserId(user.id);
+  private async loadStoredSession(
+    refreshToken: string,
+  ): Promise<Either<Error, StoredSession>> {
+    const storedToken =
+      await this.refreshTokensRepository.findUniqueByTokenHash(
+        this.tokenHasher.hash(refreshToken),
+      );
+    if (!storedToken) return left(new SessionExpiredError());
 
-    if (!defaultWorkspaceUser) return left(new SessionExpiredError());
+    const session = await this.authSessionsRepository.findUniqueById(
+      storedToken.sessionId,
+    );
+    if (!session) return left(new SessionExpiredError());
 
-    const [accessToken, rawRefreshToken] = await Promise.all([
-      this.encrypter.encrypt(
-        {
-          sub: user.id,
-          name: user.name,
-          workspaceId: defaultWorkspaceUser.user.workspaceId,
-          workspaceName: defaultWorkspaceUser.workspaceName,
-          role: defaultWorkspaceUser.user.role,
-        },
-        { expiresIn: env.JWT_USER_ACCESS_EXPIRES_IN },
-      ),
-      this.encrypter.encrypt(
-        { sub: user.id.toString() },
-        { expiresIn: env.JWT_USER_REFRESH_EXPIRES_IN },
-      ),
-    ]);
+    return right({ storedToken, session });
+  }
 
-    const createdRefreshToken = RefreshToken.create({
-      userId: user.id,
-      token: this.tokenHasher.hash(rawRefreshToken),
-      expiresIn: this.dateProvider.addDaysInCurrentDate(
-        env.USER_REFRESH_EXPIRES_IN,
-      ),
-    });
-
-    if (createdRefreshToken.isLeft()) {
-      return left(new InvalidRefreshTokenError());
+  private async resolveContext(
+    storedToken: RefreshToken,
+    session: AuthSession,
+  ): Promise<Either<Error, SessionContext>> {
+    if (!storedToken.isValid() || !session.isValid()) {
+      return left(new SessionExpiredError());
     }
 
-    const rotated = await this.refreshTokensRepository.replaceByToken(
-      user.id,
-      this.tokenHasher.hash(refreshToken),
-      createdRefreshToken.value,
+    const user = await this.userRepository.findUniqueById(session.userId);
+    if (!user) return left(new UserNotFoundError());
+
+    const workspaceUser =
+      await this.workspaceUserRepository.findDefaultWorkspaceByUserId(user.id);
+    if (!workspaceUser) return left(new SessionExpiredError());
+
+    return right({ user, workspaceUser });
+  }
+
+  private async rotate(
+    storedToken: RefreshToken,
+    session: AuthSession,
+    context: SessionContext,
+  ): Promise<Either<Error, Response>> {
+    const expiresAt = this.dateProvider.addDaysInCurrentDate(
+      Number(env.USER_REFRESH_EXPIRES_IN),
     );
 
-    if (!rotated) return left(new SessionExpiredError());
+    const tokensOrError = await this.authTokenPairFactory.build({
+      userId: context.user.id,
+      userName: context.user.name,
+      workspaceId: context.workspaceUser.user.workspaceId,
+      workspaceName: context.workspaceUser.workspaceName,
+      role: context.workspaceUser.user.role,
+      sessionId: session.id,
+      expiresAt,
+    });
+    if (tokensOrError.isLeft()) return left(tokensOrError.value);
+
+    const rotated = await this.refreshTokensRepository.rotate(
+      storedToken,
+      tokensOrError.value.refreshToken,
+    );
+    if (!rotated) return this.revokeFamily(session);
+
+    session.renew(expiresAt);
+    await this.authSessionsRepository.save(session);
 
     return right({
-      accessToken,
-      refreshToken: rawRefreshToken,
+      accessToken: tokensOrError.value.accessToken,
+      refreshToken: tokensOrError.value.rawRefreshToken,
     });
   }
 
-  private async resolveUserId(refreshToken: string): Promise<string | null> {
-    const { isValid, payload } = await this.decrypter.decrypt(refreshToken);
+  private async revokeFamily(
+    session: AuthSession,
+  ): Promise<Either<Error, Response>> {
+    await Promise.all([
+      this.refreshTokensRepository.revokeBySessionId(session.id),
+      this.authSessionsRepository.revoke(session.id),
+    ]);
 
-    if (!isValid || !payload) return null;
-
-    const parsedPayload = refreshTokenPayloadSchema.safeParse(payload);
-
-    return parsedPayload.success ? parsedPayload.data.sub : null;
+    return left(new SessionExpiredError());
   }
 }

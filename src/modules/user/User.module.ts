@@ -12,6 +12,8 @@ import { GetProfileService } from './features/get-profile/get-profile.service';
 import { LoginUserService } from './features/login-user/login-user.service';
 import { LogoutUserService } from './features/logout-user/logout-user.service';
 import { RefreshTokenService } from './features/refresh-token/refresh-token.service';
+import { AuthTokenPairFactory } from './services/auth-token-pair.factory';
+import { IssueAuthSessionService } from './services/issue-auth-session.service';
 
 @Module({
   controllers: [
@@ -28,6 +30,9 @@ import { RefreshTokenService } from './features/refresh-token/refresh-token.serv
     LoginUserService,
     LogoutUserService,
     RefreshTokenService,
+    AuthTokenPairFactory,
+    IssueAuthSessionService,
   ],
+  exports: [IssueAuthSessionService],
 })
 export class UserModule {}

@@ -1,8 +1,8 @@
 import { UserRole } from '@constants/enums';
 import { User } from '@modules/user/entities/User';
 import { UserNotFoundError } from '@modules/user/errors';
-import { RefreshTokensRepository } from '@modules/user/repositories/contracts/refresh-token.repository';
 import { UserRepository } from '@modules/user/repositories/contracts/user.repository';
+import { IssueAuthSessionService } from '@modules/user/services/issue-auth-session.service';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import {
@@ -11,18 +11,8 @@ import {
 } from '@modules/workspace/errors';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
-import { Encrypter } from '@providers/cryptography/contracts/Encrypter';
-import { TokenHasher } from '@providers/cryptography/contracts/TokenHasher';
-import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { right } from '@shared/core/errors/Either';
 import { SwitchWorkspaceService } from './switch-workspace.service';
-
-jest.mock('@infra/env', () => ({
-  env: {
-    JWT_USER_ACCESS_EXPIRES_IN: '15m',
-    JWT_USER_REFRESH_EXPIRES_IN: '7d',
-    USER_REFRESH_EXPIRES_IN: '7',
-  },
-}));
 
 type ServiceRequest = Parameters<
   typeof SwitchWorkspaceService.prototype.execute
@@ -65,10 +55,7 @@ describe('SwitchWorkspaceService', () => {
   let workspaceRepository: jest.Mocked<WorkspaceRepository>;
   let workspaceUserRepository: jest.Mocked<WorkspaceUserRepository>;
   let userRepository: jest.Mocked<UserRepository>;
-  let encrypter: jest.Mocked<Encrypter>;
-  let refreshTokensRepository: jest.Mocked<RefreshTokensRepository>;
-  let dateProvider: jest.Mocked<DateProvider>;
-  let tokenHasher: jest.Mocked<TokenHasher>;
+  let issueAuthSessionService: jest.Mocked<IssueAuthSessionService>;
 
   function arrangeSuccessMocks() {
     workspaceRepository.findById.mockResolvedValue(makeWorkspace());
@@ -76,10 +63,9 @@ describe('SwitchWorkspaceService', () => {
       makeWorkspaceUser(),
     );
     userRepository.findUniqueById.mockResolvedValue(makeUser());
-    encrypter.encrypt.mockResolvedValue('token');
-    dateProvider.now.mockReturnValue(new Date());
-    dateProvider.add.mockReturnValue(new Date(Date.now() + 604800000));
-    refreshTokensRepository.replaceAllByUserId.mockResolvedValue();
+    issueAuthSessionService.execute.mockResolvedValue(
+      right({ accessToken: 'access-token', refreshToken: 'refresh-token' }),
+    );
   }
 
   beforeEach(() => {
@@ -115,38 +101,15 @@ describe('SwitchWorkspaceService', () => {
       findUniqueByEmail: jest.fn(),
     } as jest.Mocked<UserRepository>;
 
-    encrypter = { encrypt: jest.fn() } as jest.Mocked<Encrypter>;
-    tokenHasher = {
-      hash: jest.fn((token: string) => `hashed-${token}`),
-    } as jest.Mocked<TokenHasher>;
-
-    refreshTokensRepository = {
-      findUniqueByUserIdAndToken: jest.fn(),
-      replaceByToken: jest.fn(),
-      replaceAllByUserId: jest.fn(),
-      delete: jest.fn(),
-    } as jest.Mocked<RefreshTokensRepository>;
-
-    dateProvider = {
-      now: jest.fn(),
-      add: jest.fn(),
-      format: jest.fn(),
-      toTimezone: jest.fn(),
-      addDaysInCurrentDate: jest.fn(),
-      parse: jest.fn(),
-      startOfDay: jest.fn(),
-      endOfDay: jest.fn(),
-      startOfMonth: jest.fn(),
-    } as unknown as jest.Mocked<DateProvider>;
+    issueAuthSessionService = {
+      execute: jest.fn(),
+    } as unknown as jest.Mocked<IssueAuthSessionService>;
 
     service = new SwitchWorkspaceService(
       workspaceRepository,
       workspaceUserRepository,
       userRepository,
-      encrypter,
-      refreshTokensRepository,
-      dateProvider,
-      tokenHasher,
+      issueAuthSessionService,
     );
   });
 
@@ -187,11 +150,18 @@ describe('SwitchWorkspaceService', () => {
     arrangeSuccessMocks();
 
     const result = await service.execute(makeRequest());
+
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
       expect(result.value.accessToken).toBeDefined();
       expect(result.value.refreshToken).toBeDefined();
     }
-    expect(refreshTokensRepository.replaceAllByUserId).toHaveBeenCalledTimes(1);
+    expect(issueAuthSessionService.execute).toHaveBeenCalledWith({
+      userId: 'user-1',
+      userName: 'Test User',
+      workspaceId: 'ws-1',
+      workspaceName: 'Test WS',
+      role: UserRole.OWNER,
+    });
   });
 });

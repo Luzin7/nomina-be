@@ -1,24 +1,17 @@
 import { UserRole } from '@constants/enums';
 import { User } from '@modules/user/entities/User';
-import { WrongCredentialsError } from '@modules/user/errors';
-import { RefreshTokensRepository } from '@modules/user/repositories/contracts/refresh-token.repository';
+import {
+  InvalidUserAgentError,
+  WrongCredentialsError,
+} from '@modules/user/errors';
 import { UserRepository } from '@modules/user/repositories/contracts/user.repository';
+import { IssueAuthSessionService } from '@modules/user/services/issue-auth-session.service';
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
-import { Encrypter } from '@providers/cryptography/contracts/Encrypter';
 import { HashComparer } from '@providers/cryptography/contracts/HashComparer';
-import { TokenHasher } from '@providers/cryptography/contracts/TokenHasher';
-import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { LoginUserService } from './login-user.service';
-
-jest.mock('@infra/env', () => ({
-  env: {
-    JWT_USER_ACCESS_EXPIRES_IN: '15m',
-    JWT_USER_REFRESH_EXPIRES_IN: '7d',
-    USER_REFRESH_EXPIRES_IN: 7,
-  },
-}));
 
 function makeRequest(overrides = {}) {
   return { email: 'john@example.com', password: 'secret123', ...overrides };
@@ -51,11 +44,8 @@ describe('LoginUserService', () => {
   let service: LoginUserService;
   let userRepository: jest.Mocked<UserRepository>;
   let workspaceUserRepository: jest.Mocked<WorkspaceUserRepository>;
-  let refreshTokensRepository: jest.Mocked<RefreshTokensRepository>;
+  let issueAuthSessionService: jest.Mocked<IssueAuthSessionService>;
   let hashComparer: jest.Mocked<HashComparer>;
-  let encrypter: jest.Mocked<Encrypter>;
-  let dateProvider: jest.Mocked<DateProvider>;
-  let tokenHasher: jest.Mocked<TokenHasher>;
 
   beforeEach(() => {
     userRepository = {
@@ -65,6 +55,7 @@ describe('LoginUserService', () => {
       update: jest.fn(),
       delete: jest.fn(),
     } as jest.Mocked<UserRepository>;
+
     workspaceUserRepository = {
       findDefaultWorkspaceByUserId: jest.fn(),
       setDefaultWorkspace: jest.fn(),
@@ -77,42 +68,18 @@ describe('LoginUserService', () => {
       findUsersByWorkspaceId: jest.fn(),
       findUserByWorkspaceAndUserId: jest.fn(),
     } as jest.Mocked<WorkspaceUserRepository>;
-    refreshTokensRepository = {
-      findUniqueByUserIdAndToken: jest.fn(),
-      replaceByToken: jest.fn(),
-      replaceAllByUserId: jest.fn(),
-      delete: jest.fn(),
-    } as jest.Mocked<RefreshTokensRepository>;
+
+    issueAuthSessionService = {
+      execute: jest.fn(),
+    } as unknown as jest.Mocked<IssueAuthSessionService>;
+
     hashComparer = { compare: jest.fn() } as jest.Mocked<HashComparer>;
-    encrypter = {
-      encrypt: jest.fn().mockResolvedValue('token'),
-    } as jest.Mocked<Encrypter>;
-    tokenHasher = {
-      hash: jest.fn((token: string) => `hashed-${token}`),
-    } as jest.Mocked<TokenHasher>;
-    dateProvider = {
-      addDaysInCurrentDate: jest
-        .fn()
-        .mockReturnValue(new Date(Date.now() + 86400000 * 7)),
-      now: jest.fn(),
-      add: jest.fn(),
-      format: jest.fn(),
-      toTimezone: jest.fn(),
-      parse: jest.fn(),
-      startOfDay: jest.fn(),
-      endOfDay: jest.fn(),
-      startOfMonth: jest.fn(),
-      endOfMonth: jest.fn(),
-    } as jest.Mocked<DateProvider>;
 
     service = new LoginUserService(
       userRepository,
       workspaceUserRepository,
-      refreshTokensRepository,
+      issueAuthSessionService,
       hashComparer,
-      encrypter,
-      dateProvider,
-      tokenHasher,
     );
   });
 
@@ -124,7 +91,9 @@ describe('LoginUserService', () => {
     workspaceUserRepository.findDefaultWorkspaceByUserId.mockResolvedValue(
       makeWorkspaceUser(),
     );
-    refreshTokensRepository.replaceAllByUserId.mockResolvedValue();
+    issueAuthSessionService.execute.mockResolvedValue(
+      right({ accessToken: 'access-token', refreshToken: 'refresh-token' }),
+    );
   }
 
   it('should return left(WrongCredentialsError) when user is not found', async () => {
@@ -154,9 +123,10 @@ describe('LoginUserService', () => {
     const result = await service.execute(makeRequest());
     expect(result.isLeft()).toBe(true);
     expect(result.value).toBeInstanceOf(UnauthorizedError);
+    expect(issueAuthSessionService.execute).not.toHaveBeenCalled();
   });
 
-  it('should return right with accessToken and refreshToken on success', async () => {
+  it('should return right with the tokens issued by the shared service', async () => {
     arrangeSuccessMocks();
 
     const result = await service.execute(makeRequest());
@@ -167,45 +137,26 @@ describe('LoginUserService', () => {
     }
   });
 
-  it('should replace previous sessions when login succeeds', async () => {
+  it('should issue the session with workspace data and user agent', async () => {
     arrangeSuccessMocks();
 
-    await service.execute(makeRequest());
+    await service.execute(makeRequest({ agent: 'jest-agent' }));
 
-    expect(refreshTokensRepository.replaceAllByUserId).toHaveBeenCalledWith(
-      'user-1',
-      expect.anything(),
-    );
-  });
-
-  it('should not persist a refresh token when default workspace is not found', async () => {
-    userRepository.findUniqueByEmail.mockResolvedValue(makeUser());
-    hashComparer.compare.mockResolvedValue(true);
-    workspaceUserRepository.findDefaultWorkspaceByUserId.mockResolvedValue(
-      null,
-    );
-
-    await service.execute(makeRequest());
-
-    expect(refreshTokensRepository.replaceAllByUserId).not.toHaveBeenCalled();
-  });
-
-  it('should encrypt access token with workspace payload', async () => {
-    arrangeSuccessMocks();
-    encrypter.encrypt
-      .mockResolvedValueOnce('refresh-token-value')
-      .mockResolvedValueOnce('access-token-value');
-
-    await service.execute(makeRequest());
-
-    const accessTokenCall = encrypter.encrypt.mock.calls.find(
-      ([payload]) => 'workspaceId' in payload,
-    );
-    expect(accessTokenCall).toBeDefined();
-    expect(accessTokenCall![0]).toMatchObject({
-      sub: 'user-1',
+    expect(issueAuthSessionService.execute).toHaveBeenCalledWith({
+      userId: 'user-1',
+      userName: 'John Doe',
       workspaceId: 'ws-1',
+      workspaceName: 'My WS',
       role: UserRole.OWNER,
+      userAgent: 'jest-agent',
     });
+  });
+
+  it('should return left when the user agent is blank', async () => {
+    const result = await service.execute(makeRequest({ agent: '   ' }));
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(InvalidUserAgentError);
+    expect(issueAuthSessionService.execute).not.toHaveBeenCalled();
   });
 });

@@ -113,6 +113,20 @@
       "when": 1789347174138,
       "tag": "0015_backfill_invoice_period",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791848201257,
+      "tag": "0016_add_auth_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791848220070,
+      "tag": "0017_recreate_refresh_tokens",
+      "breakpoints": true
     }
   ]
 }
