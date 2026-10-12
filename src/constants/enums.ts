@@ -65,3 +65,9 @@ export enum SubscriptionStatus {
   PAST_DUE = 'PAST_DUE',
   TRIALING = 'TRIALING',
 }
+
+export enum RefreshTokenStatus {
+  ACTIVE = 'active',
+  ROTATED = 'rotated',
+  REVOKED = 'revoked',
+}

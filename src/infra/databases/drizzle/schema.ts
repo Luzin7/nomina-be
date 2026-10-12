@@ -32,22 +32,63 @@ export const users = pgTable('users', {
   }).$onUpdate(() => new Date()),
 });
 
+export const authSessions = pgTable(
+  'auth_sessions',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'date',
+    })
+      .defaultNow()
+      .notNull(),
+    lastUsedAt: timestamp('last_used_at', {
+      withTimezone: true,
+      mode: 'date',
+    })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp('expires_at', {
+      withTimezone: true,
+      mode: 'date',
+    }).notNull(),
+    revokedAt: timestamp('revoked_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+  },
+  (table) => [index('idx_auth_sessions_user_id').on(table.userId)],
+);
+
 export const refreshTokens = pgTable(
   'refresh_tokens',
   {
     id: text('id')
       .primaryKey()
       .$default(() => crypto.randomUUID()),
-    token: text('token').notNull(),
-    expiresIn: timestamp('expires_in', {
+    tokenHash: text('token_hash').notNull().unique(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => authSessions.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', {
       withTimezone: true,
       mode: 'date',
     }).notNull(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('active'),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'date',
+    })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index('idx_refresh_token_user_id').on(table.userId)],
+  (table) => [index('idx_refresh_tokens_session_id').on(table.sessionId)],
 );
 
 // --------------------------------------------------------
