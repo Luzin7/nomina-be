@@ -1,2 +1,0 @@
-ALTER TABLE "workspace_users" ADD COLUMN "time_zone" text DEFAULT 'America/Sao_Paulo' NOT NULL;--> statement-breakpoint
-ALTER TABLE "workspaces" ADD COLUMN "time_zone" text DEFAULT 'America/Sao_Paulo' NOT NULL;
