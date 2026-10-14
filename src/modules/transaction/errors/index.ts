@@ -1,5 +1,6 @@
 import {
   BusinessRuleDomainError,
+  DomainError,
   InvalidOperationDomainError,
 } from '@shared/core/errors/DomainError';
 
@@ -122,5 +123,17 @@ export class TransactionAlreadyCompletedError extends InvalidOperationDomainErro
 export class TransactionAlreadyPendingError extends InvalidOperationDomainError {
   constructor() {
     super('A transação já está pendente.');
+  }
+}
+
+export class RecurringGenerationFailedError extends DomainError {
+  constructor(reason: string) {
+    super(`Falha ao gerar transações recorrentes: ${reason}`);
+  }
+}
+
+export class UnknownRecurrenceFrequencyError extends DomainError {
+  constructor(frequency: string) {
+    super(`Frequência de recorrência desconhecida: ${frequency}`);
   }
 }

@@ -29,9 +29,10 @@ import { UpdateRecurringTransactionController } from './features/update-recurrin
 import { UpdateRecurringTransactionService } from './features/update-recurring-transaction/update-recurring-transaction.service';
 import { UpdateTransactionController } from './features/update-transaction/update-transaction.controller';
 import { UpdateTransactionService } from './features/update-transaction/update-transaction.service';
-import { GenerateRecurringTransactionJobController } from './jobs/create-recurring-transaction.controller';
-import { GenerateRecurringTransactionsJobService } from './jobs/create-recurring-transaction.service';
+import { GenerateRecurringTransactionsJobController } from './jobs/generate-recurring-transactions/generate-recurring-transactions.controller';
+import { GenerateRecurringTransactionsJobService } from './jobs/generate-recurring-transactions/generate-recurring-transactions.service';
 import { CalculateNextGenerationDateService } from './services/calculate-next-generation-date.service';
+import { NextGenerationDateCalculator } from './services/contracts/NextGenerationDateCalculator';
 
 @Module({
   controllers: [
@@ -44,7 +45,7 @@ import { CalculateNextGenerationDateService } from './services/calculate-next-ge
     UpdateTransactionController,
     ToggleTransactionStatusController,
     CreateRecurringTransactionController,
-    GenerateRecurringTransactionJobController,
+    GenerateRecurringTransactionsJobController,
     UpdateRecurringTransactionController,
     DeleteRecurringTransactionController,
     FindRecurringTransactionController,
@@ -65,7 +66,10 @@ import { CalculateNextGenerationDateService } from './services/calculate-next-ge
     ListRecurringTransactionsService,
     FindRecurringTransactionService,
     ToggleActiveRecurringTransactionService,
-    CalculateNextGenerationDateService,
+    {
+      provide: NextGenerationDateCalculator,
+      useClass: CalculateNextGenerationDateService,
+    },
     GenerateRecurringTransactionsJobService,
   ],
 })
