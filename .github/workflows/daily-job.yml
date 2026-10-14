@@ -13,6 +13,6 @@ jobs:
     steps:
       - name: Run daily task
         run: |
-          curl -X POST \
+          curl -fsS --max-time 40 -X POST \
             -H "x-api-key: ${{ secrets.CRON_API_KEY }}" \
             https://nomina-be-qico.onrender.com/api/v1/internal/generate-recurring-transactions

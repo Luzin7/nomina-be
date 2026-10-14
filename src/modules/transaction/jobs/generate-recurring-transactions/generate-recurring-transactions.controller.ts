@@ -2,6 +2,7 @@ import { env } from '@infra/env';
 import {
   Controller,
   HttpCode,
+  InternalServerErrorException,
   Logger,
   Post,
   UnauthorizedException,
@@ -10,18 +11,18 @@ import { ApiTags } from '@nestjs/swagger';
 import { ApiKey } from '@providers/auth/decorators/ApiKey.decorator';
 import { Public } from '@providers/auth/decorators/IsPublic.decorator';
 import { statusCode } from '@shared/core/types/statusCode';
-import { GenerateRecurringTransactionsJobService } from './create-recurring-transaction.service';
-import { isAuthorizedCronCall } from './is-authorized-cron-call';
+import { isAuthorizedCronCall } from '../is-authorized-cron-call';
+import { GenerateRecurringTransactionsJobService } from './generate-recurring-transactions.service';
 
 @ApiTags('Recurring Transaction')
 @Controller('internal')
-export class GenerateRecurringTransactionJobController {
+export class GenerateRecurringTransactionsJobController {
   private readonly logger = new Logger(
-    GenerateRecurringTransactionJobController.name,
+    GenerateRecurringTransactionsJobController.name,
   );
 
   constructor(
-    private readonly createService: GenerateRecurringTransactionsJobService,
+    private readonly generateService: GenerateRecurringTransactionsJobService,
   ) {}
 
   @Public()
@@ -31,14 +32,11 @@ export class GenerateRecurringTransactionJobController {
     if (!isAuthorizedCronCall(apiKey, env.CRON_API_KEY)) {
       throw new UnauthorizedException('Chave de CRON inválida ou ausente');
     }
-    const data = await this.createService.execute();
+
+    const data = await this.generateService.execute();
 
     if (data.isLeft()) {
-      this.logger.error(
-        'Error executing GenerateRecurringTransactionsJobService:',
-        data.value,
-      );
-      return;
+      throw new InternalServerErrorException(data.value.message);
     }
 
     const { generatedCount } = data.value;

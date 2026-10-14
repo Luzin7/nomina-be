@@ -1,4 +1,5 @@
-import { TransactionStatus } from '@constants/enums';
+import { RecurrenceFrequency, TransactionStatus } from '@constants/enums';
+import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 
 export function makeTransaction(
@@ -74,4 +75,28 @@ export function makeCompletedPayment(
     status: TransactionStatus.COMPLETED,
     ...overrides,
   });
+}
+
+export function makeRecurring(
+  overrides: Partial<Parameters<typeof RecurringTransaction.create>[0]> & {
+    id?: string;
+  } = {},
+): RecurringTransaction {
+  const { id, ...props } = overrides;
+  const r = RecurringTransaction.create(
+    {
+      workspaceId: 'ws-1',
+      accountId: 'acc-1',
+      categoryId: 'cat-1',
+      title: 'Aluguel',
+      amount: 150000n,
+      frequency: RecurrenceFrequency.MONTHLY,
+      startDate: new Date('2024-01-01'),
+      type: 'EXPENSE',
+      ...props,
+    },
+    id,
+  );
+  if (r.isLeft()) throw r.value;
+  return r.value;
 }

@@ -203,8 +203,8 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     this.props.destinationAccountId = null;
   }
 
-  public markAsGenerated(generationDate: Date): void {
-    this.props.lastGenerated = generationDate;
+  public markAsGenerated(occurrenceDate: Date): void {
+    this.props.lastGenerated = occurrenceDate;
   }
 
   public deactivate(): void {

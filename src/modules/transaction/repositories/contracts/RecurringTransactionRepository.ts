@@ -29,7 +29,7 @@ export abstract class RecurringTransactionRepository {
   abstract listNeedingGeneration(
     referenceDate: Date,
     limit: number,
-    offset: number,
+    afterId: string | null,
   ): Promise<RecurringTransaction[]>;
 
   abstract createGeneratedTransactions(

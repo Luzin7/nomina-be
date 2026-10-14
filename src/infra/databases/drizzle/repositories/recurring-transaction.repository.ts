@@ -3,7 +3,7 @@ import { RecurringTransaction } from '@modules/transaction/entities/RecurringTra
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { Injectable } from '@nestjs/common';
-import { and, count, eq, isNull, lt, lte, or } from 'drizzle-orm';
+import { and, asc, count, eq, gt, isNull, lt, lte, or } from 'drizzle-orm';
 import { RecurringTransactionMapper } from '../mappers/recurring-transaction.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
@@ -112,7 +112,7 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
   async listNeedingGeneration(
     referenceDate: Date,
     limit: number,
-    offset: number,
+    afterId: string | null,
   ): Promise<RecurringTransaction[]> {
     const recurrings = await this.drizzle.db
       .select()
@@ -125,10 +125,13 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
             isNull(schema.recurringTransactions.lastGenerated),
             lt(schema.recurringTransactions.lastGenerated, referenceDate),
           ),
+          afterId !== null
+            ? gt(schema.recurringTransactions.id, afterId)
+            : undefined,
         ),
       )
-      .limit(limit)
-      .offset(offset);
+      .orderBy(asc(schema.recurringTransactions.id))
+      .limit(limit);
 
     return recurrings.map(RecurringTransactionMapper.toDomain);
   }
@@ -138,9 +141,11 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
     updatedRecurring: RecurringTransaction,
   ): Promise<void> {
     await this.drizzle.db.transaction(async (tx) => {
-      await tx
-        .insert(schema.transactions)
-        .values(transactions.map(TransactionMapper.toDatabase));
+      if (transactions.length > 0) {
+        await tx
+          .insert(schema.transactions)
+          .values(transactions.map(TransactionMapper.toDatabase));
+      }
 
       await tx
         .update(schema.recurringTransactions)
