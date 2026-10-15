@@ -9,6 +9,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 // --------------------------------------------------------
 // INFRAESTRUTURA & AUTH
@@ -207,12 +208,14 @@ export const categories = pgTable(
     parentId: text('parent_id').references((): AnyPgColumn => categories.id),
   },
   (table) => [
-    uniqueIndex('unq_cat_ws_name_type_parent').on(
-      table.workspaceId,
-      table.name,
-      table.type,
-      table.parentId,
-    ),
+    uniqueIndex('unq_cat_ws_name_type_parent')
+      .on(table.workspaceId, table.name, table.type, table.parentId)
+      .where(sql`${table.workspaceId} IS NOT NULL`),
+    uniqueIndex('unq_cat_sys_name_type_parent')
+      .on(table.name, table.type, table.parentId)
+      .where(
+        sql`${table.workspaceId} IS NULL AND ${table.isSystemCategory} = true`,
+      ),
     index('idx_cat_ws_type').on(table.workspaceId, table.type),
     index('idx_cat_parent').on(table.parentId),
     index('idx_cat_system').on(table.isSystemCategory),

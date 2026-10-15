@@ -1,10 +1,12 @@
 import { AccountType, UserRole } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { buildDefaultCategories } from '@modules/category/constants/default-categories';
 import { PlanType } from '@modules/subscription';
 import { User } from '@modules/user/entities/User';
 import { UserRepository } from '@modules/user/repositories/contracts/user.repository';
 import { Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
+import { CategoryMapper } from '../mappers/category.mapper';
 import { UserMapper } from '../mappers/user.mapper';
 import * as schema from '../schema';
 
@@ -58,6 +60,14 @@ export class UserRepositoryImplementation implements UserRepository {
         type: AccountType.CASH,
         balance: 0,
       });
+
+      await tx
+        .insert(schema.categories)
+        .values(
+          buildDefaultCategories(workspaceId).map((category) =>
+            CategoryMapper.toDatabase(category),
+          ),
+        );
     });
   }
 

@@ -1,4 +1,5 @@
 import { UserRole } from '@constants/enums';
+import { Category } from '@modules/category/entities/Category';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 
@@ -7,6 +8,7 @@ export abstract class WorkspaceRepository {
   abstract createWithOwnerAndAccount(
     workspace: Workspace,
     owner: WorkspaceUser,
+    categories: Category[],
   ): Promise<void>;
 
   abstract update(workspace: Workspace): Promise<Workspace>;

@@ -1,10 +1,12 @@
 import { AccountType, UserRole } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { Category } from '@modules/category/entities/Category';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { Injectable } from '@nestjs/common';
 import { and, count, eq } from 'drizzle-orm';
+import { CategoryMapper } from '../mappers/category.mapper';
 import { WorkspaceMapper } from '../mappers/workspace.mapper';
 import * as schema from '../schema';
 
@@ -29,6 +31,7 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
   async createWithOwnerAndAccount(
     workspace: Workspace,
     owner: WorkspaceUser,
+    categories: Category[],
   ): Promise<void> {
     await this.drizzle.db.transaction(async (tx) => {
       if (owner.isDefault) {
@@ -66,6 +69,12 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
         balance: 0,
         timezone: workspace.timezone,
       });
+
+      await tx
+        .insert(schema.categories)
+        .values(
+          categories.map((category) => CategoryMapper.toDatabase(category)),
+        );
     });
   }
 
