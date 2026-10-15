@@ -1,6 +1,7 @@
 DROP INDEX IF EXISTS "unq_cat_ws_name_type_parent";--> statement-breakpoint
 DROP INDEX IF EXISTS "categories_workspace_id_name_type_parent_id_key";--> statement-breakpoint
 DROP INDEX IF EXISTS "categories_system_unique";--> statement-breakpoint
+DROP INDEX IF EXISTS "unq_cat_sys_name_type_parent";--> statement-breakpoint
 CREATE UNIQUE INDEX "unq_cat_sys_name_type_parent" ON "categories" USING btree ("name","type","parent_id") WHERE "categories"."workspace_id" IS NULL AND "categories"."is_system_category" = true;--> statement-breakpoint
 CREATE UNIQUE INDEX "unq_cat_ws_name_type_parent" ON "categories" USING btree ("workspace_id","name","type","parent_id") WHERE "categories"."workspace_id" IS NOT NULL;--> statement-breakpoint
 DO $$
@@ -86,79 +87,172 @@ BEGIN
 END $$;--> statement-breakpoint
 DO $$
 DECLARE
-  obsolete RECORD;
-  ref RECORD;
-  target_id TEXT;
+  sys_ids TEXT[] := ARRAY[
+    '19323ba9-e496-4db9-9c22-b2a5c7cb790e',
+    '0d19bbf8-b66a-4cc2-9c7c-3fcd961f06b1'
+  ];
+  pair RECORD;
+  node_type TEXT;
+  legacy_parent TEXT;
   target_name TEXT;
-  target_parent TEXT;
+  parent_target TEXT;
+  target_id TEXT;
+  leftover INT;
 BEGIN
-  CREATE TEMP TABLE _name_map (src TEXT PRIMARY KEY, tgt TEXT NOT NULL);
+  -- Every global that is referenced (transaction or recurring) or is an
+  -- ancestor of a referenced global must get a per-workspace equivalent in
+  -- each referencing workspace. Materialise those (legacy, workspace) pairs.
+  DROP TABLE IF EXISTS _legacy_pairs;
+  CREATE TEMP TABLE _legacy_pairs (
+    legacy_id TEXT,
+    ws_id TEXT,
+    PRIMARY KEY (legacy_id, ws_id)
+  );
 
-  INSERT INTO _name_map (src, tgt) VALUES
-    ('Outros Ganhos', 'Outros');
-
-  FOR obsolete IN
-    SELECT c.id, c.name, c.type, c.parent_id
+  INSERT INTO _legacy_pairs (legacy_id, ws_id)
+  WITH RECURSIVE pairs AS (
+    SELECT c.id AS legacy_id, w.workspace_id AS ws_id
     FROM categories c
+    JOIN (
+      SELECT category_id, workspace_id FROM transactions
+      UNION
+      SELECT category_id, workspace_id FROM recurring_transactions
+    ) w ON w.category_id = c.id
     WHERE c.workspace_id IS NULL
-      AND (c.id LIKE 'cat\_%' OR c.name IN ('Outros Ganhos', 'Outros Gastos'))
-    ORDER BY (SELECT count(*) FROM categories x WHERE x.parent_id = c.id) ASC, c.id
-  LOOP
-    SELECT m.tgt INTO target_name FROM _name_map m WHERE m.src = obsolete.name;
+      AND c.id <> ALL(sys_ids)
+    UNION
+    SELECT p.id, pairs.ws_id
+    FROM pairs
+    JOIN categories c ON c.id = pairs.legacy_id
+    JOIN categories p ON p.id = c.parent_id
+    WHERE p.workspace_id IS NULL
+      AND p.id <> ALL(sys_ids)
+  )
+  SELECT DISTINCT legacy_id, ws_id FROM pairs;
 
-    IF target_name IS NULL THEN
-      target_name := obsolete.name;
-    END IF;
+  -- Depth of every legacy node within the referenced/ancestor subgraph, so
+  -- parents are mirrored before their children.
+  DROP TABLE IF EXISTS _legacy_depth;
+  CREATE TEMP TABLE _legacy_depth (legacy_id TEXT PRIMARY KEY, depth INT NOT NULL);
 
-    target_parent := NULL;
-
-    IF obsolete.parent_id IS NOT NULL THEN
-      SELECT COALESCE(m.tgt, p.name) INTO target_parent
+  INSERT INTO _legacy_depth (legacy_id, depth)
+  WITH RECURSIVE depth AS (
+    SELECT lp.legacy_id, 0 AS depth
+    FROM (SELECT DISTINCT legacy_id FROM _legacy_pairs) lp
+    WHERE NOT EXISTS (
+      SELECT 1
       FROM categories p
-      LEFT JOIN _name_map m ON m.src = p.name
-      WHERE p.id = obsolete.parent_id;
+      JOIN (SELECT DISTINCT legacy_id FROM _legacy_pairs) lp2 ON lp2.legacy_id = p.id
+      WHERE p.id = (SELECT c.parent_id FROM categories c WHERE c.id = lp.legacy_id)
+    )
+    UNION ALL
+    SELECT c.id, depth.depth + 1
+    FROM depth
+    JOIN categories c ON c.parent_id = depth.legacy_id
+    JOIN (SELECT DISTINCT legacy_id FROM _legacy_pairs) lp ON lp.legacy_id = c.id
+  )
+  SELECT DISTINCT legacy_id, depth FROM depth;
+
+  -- Mirror: for each pair, reuse a category with identical
+  -- (workspace_id, name, type, resolved parent) or insert a fresh one.
+  DROP TABLE IF EXISTS _mirror;
+  CREATE TEMP TABLE _mirror (
+    legacy_id TEXT,
+    ws_id TEXT,
+    new_id TEXT NOT NULL,
+    PRIMARY KEY (legacy_id, ws_id)
+  );
+
+  FOR pair IN
+    SELECT lp.legacy_id, lp.ws_id
+    FROM _legacy_pairs lp
+    JOIN _legacy_depth d ON d.legacy_id = lp.legacy_id
+    ORDER BY d.depth ASC, lp.legacy_id, lp.ws_id
+  LOOP
+    SELECT CASE WHEN c.name = 'Outros Ganhos' THEN 'Outros' ELSE c.name END,
+           c.type,
+           c.parent_id
+      INTO target_name, node_type, legacy_parent
+    FROM categories c
+    WHERE c.id = pair.legacy_id;
+
+    parent_target := NULL;
+
+    IF legacy_parent IS NOT NULL THEN
+      SELECT m.new_id INTO parent_target
+      FROM _mirror m
+      WHERE m.legacy_id = legacy_parent
+        AND m.ws_id = pair.ws_id;
+
+      IF parent_target IS NULL THEN
+        RAISE EXCEPTION 'missing mirrored parent % for legacy category % in workspace %', legacy_parent, pair.legacy_id, pair.ws_id;
+      END IF;
     END IF;
 
-    FOR ref IN
-      SELECT t.id, t.workspace_id FROM transactions t WHERE t.category_id = obsolete.id
-    LOOP
-      SELECT tgt.id INTO target_id
-      FROM categories tgt
-      LEFT JOIN categories tgt_parent ON tgt_parent.id = tgt.parent_id
-      WHERE tgt.workspace_id = ref.workspace_id
-        AND tgt.name = target_name
-        AND tgt.type = obsolete.type
-        AND ((target_parent IS NULL AND tgt.parent_id IS NULL) OR tgt_parent.name = target_parent)
-      LIMIT 1;
+    SELECT c.id INTO target_id
+    FROM categories c
+    WHERE c.workspace_id = pair.ws_id
+      AND c.name = target_name
+      AND c.type = node_type
+      AND c.parent_id IS NOT DISTINCT FROM parent_target
+    LIMIT 1;
 
-      IF target_id IS NULL THEN
-        RAISE EXCEPTION 'no % equivalent for obsolete category % (id %) referenced by transaction % in workspace %', obsolete.type, obsolete.name, obsolete.id, ref.id, ref.workspace_id;
-      END IF;
+    IF target_id IS NULL THEN
+      target_id := gen_random_uuid()::text;
 
-      UPDATE transactions SET category_id = target_id WHERE id = ref.id;
-    END LOOP;
+      INSERT INTO categories (id, workspace_id, name, type, is_system_category, parent_id)
+      VALUES (target_id, pair.ws_id, target_name, node_type, false, parent_target);
+    END IF;
 
-    FOR ref IN
-      SELECT r.id, r.workspace_id FROM recurring_transactions r WHERE r.category_id = obsolete.id
-    LOOP
-      SELECT tgt.id INTO target_id
-      FROM categories tgt
-      LEFT JOIN categories tgt_parent ON tgt_parent.id = tgt.parent_id
-      WHERE tgt.workspace_id = ref.workspace_id
-        AND tgt.name = target_name
-        AND tgt.type = obsolete.type
-        AND ((target_parent IS NULL AND tgt.parent_id IS NULL) OR tgt_parent.name = target_parent)
-      LIMIT 1;
-
-      IF target_id IS NULL THEN
-        RAISE EXCEPTION 'no % equivalent for obsolete category % (id %) referenced by recurring transaction % in workspace %', obsolete.type, obsolete.name, obsolete.id, ref.id, ref.workspace_id;
-      END IF;
-
-      UPDATE recurring_transactions SET category_id = target_id WHERE id = ref.id;
-    END LOOP;
-
-    DELETE FROM categories WHERE id = obsolete.id;
+    INSERT INTO _mirror (legacy_id, ws_id, new_id)
+    VALUES (pair.legacy_id, pair.ws_id, target_id);
   END LOOP;
 
-  DROP TABLE _name_map;
+  -- Remap every reference off the non-system globals.
+  UPDATE transactions t
+  SET category_id = m.new_id
+  FROM _mirror m
+  WHERE t.category_id = m.legacy_id
+    AND t.workspace_id = m.ws_id;
+
+  UPDATE recurring_transactions r
+  SET category_id = m.new_id
+  FROM _mirror m
+  WHERE r.category_id = m.legacy_id
+    AND r.workspace_id = m.ws_id;
+
+  SELECT count(*) INTO leftover
+  FROM (
+    SELECT category_id FROM transactions
+    UNION ALL
+    SELECT category_id FROM recurring_transactions
+  ) refs
+  JOIN categories c ON c.id = refs.category_id
+  WHERE c.workspace_id IS NULL
+    AND c.id <> ALL(sys_ids);
+
+  IF leftover > 0 THEN
+    RAISE EXCEPTION 'unresolved references to non-system global categories: %', leftover;
+  END IF;
+
+  -- Delete all globals except the 2 fixed system ids, leaf-first so the
+  -- parent_id foreign key stays satisfied.
+  LOOP
+    DELETE FROM categories c
+    WHERE c.workspace_id IS NULL
+      AND c.id <> ALL(sys_ids)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM categories child
+        WHERE child.parent_id = c.id
+          AND child.workspace_id IS NULL
+          AND child.id <> ALL(sys_ids)
+      );
+
+    EXIT WHEN NOT FOUND;
+  END LOOP;
+
+  DROP TABLE _mirror;
+  DROP TABLE _legacy_depth;
+  DROP TABLE _legacy_pairs;
 END $$;
