@@ -1,4 +1,6 @@
-DROP INDEX "unq_cat_ws_name_type_parent";--> statement-breakpoint
+DROP INDEX IF EXISTS "unq_cat_ws_name_type_parent";--> statement-breakpoint
+DROP INDEX IF EXISTS "categories_workspace_id_name_type_parent_id_key";--> statement-breakpoint
+DROP INDEX IF EXISTS "categories_system_unique";--> statement-breakpoint
 CREATE UNIQUE INDEX "unq_cat_sys_name_type_parent" ON "categories" USING btree ("name","type","parent_id") WHERE "categories"."workspace_id" IS NULL AND "categories"."is_system_category" = true;--> statement-breakpoint
 CREATE UNIQUE INDEX "unq_cat_ws_name_type_parent" ON "categories" USING btree ("workspace_id","name","type","parent_id") WHERE "categories"."workspace_id" IS NOT NULL;--> statement-breakpoint
 DO $$
