@@ -72,7 +72,6 @@ npm run db:migrate    # Aplicar migrations pendentes
 npm run db:generate   # Gerar nova migration a partir do schema
 npm run db:status     # Ver status das migrations
 npm run db:rollback   # Reverter última migration
-npm run seed          # Popular banco com dados iniciais
 ```
 
 ---

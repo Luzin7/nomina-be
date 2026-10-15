@@ -10,9 +10,8 @@ import { TransactionType } from '@constants/enums';
  * não gerado pelo banco: o código usa a constante direto, sem consultar o banco
  * a cada transferência só para descobrir um ID que já se sabe qual é.
  *
- * O que torna isso seguro é a migration `0013` garantir essas linhas com esses
- * IDs exatos — inclusive corrigindo o ID de bancos onde a categoria já existia
- * com um UUID aleatório do seed. `drizzle/seed.ts` usa as mesmas constantes.
+ * O que torna isso seguro é a migration baseline `0000` garantir essas linhas
+ * com esses IDs exatos.
  *
  * Nunca reaproveite nem altere um ID daqui: eles são chave estrangeira de
  * transações já gravadas.
