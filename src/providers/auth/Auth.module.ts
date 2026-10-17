@@ -17,8 +17,8 @@ import { JwtStrategy } from './strategys/jwtStrategy';
           signOptions: {
             algorithm: 'RS256',
           },
-          privateKey: env.JWT_PRIVATE_KEY.replace(/\\n/g, '\n'),
-          publicKey: env.JWT_PUBLIC_KEY.replace(/\\n/g, '\n'),
+          privateKey: env.JWT_PRIVATE_KEY.replaceAll(String.raw`\n`, '\n'),
+          publicKey: env.JWT_PUBLIC_KEY.replaceAll(String.raw`\n`, '\n'),
         };
       },
     }),
