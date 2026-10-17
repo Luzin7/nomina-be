@@ -2,9 +2,40 @@
   "version": "7",
   "dialect": "postgresql",
   "entries": [
-    { "idx": 0, "version": "7", "when": 1772589605785, "tag": "0000_faulty_thanos", "breakpoints": true },
-    { "idx": 1, "version": "7", "when": 1791848201257, "tag": "0016_add_auth_sessions", "breakpoints": true },
-    { "idx": 2, "version": "7", "when": 1791848220070, "tag": "0017_recreate_refresh_tokens", "breakpoints": true },
-    { "idx": 3, "version": "7", "when": 1792030877587, "tag": "0018_workspace_default_categories", "breakpoints": true }
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1772589605785,
+      "tag": "0000_faulty_thanos",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791848201257,
+      "tag": "0016_add_auth_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791848220070,
+      "tag": "0017_recreate_refresh_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792030877587,
+      "tag": "0018_workspace_default_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792254296392,
+      "tag": "0019_unique_recurring_date",
+      "breakpoints": true
+    }
   ]
 }
