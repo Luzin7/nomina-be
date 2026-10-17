@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   AnyPgColumn,
   bigint,
@@ -9,7 +10,6 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
 
 // --------------------------------------------------------
 // INFRAESTRUTURA & AUTH
@@ -332,6 +332,10 @@ export const transactions = pgTable(
     ),
     index('idx_trans_destination_account').on(table.destinationAccountId),
     index('idx_trans_installment_group').on(table.installmentGroupId),
+    uniqueIndex('ux_transactions_recurring_date').on(
+      table.recurringId,
+      table.date,
+    ),
   ],
 );
 
