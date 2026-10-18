@@ -5,6 +5,7 @@ import { Transaction } from '@modules/transaction/entities/Transaction';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { makeRecurring } from '@modules/transaction/test-helpers/mock-factories';
+import { Logger } from '@nestjs/common';
 import { GenerateRecurringTransactionsJobService } from './generate-recurring-transactions.service';
 
 jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
@@ -12,6 +13,31 @@ jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 const mockCaptureException = captureException as jest.MockedFunction<
   typeof captureException
 >;
+
+const loggerWarn = jest
+  .spyOn(Logger.prototype, 'warn')
+  .mockImplementation(() => undefined);
+const loggerLog = jest
+  .spyOn(Logger.prototype, 'log')
+  .mockImplementation(() => undefined);
+
+function loggedRedisDegradation(): boolean {
+  return loggerWarn.mock.calls.some(([message]) =>
+    /redis/i.test(String(message)),
+  );
+}
+
+function loggedLockOverlap(): boolean {
+  return loggerWarn.mock.calls.some(([message]) =>
+    /lock/i.test(String(message)),
+  );
+}
+
+function loggedAlreadyProcessed(): boolean {
+  return loggerLog.mock.calls.some(([message]) =>
+    /already/i.test(String(message)),
+  );
+}
 
 describe('GenerateRecurringTransactionsJobService', () => {
   let service: GenerateRecurringTransactionsJobService;
@@ -45,6 +71,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
     } as unknown as jest.Mocked<NextGenerationDateCalculator>;
 
     redis = {
+      isEnabled: true,
       onModuleDestroy: jest.fn(),
       ping: jest.fn().mockResolvedValue(true),
       get: jest.fn().mockResolvedValue(null),
@@ -81,6 +108,10 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  function setRedisEnabled(value: boolean): void {
+    (redis as unknown as { isEnabled: boolean }).isEnabled = value;
+  }
+
   it('skips when the day is already cached', async () => {
     redis.exists.mockResolvedValue(true);
 
@@ -90,6 +121,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
     if (result.isRight()) expect(result.value.generatedCount).toBe(0);
     expect(redis.acquireLock).not.toHaveBeenCalled();
     expect(recurringRepository.listNeedingGeneration).not.toHaveBeenCalled();
+    expect(loggedAlreadyProcessed()).toBe(true);
   });
 
   it('skips when the lock is not acquired', async () => {
@@ -100,6 +132,29 @@ describe('GenerateRecurringTransactionsJobService', () => {
     expect(result.isRight()).toBe(true);
     if (result.isRight()) expect(result.value.generatedCount).toBe(0);
     expect(recurringRepository.listNeedingGeneration).not.toHaveBeenCalled();
+    expect(loggedLockOverlap()).toBe(true);
+  });
+
+  it('returns left and reports when redis is enabled but unavailable', async () => {
+    setRedisEnabled(true);
+    redis.acquireLock.mockRejectedValue(new Error('redis down'));
+
+    const result = await service.execute();
+
+    expect(result.isLeft()).toBe(true);
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(recurringRepository.listNeedingGeneration).not.toHaveBeenCalled();
+    expect(redis.set).not.toHaveBeenCalled();
+  });
+
+  it('generates and warns when redis is disabled', async () => {
+    setRedisEnabled(false);
+
+    const result = await service.execute();
+
+    expect(result.isRight()).toBe(true);
+    expect(recurringRepository.listNeedingGeneration).toHaveBeenCalled();
+    expect(loggedRedisDegradation()).toBe(true);
   });
 
   it('derives the day and cache key from the DateProvider timezone', async () => {

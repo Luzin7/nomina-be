@@ -60,12 +60,24 @@ export class GenerateRecurringTransactionsJobService {
       const cacheKey = `processed:recurring:${day}`;
       lockKey = `lock:recurring:${day}`;
 
+      if (!this.redis.isEnabled) {
+        this.logger.warn(
+          'Redis is disabled. Generating recurring transactions without a distributed lock.',
+        );
+      }
+
       if (await this.redis.exists(cacheKey)) {
+        this.logger.log(
+          'Recurring generation skipped: the day is already marked as processed in redis.',
+        );
         return right({ generatedCount: 0 });
       }
 
       lockAcquired = await this.redis.acquireLock(lockKey, LOCK_TTL_SECONDS);
       if (!lockAcquired) {
+        this.logger.warn(
+          'Recurring generation skipped: another run holds the lock.',
+        );
         return right({ generatedCount: 0 });
       }
 

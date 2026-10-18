@@ -3,6 +3,7 @@ import {
   CallHandler,
   ExecutionContext,
   Injectable,
+  Logger,
   NestInterceptor,
 } from '@nestjs/common';
 import { from, mergeMap, Observable, throwError } from 'rxjs';
@@ -11,6 +12,8 @@ import { idempotencyLockKey } from '../decorators/idempotencyKey';
 
 @Injectable()
 export class IdempotencyReleaseInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(IdempotencyReleaseInterceptor.name);
+
   constructor(private readonly redisService: RedisService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -29,6 +32,10 @@ export class IdempotencyReleaseInterceptor implements NestInterceptor {
     const key = idempotencyLockKey(context);
     if (!key) return;
 
-    await this.redisService.releaseLock(key);
+    try {
+      await this.redisService.releaseLock(key);
+    } catch (error) {
+      this.logger.warn('Idempotency lock release failed', error);
+    }
   }
 }
