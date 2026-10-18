@@ -205,7 +205,7 @@ Configurar em **Settings → Secrets and variables → Actions**:
 
 | Secret | Workflow | Uso |
 |--------|----------|-----|
-| `DATABASE_URL` | `release.yml` | Migrations antes do deploy |
+| `DATABASE_URL` | `release.yml` | Migrations antes do deploy. `drizzle-kit` recusa host não local por padrão; `ALLOW_PROD_MIGRATE=1` libera de propósito e runners de CI (`CI=true`) são liberados automaticamente |
 | `RENDER_DEPLOY_HOOK_URL` | `release.yml` | Deploy da imagem no Render |
 | `CRON_API_KEY` | `daily-job.yml` | Job diário de recorrências |
 
