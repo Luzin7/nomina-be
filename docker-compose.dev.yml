@@ -37,6 +37,21 @@ services:
     networks:
       - nomina_net
 
+  # Só sobe com `docker compose --profile chaos up -d toxiproxy`. O proxy
+  # "redis" é criado pela API de controle em tempo de execução (ver
+  # docs/redis-resiliencia/).
+  toxiproxy:
+    container_name: nomina_toxiproxy
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    profiles: ["chaos"]
+    ports:
+      - "${TOXIPROXY_API_HOST_PORT:-8474}:8474"
+      - "${TOXIPROXY_REDIS_HOST_PORT:-6381}:6381"
+    depends_on:
+      - redis
+    networks:
+      - nomina_net
+
 networks:
   nomina_net:
     driver: bridge

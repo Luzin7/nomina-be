@@ -1,4 +1,6 @@
 export abstract class CacheProvider {
+  abstract readonly isEnabled: boolean;
+
   abstract get(key: string): Promise<string | null>;
   abstract set(
     key: string,

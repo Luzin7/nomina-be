@@ -5,6 +5,8 @@ import {
   ConflictException,
   ExecutionContext,
   Injectable,
+  Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { idempotencyLockKey } from '../decorators/idempotencyKey';
@@ -17,6 +19,8 @@ const DEFAULT_LOCK_TTL_SECONDS = 30;
 
 @Injectable()
 export class IdempotencyGuard implements CanActivate {
+  private readonly logger = new Logger(IdempotencyGuard.name);
+
   constructor(
     private readonly reflector: Reflector,
     private readonly redisService: RedisService,
@@ -33,7 +37,14 @@ export class IdempotencyGuard implements CanActivate {
       );
     }
 
-    const lockAcquired = await this.redisService.acquireLock(
+    if (!this.redisService.isEnabled) {
+      this.logger.warn(
+        'Redis is disabled. Idempotency protection is skipped for this request.',
+      );
+      return true;
+    }
+
+    const lockAcquired = await this.acquireLock(
       key,
       options.ttlSeconds ?? DEFAULT_LOCK_TTL_SECONDS,
     );
@@ -45,13 +56,31 @@ export class IdempotencyGuard implements CanActivate {
     return true;
   }
 
+  private async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+    try {
+      return await this.redisService.acquireLock(key, ttlSeconds);
+    } catch (error) {
+      this.logger.error(
+        'Redis is enabled but unavailable. Idempotency cannot be guaranteed.',
+        error,
+      );
+      throw new ServiceUnavailableException(
+        'Não foi possível garantir a idempotência da requisição. Tente novamente em instantes.',
+      );
+    }
+  }
+
   async release(context: ExecutionContext): Promise<void> {
     if (!this.optionsFor(context)) return;
 
     const key = idempotencyLockKey(context);
     if (!key) return;
 
-    await this.redisService.releaseLock(key);
+    try {
+      await this.redisService.releaseLock(key);
+    } catch (error) {
+      this.logger.warn('Idempotency lock release failed', error);
+    }
   }
 
   private optionsFor(

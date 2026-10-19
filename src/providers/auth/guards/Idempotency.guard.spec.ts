@@ -3,6 +3,8 @@ import {
   BadRequestException,
   ConflictException,
   ExecutionContext,
+  Logger,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -10,7 +12,21 @@ import { Reflector } from '@nestjs/core';
 import { Idempotent } from '../decorators/Idempotency.decorator';
 import { IdempotencyGuard } from './Idempotency.guard';
 
+const loggerWarn = jest
+  .spyOn(Logger.prototype, 'warn')
+  .mockImplementation(() => undefined);
+const loggerError = jest
+  .spyOn(Logger.prototype, 'error')
+  .mockImplementation(() => undefined);
+
+function loggedIdempotencyDegradation(): boolean {
+  return [...loggerWarn.mock.calls, ...loggerError.mock.calls].some(
+    ([message]) => /idempot/i.test(String(message)),
+  );
+}
+
 class FakeRedisService {
+  readonly isEnabled = true;
   private readonly store = new Map<string, string>();
 
   async get(key: string): Promise<string | null> {
@@ -123,6 +139,7 @@ describe('IdempotencyGuard', () => {
 
   it('rejects with 409 when another instance already holds the key', async () => {
     const redis = {
+      isEnabled: true,
       get: jest.fn().mockResolvedValue(null),
       acquireLock: jest.fn().mockResolvedValue(false),
       releaseLock: jest.fn(),
@@ -136,6 +153,35 @@ describe('IdempotencyGuard', () => {
     expect(error.getStatus()).toBe(409);
   });
 
+  it('fails closed with 503 when redis is enabled but unavailable', async () => {
+    const redis = {
+      isEnabled: true,
+      acquireLock: jest.fn().mockRejectedValue(new Error('redis down')),
+      releaseLock: jest.fn(),
+    };
+
+    const error = await makeGuard(redis)
+      .canActivate(makeContext({ key: 'k-1' }))
+      .catch((e) => e);
+
+    expect(error).toBeInstanceOf(ServiceUnavailableException);
+    expect(error.getStatus()).toBe(503);
+  });
+
+  it('does not pass the request through when the lock call fails unexpectedly', async () => {
+    const redis = {
+      isEnabled: true,
+      acquireLock: jest.fn().mockRejectedValue(new Error('socket hang up')),
+      releaseLock: jest.fn(),
+    };
+
+    const error = await makeGuard(redis)
+      .canActivate(makeContext({ key: 'k-1' }))
+      .catch((e) => e);
+
+    expect(error).toBeInstanceOf(Error);
+  });
+
   it('allows a retry with the same key after the guarded handler fails', async () => {
     const context = makeContext({ key: 'k-1' });
     const releasable = guard as ReleasableGuard;
@@ -147,14 +193,16 @@ describe('IdempotencyGuard', () => {
     await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
-  it('passes through when redis is disabled', async () => {
+  it('passes through with a degradation log when redis is disabled', async () => {
     const redis = new RedisService({} as ConfigService);
     guard = makeGuard(redis);
 
+    expect((redis as unknown as { isEnabled: boolean }).isEnabled).toBe(false);
     expect(redis.getClient()).toBeNull();
 
     await expect(guard.canActivate(makeContext({ key: 'k-1' }))).resolves.toBe(
       true,
     );
+    expect(loggedIdempotencyDegradation()).toBe(true);
   });
 });
