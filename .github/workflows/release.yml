@@ -78,6 +78,7 @@ jobs:
         run: npx drizzle-kit migrate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ALLOW_PROD_MIGRATE: '1'
 
   release:
     needs: [verify, migrate]
