@@ -35,5 +35,5 @@ export abstract class RecurringTransactionRepository {
   abstract createGeneratedTransactions(
     transactions: Transaction[],
     updatedRecurring: RecurringTransaction,
-  ): Promise<void>;
+  ): Promise<number>;
 }

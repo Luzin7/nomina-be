@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "ux_transactions_recurring_date" ON "transactions" USING btree ("recurring_transaction_id","date");

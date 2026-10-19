@@ -191,13 +191,11 @@ export class GenerateRecurringTransactionsJobService {
 
     const shouldPersist = transactionsToCreate.length > 0 || !recurring.active;
 
-    if (shouldPersist) {
-      await this.recurringRepository.createGeneratedTransactions(
-        transactionsToCreate,
-        recurring,
-      );
-    }
+    if (!shouldPersist) return 0;
 
-    return transactionsToCreate.length;
+    return this.recurringRepository.createGeneratedTransactions(
+      transactionsToCreate,
+      recurring,
+    );
   }
 }

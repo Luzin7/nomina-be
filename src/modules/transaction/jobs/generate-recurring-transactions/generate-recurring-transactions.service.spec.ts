@@ -1,6 +1,7 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { captureException } from '@sentry/nestjs';
+import { Transaction } from '@modules/transaction/entities/Transaction';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { makeRecurring } from '@modules/transaction/test-helpers/mock-factories';
@@ -32,7 +33,11 @@ describe('GenerateRecurringTransactionsJobService', () => {
       findManyByWorkspaceId: jest.fn(),
       findNeedingGenerationByWorkspaceId: jest.fn(),
       listNeedingGeneration: jest.fn().mockResolvedValue([]),
-      createGeneratedTransactions: jest.fn().mockResolvedValue(undefined),
+      createGeneratedTransactions: jest
+        .fn()
+        .mockImplementation(
+          async (transactions: Transaction[]) => transactions.length,
+        ),
     } as jest.Mocked<RecurringTransactionRepository>;
 
     nextGenerationDateCalculator = {
@@ -201,6 +206,22 @@ describe('GenerateRecurringTransactionsJobService', () => {
     expect(transactions).toHaveLength(1);
     expect(updatedRecurring.lastGenerated).toEqual(new Date('2024-01-10'));
     if (result.isRight()) expect(result.value.generatedCount).toBe(1);
+  });
+
+  it('reports the count the repository inserted, not the batch size', async () => {
+    const recurring = makeRecurring({ startDate: new Date('2024-01-10') });
+    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-01-11'),
+    );
+    recurringRepository.createGeneratedTransactions.mockResolvedValue(5);
+
+    const result = await service.execute();
+
+    const [transactions] =
+      recurringRepository.createGeneratedTransactions.mock.calls[0];
+    expect(transactions).toHaveLength(24);
+    if (result.isRight()) expect(result.value.generatedCount).toBe(5);
   });
 
   it('isolates a bad row without aborting the run', async () => {
