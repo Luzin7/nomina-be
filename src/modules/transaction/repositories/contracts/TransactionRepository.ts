@@ -1,4 +1,5 @@
 import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpensesByCategory';
+import { Either } from '@shared/core/errors/Either';
 import { Transaction } from '../../entities/Transaction';
 
 export interface ListTransactionsParams {
@@ -13,6 +14,15 @@ export interface ListTransactionsParams {
   title?: string;
   status?: string;
 }
+
+/**
+ * Recebe a transação travada e devolve a versão resultante da edição. Roda
+ * dentro da transação do banco, então os efeitos financeiros são derivados do
+ * estado atual da linha, não do que o serviço leu antes.
+ */
+export type UpdateTransactionMutation = (
+  current: Transaction,
+) => Either<Error, Transaction>;
 
 export abstract class TransactionRepository {
   abstract create(transaction: Transaction): Promise<void>;
@@ -40,32 +50,22 @@ export abstract class TransactionRepository {
 
   abstract createWithBalanceUpdate(
     transaction: Transaction,
-    sourceNewBalance: number,
-    destinationNewBalance?: number,
+    sourceDelta: bigint,
+    destinationDelta?: bigint,
   ): Promise<void>;
 
-  abstract updateWithBalanceUpdate(
-    newTransaction: Transaction,
-    sourceNewBalance: number,
-    destinationNewBalance?: number,
-    oldDestinationAccountId?: string | null,
-    oldDestinationNewBalance?: number,
-    oldSourceAccountId?: string,
-    oldSourceNewBalance?: number,
-  ): Promise<void>;
-
-  abstract deleteWithBalanceReversion(
-    transaction: Transaction,
-    sourceNewBalance: number,
-    destinationNewBalance?: number,
-  ): Promise<void>;
-
-  abstract toggleStatusWithBalanceUpdate(
+  abstract updateWithBalanceEffect(
     transactionId: string,
-    sourceNewBalance: number,
-    destinationAccountId?: string | null,
-    destinationNewBalance?: number,
-  ): Promise<Transaction>;
+    mutate: UpdateTransactionMutation,
+  ): Promise<Either<Error, Transaction>>;
+
+  abstract deleteWithBalanceEffect(
+    transactionId: string,
+  ): Promise<Either<Error, boolean>>;
+
+  abstract toggleStatusWithBalanceEffect(
+    transactionId: string,
+  ): Promise<Either<Error, Transaction>>;
 
   abstract findCreditCardLedger(
     accountId: string,

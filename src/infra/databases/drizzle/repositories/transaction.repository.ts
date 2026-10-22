@@ -1,8 +1,16 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
-import { Transaction } from '@modules/transaction/entities/Transaction';
+import { AnyAccount } from '@modules/account/entities/types';
+import { AccountNotFoundError } from '@modules/account/errors';
+import { TransactionStatus } from '@constants/enums';
+import {
+  Transaction,
+  TransactionBalanceEffect,
+} from '@modules/transaction/entities/Transaction';
+import { TransactionNotFoundError } from '@modules/transaction/errors';
 import {
   ListTransactionsParams,
   TransactionRepository,
+  UpdateTransactionMutation,
 } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpensesByCategory';
 import { Injectable } from '@nestjs/common';
@@ -13,13 +21,21 @@ import {
   eq,
   gte,
   ilike,
+  inArray,
   lte,
   or,
   sql,
   sum,
 } from 'drizzle-orm';
+import { DomainError } from '@shared/core/errors/DomainError';
+import { Either, left, right } from '@shared/core/errors/Either';
+import { AccountMapper } from '../mappers/account.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
+
+type DrizzleTransaction = Parameters<
+  Parameters<DrizzleService['db']['transaction']>[0]
+>[0];
 
 @Injectable()
 export class TransactionRepositoryImplementation implements TransactionRepository {
@@ -184,146 +200,245 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
   async createWithBalanceUpdate(
     transaction: Transaction,
-    sourceNewBalance: number,
-    destinationNewBalance?: number,
+    sourceDelta: bigint,
+    destinationDelta?: bigint,
   ): Promise<void> {
     await this.drizzle.db.transaction(async (tx) => {
       await tx
         .insert(schema.transactions)
         .values(TransactionMapper.toDatabase(transaction));
 
-      await tx
-        .update(schema.accounts)
-        .set({ balance: sourceNewBalance })
-        .where(eq(schema.accounts.id, transaction.accountId));
+      const deltas = new Map<string, bigint>([
+        [transaction.accountId, sourceDelta],
+      ]);
 
-      if (
-        transaction.destinationAccountId &&
-        destinationNewBalance !== undefined
-      ) {
-        await tx
-          .update(schema.accounts)
-          .set({ balance: destinationNewBalance })
-          .where(eq(schema.accounts.id, transaction.destinationAccountId));
+      if (transaction.destinationAccountId && destinationDelta !== undefined) {
+        const currentDelta = deltas.get(transaction.destinationAccountId) ?? 0n;
+        deltas.set(
+          transaction.destinationAccountId,
+          currentDelta + destinationDelta,
+        );
       }
+
+      await this.writeBalanceDeltas(tx, deltas);
     });
   }
 
-  async updateWithBalanceUpdate(
-    newTransaction: Transaction,
-    sourceNewBalance: number,
-    destinationNewBalance?: number,
-    oldDestinationAccountId?: string | null,
-    oldDestinationNewBalance?: number,
-    oldSourceAccountId?: string,
-    oldSourceNewBalance?: number,
-  ): Promise<void> {
-    await this.drizzle.db.transaction(async (tx) => {
-      await tx
-        .update(schema.transactions)
-        .set(TransactionMapper.toDatabase(newTransaction))
-        .where(eq(schema.transactions.id, newTransaction.id));
-
-      await tx
-        .update(schema.accounts)
-        .set({ balance: sourceNewBalance })
-        .where(eq(schema.accounts.id, newTransaction.accountId));
-
-      if (oldSourceAccountId && oldSourceNewBalance !== undefined) {
-        await tx
-          .update(schema.accounts)
-          .set({ balance: oldSourceNewBalance })
-          .where(eq(schema.accounts.id, oldSourceAccountId));
-      }
-
-      if (oldDestinationAccountId && oldDestinationNewBalance !== undefined) {
-        await tx
-          .update(schema.accounts)
-          .set({ balance: oldDestinationNewBalance })
-          .where(eq(schema.accounts.id, oldDestinationAccountId));
-      }
-
-      if (
-        newTransaction.destinationAccountId &&
-        destinationNewBalance !== undefined &&
-        newTransaction.destinationAccountId !== oldDestinationAccountId
-      ) {
-        await tx
-          .update(schema.accounts)
-          .set({ balance: destinationNewBalance })
-          .where(eq(schema.accounts.id, newTransaction.destinationAccountId));
-      }
-    });
-  }
-
-  async deleteWithBalanceReversion(
-    transaction: Transaction,
-    sourceNewBalance: number,
-    destinationNewBalance?: number,
-  ): Promise<void> {
-    await this.drizzle.db.transaction(async (tx) => {
-      await tx
-        .delete(schema.transactions)
-        .where(eq(schema.transactions.id, transaction.id));
-
-      await tx
-        .update(schema.accounts)
-        .set({ balance: sourceNewBalance })
-        .where(eq(schema.accounts.id, transaction.accountId));
-
-      if (
-        transaction.destinationAccountId &&
-        destinationNewBalance !== undefined
-      ) {
-        await tx
-          .update(schema.accounts)
-          .set({ balance: destinationNewBalance })
-          .where(eq(schema.accounts.id, transaction.destinationAccountId));
-      }
-    });
-  }
-
-  async toggleStatusWithBalanceUpdate(
+  async updateWithBalanceEffect(
     transactionId: string,
-    sourceNewBalance: number,
-    destinationAccountId?: string | null,
-    destinationNewBalance?: number,
-  ): Promise<Transaction> {
-    return await this.drizzle.db.transaction(async (tx) => {
-      const [current] = await tx
-        .select({
-          status: schema.transactions.status,
-          accountId: schema.transactions.accountId,
-        })
-        .from(schema.transactions)
-        .where(eq(schema.transactions.id, transactionId))
-        .limit(1);
+    mutate: UpdateTransactionMutation,
+  ): Promise<Either<Error, Transaction>> {
+    try {
+      const updated = await this.drizzle.db.transaction(async (tx) => {
+        await tx.execute(sql`set local lock_timeout = '3s'`);
+        await tx.execute(sql`set local statement_timeout = '15s'`);
 
-      if (!current) throw new Error('Transaction not found');
+        const current = await this.lockTransaction(tx, transactionId);
+        if (!current) throw new TransactionNotFoundError();
 
-      const newStatus =
-        current.status === 'COMPLETED' ? 'PENDING' : 'COMPLETED';
+        const mutated = mutate(current);
+        if (mutated.isLeft()) throw mutated.value;
+        const next = mutated.value;
 
-      const [updatedTransaction] = await tx
-        .update(schema.transactions)
-        .set({ status: newStatus })
-        .where(eq(schema.transactions.id, transactionId))
-        .returning();
+        const accounts = await this.lockAccounts(tx, [
+          current.accountId,
+          current.destinationAccountId,
+          next.accountId,
+          next.destinationAccountId,
+        ]);
 
-      await tx
-        .update(schema.accounts)
-        .set({ balance: sourceNewBalance })
-        .where(eq(schema.accounts.id, current.accountId));
+        const deltas = this.applyBalanceEffects(accounts, [
+          ...current.revertedBalanceEffects(),
+          ...next.balanceEffects(),
+        ]);
 
-      if (destinationAccountId && destinationNewBalance !== undefined) {
+        await this.writeBalanceDeltas(tx, deltas);
         await tx
-          .update(schema.accounts)
-          .set({ balance: destinationNewBalance })
-          .where(eq(schema.accounts.id, destinationAccountId));
+          .update(schema.transactions)
+          .set(TransactionMapper.toDatabase(next))
+          .where(eq(schema.transactions.id, next.id));
+
+        return next;
+      });
+
+      return right(updated);
+    } catch (error) {
+      if (error instanceof DomainError) return left(error);
+      throw error;
+    }
+  }
+
+  async deleteWithBalanceEffect(
+    transactionId: string,
+  ): Promise<Either<Error, boolean>> {
+    try {
+      const deleted = await this.drizzle.db.transaction(async (tx) => {
+        await tx.execute(sql`set local lock_timeout = '3s'`);
+        await tx.execute(sql`set local statement_timeout = '15s'`);
+
+        const current = await this.lockTransaction(tx, transactionId);
+        if (!current) throw new TransactionNotFoundError();
+
+        const accounts = await this.lockAccounts(tx, [
+          current.accountId,
+          current.destinationAccountId,
+        ]);
+
+        const deltas = this.applyBalanceEffects(
+          accounts,
+          current.revertedBalanceEffects(),
+        );
+
+        const rows = await tx
+          .delete(schema.transactions)
+          .where(eq(schema.transactions.id, current.id))
+          .returning({ id: schema.transactions.id });
+        if (rows.length === 0) return false;
+
+        await this.writeBalanceDeltas(tx, deltas);
+
+        return true;
+      });
+
+      return right(deleted);
+    } catch (error) {
+      if (error instanceof DomainError) return left(error);
+      throw error;
+    }
+  }
+
+  async toggleStatusWithBalanceEffect(
+    transactionId: string,
+  ): Promise<Either<Error, Transaction>> {
+    try {
+      const toggled = await this.drizzle.db.transaction(async (tx) => {
+        await tx.execute(sql`set local lock_timeout = '3s'`);
+        await tx.execute(sql`set local statement_timeout = '15s'`);
+
+        const current = await this.lockTransaction(tx, transactionId);
+        if (!current) throw new TransactionNotFoundError();
+
+        const accounts = await this.lockAccounts(tx, [
+          current.accountId,
+          current.destinationAccountId,
+        ]);
+
+        const wasCompleted = current.status === TransactionStatus.COMPLETED;
+        const revertedEffects = current.revertedBalanceEffects();
+        const toggleResult = wasCompleted
+          ? current.markAsPending()
+          : current.complete();
+        if (toggleResult.isLeft()) throw toggleResult.value;
+
+        const deltas = this.applyBalanceEffects(accounts, [
+          ...revertedEffects,
+          ...current.balanceEffects(),
+        ]);
+
+        await this.writeBalanceDeltas(tx, deltas);
+        await tx
+          .update(schema.transactions)
+          .set(TransactionMapper.toDatabase(current))
+          .where(eq(schema.transactions.id, current.id));
+
+        return current;
+      });
+
+      return right(toggled);
+    } catch (error) {
+      if (error instanceof DomainError) return left(error);
+      throw error;
+    }
+  }
+
+  private async lockTransaction(
+    tx: DrizzleTransaction,
+    transactionId: string,
+  ): Promise<Transaction | null> {
+    const [row] = await tx
+      .select()
+      .from(schema.transactions)
+      .where(eq(schema.transactions.id, transactionId))
+      .limit(1)
+      .for('update');
+
+    return row ? TransactionMapper.toDomain(row) : null;
+  }
+
+  private async lockAccounts(
+    tx: DrizzleTransaction,
+    accountIds: (string | null)[],
+  ): Promise<Map<string, AnyAccount>> {
+    const ids = [
+      ...new Set(accountIds.filter((id): id is string => !!id)),
+    ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+    if (ids.length === 0) return new Map();
+
+    const rows = await tx
+      .select()
+      .from(schema.accounts)
+      .where(inArray(schema.accounts.id, ids))
+      .orderBy(schema.accounts.id)
+      .for('update');
+
+    return new Map(rows.map((row) => [row.id, AccountMapper.toDomain(row)]));
+  }
+
+  /**
+   * Aplica os efeitos nas contas travadas e devolve a variação de saldo de cada
+   * uma. Quem diz de quanto o saldo muda é a conta; aqui só comparamos com o
+   * valor travado antes dos efeitos.
+   */
+  private applyBalanceEffects(
+    accounts: Map<string, AnyAccount>,
+    effects: TransactionBalanceEffect[],
+  ): Map<string, bigint> {
+    const initialBalances = new Map<string, bigint>();
+
+    for (const effect of effects) {
+      const account = accounts.get(effect.accountId);
+      if (!account) {
+        throw new AccountNotFoundError('Conta não encontrada.');
       }
 
-      return TransactionMapper.toDomain(updatedTransaction);
-    });
+      if (!initialBalances.has(account.id)) {
+        initialBalances.set(account.id, account.balance);
+      }
+
+      const applied =
+        effect.kind === 'expense'
+          ? account.applyExpenseEffect(effect.amount)
+          : account.applyIncomeEffect(effect.amount);
+      if (applied.isLeft()) throw applied.value;
+    }
+
+    const deltas = new Map<string, bigint>();
+    for (const [accountId, initialBalance] of initialBalances) {
+      const account = accounts.get(accountId);
+      if (!account) continue;
+      deltas.set(accountId, account.balance - initialBalance);
+    }
+
+    return deltas;
+  }
+
+  private async writeBalanceDeltas(
+    tx: DrizzleTransaction,
+    deltas: Map<string, bigint>,
+  ): Promise<void> {
+    const ordered = [...deltas.entries()]
+      .filter(([, delta]) => delta !== 0n)
+      .sort(([leftId], [rightId]) =>
+        leftId < rightId ? -1 : leftId > rightId ? 1 : 0,
+      );
+
+    for (const [accountId, delta] of ordered) {
+      await tx
+        .update(schema.accounts)
+        .set({ balance: sql`${schema.accounts.balance} + ${delta}` })
+        .where(eq(schema.accounts.id, accountId));
+    }
   }
 
   async findCreditCardLedger(

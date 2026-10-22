@@ -1,11 +1,10 @@
-import { AccountType, TransactionStatus } from '@constants/enums';
-import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
+import { TransactionStatus } from '@constants/enums';
 import { AccountNotFoundError } from '@modules/account/errors';
-import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionNotFoundError } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { DeleteTransactionService } from './delete-transaction.service';
 
@@ -49,25 +48,10 @@ function makeTransaction(status: TransactionStatus): Transaction {
   return r.value;
 }
 
-function makeCheckingAccount(): CheckingAccount {
-  const r = CheckingAccount.create(
-    {
-      workspaceId: 'ws-1',
-      name: 'Checking',
-      timezone: 'UTC',
-      type: AccountType.CHECKING,
-      balance: 100000n,
-    },
-    'acc-1',
-  );
-  if (r.isLeft()) throw r.value;
-  return r.value;
-}
-
 describe('DeleteTransactionService', () => {
   let service: DeleteTransactionService;
+
   let transactionRepository: jest.Mocked<TransactionRepository>;
-  let accountRepository: jest.Mocked<AccountRepository>;
 
   beforeEach(() => {
     transactionRepository = {
@@ -77,40 +61,25 @@ describe('DeleteTransactionService', () => {
       getTopExpensesByCategory: jest.fn(),
       sumTransactionsByDateRange: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
-      updateWithBalanceUpdate: jest.fn(),
-      deleteWithBalanceReversion: jest.fn(),
-      toggleStatusWithBalanceUpdate: jest.fn(),
+      updateWithBalanceEffect: jest.fn(),
+      deleteWithBalanceEffect: jest.fn(),
+      toggleStatusWithBalanceEffect: jest.fn(),
       findCreditCardLedger: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
-    accountRepository = {
-      findByNameAndWorkspaceId: jest.fn(),
-      create: jest.fn(),
-      findById: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      findManyByWorkspaceId: jest.fn(),
-      findAllByWorkspaceId: jest.fn(),
-      countByWorkspaceId: jest.fn(),
-    } as jest.Mocked<AccountRepository>;
-
-    service = new DeleteTransactionService(
-      transactionRepository,
-      accountRepository,
-      {
-        onModuleDestroy: jest.fn(),
-        ping: jest.fn().mockResolvedValue(false),
-        get: jest.fn().mockResolvedValue(null),
-        set: jest.fn().mockResolvedValue(true),
-        del: jest.fn().mockResolvedValue(true),
-        exists: jest.fn().mockResolvedValue(false),
-        acquireLock: jest.fn().mockResolvedValue(true),
-        releaseLock: jest.fn().mockResolvedValue(true),
-        delByPattern: jest.fn().mockResolvedValue(0),
-        getClient: jest.fn().mockReturnValue(null),
-        isAvailable: jest.fn().mockReturnValue(false),
-      } as unknown as jest.Mocked<CacheProvider>,
-    );
+    service = new DeleteTransactionService(transactionRepository, {
+      onModuleDestroy: jest.fn(),
+      ping: jest.fn().mockResolvedValue(false),
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+      del: jest.fn().mockResolvedValue(true),
+      exists: jest.fn().mockResolvedValue(false),
+      acquireLock: jest.fn().mockResolvedValue(true),
+      releaseLock: jest.fn().mockResolvedValue(true),
+      delByPattern: jest.fn().mockResolvedValue(0),
+      getClient: jest.fn().mockReturnValue(null),
+      isAvailable: jest.fn().mockReturnValue(false),
+    } as unknown as jest.Mocked<CacheProvider>);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -135,42 +104,60 @@ describe('DeleteTransactionService', () => {
     expect(result.value).toBeInstanceOf(UnauthorizedError);
   });
 
-  it('should return left(AccountNotFoundError) when account not found', async () => {
+  it('should propagate left(AccountNotFoundError) from the repository', async () => {
+    const accountNotFound = new AccountNotFoundError('Conta não encontrada.');
     transactionRepository.findUniqueById.mockResolvedValue(
       makeTransaction(TransactionStatus.PENDING),
     );
-    accountRepository.findById.mockResolvedValue(null);
+    transactionRepository.deleteWithBalanceEffect.mockResolvedValue(
+      left(accountNotFound),
+    );
 
     const result = await service.execute(makeRequest());
     expect(result.isLeft()).toBe(true);
-    expect(result.value).toBeInstanceOf(AccountNotFoundError);
+    expect(result.value).toBe(accountNotFound);
   });
 
-  it('should delete a PENDING transaction without balance reversion', async () => {
+  it('should return left(TransactionNotFoundError) when the row is gone before deletion', async () => {
     transactionRepository.findUniqueById.mockResolvedValue(
       makeTransaction(TransactionStatus.PENDING),
     );
-    accountRepository.findById.mockResolvedValue(makeCheckingAccount());
-    transactionRepository.deleteWithBalanceReversion.mockResolvedValue();
+    transactionRepository.deleteWithBalanceEffect.mockResolvedValue(
+      right(false),
+    );
+
+    const result = await service.execute(makeRequest());
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(TransactionNotFoundError);
+  });
+
+  it('should delete a PENDING transaction', async () => {
+    transactionRepository.findUniqueById.mockResolvedValue(
+      makeTransaction(TransactionStatus.PENDING),
+    );
+    transactionRepository.deleteWithBalanceEffect.mockResolvedValue(
+      right(true),
+    );
 
     const result = await service.execute(makeRequest());
     expect(result.isRight()).toBe(true);
-    expect(
-      transactionRepository.deleteWithBalanceReversion,
-    ).toHaveBeenCalledTimes(1);
+    expect(transactionRepository.deleteWithBalanceEffect).toHaveBeenCalledWith(
+      'tx-1',
+    );
   });
 
-  it('should delete a COMPLETED transaction reverting account balance', async () => {
+  it('should delete a COMPLETED transaction', async () => {
     transactionRepository.findUniqueById.mockResolvedValue(
       makeTransaction(TransactionStatus.COMPLETED),
     );
-    accountRepository.findById.mockResolvedValue(makeCheckingAccount());
-    transactionRepository.deleteWithBalanceReversion.mockResolvedValue();
+    transactionRepository.deleteWithBalanceEffect.mockResolvedValue(
+      right(true),
+    );
 
     const result = await service.execute(makeRequest());
     expect(result.isRight()).toBe(true);
-    expect(
-      transactionRepository.deleteWithBalanceReversion,
-    ).toHaveBeenCalledTimes(1);
+    expect(transactionRepository.deleteWithBalanceEffect).toHaveBeenCalledWith(
+      'tx-1',
+    );
   });
 });

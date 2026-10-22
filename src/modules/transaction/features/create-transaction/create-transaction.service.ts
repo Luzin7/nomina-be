@@ -71,6 +71,10 @@ export class CreateTransactionService implements Service<
     if (transactionOrError.isLeft()) return left(transactionOrError.value);
     const transaction = transactionOrError.value;
 
+    let deltas: { sourceDelta: bigint; destinationDelta?: bigint } = {
+      sourceDelta: 0n,
+    };
+
     if (resolvedStatus === TransactionStatus.COMPLETED) {
       const mutationResult = this.applyFinancialMutations(
         account,
@@ -79,14 +83,10 @@ export class CreateTransactionService implements Service<
         request.amount,
       );
       if (mutationResult.isLeft()) return left(mutationResult.value);
+      deltas = mutationResult.value;
     }
 
-    await this.persistTransaction(
-      transaction,
-      account,
-      destinationAccount,
-      request.type,
-    );
+    await this.persistTransaction(transaction, deltas);
 
     await this.redisService.delByPattern(`report:*:${request.workspaceId}:*`);
 
@@ -167,7 +167,38 @@ export class CreateTransactionService implements Service<
     return { transactionDate, resolvedStatus };
   }
 
+  /**
+   * Aplica o efeito da transação nas contas e devolve a variação de cada uma.
+   * A conta calcula o novo saldo; aqui só medimos a diferença antes/depois, sem
+   * repetir a aritmética da regra.
+   */
   private applyFinancialMutations(
+    account: AnyAccount,
+    destinationAccount: AnyAccount | null,
+    type: TransactionType,
+    amount: bigint,
+  ): Either<Error, { sourceDelta: bigint; destinationDelta?: bigint }> {
+    const sourceBalanceBefore = account.balance;
+    const destinationBalanceBefore = destinationAccount?.balance;
+
+    const mutationResult = this.applyEffects(
+      account,
+      destinationAccount,
+      type,
+      amount,
+    );
+    if (mutationResult.isLeft()) return left(mutationResult.value);
+
+    return right({
+      sourceDelta: account.balance - sourceBalanceBefore,
+      destinationDelta:
+        destinationAccount && destinationBalanceBefore !== undefined
+          ? destinationAccount.balance - destinationBalanceBefore
+          : undefined,
+    });
+  }
+
+  private applyEffects(
     account: AnyAccount,
     destinationAccount: AnyAccount | null,
     type: TransactionType,
@@ -193,21 +224,12 @@ export class CreateTransactionService implements Service<
 
   private async persistTransaction(
     transaction: Transaction,
-    account: AnyAccount,
-    destinationAccount: AnyAccount | null,
-    type: TransactionType,
+    deltas: { sourceDelta: bigint; destinationDelta?: bigint },
   ): Promise<void> {
-    if (type === 'TRANSFER' && destinationAccount) {
-      await this.transactionRepository.createWithBalanceUpdate(
-        transaction,
-        Number(account.balance),
-        Number(destinationAccount.balance),
-      );
-    } else {
-      await this.transactionRepository.createWithBalanceUpdate(
-        transaction,
-        Number(account.balance),
-      );
-    }
+    await this.transactionRepository.createWithBalanceUpdate(
+      transaction,
+      deltas.sourceDelta,
+      deltas.destinationDelta,
+    );
   }
 }

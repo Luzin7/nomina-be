@@ -6,6 +6,7 @@ import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { Transaction } from '@modules/transaction/entities/Transaction';
 import { CreditCardTransferNotAllowedError } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -86,9 +87,9 @@ describe('CreateTransactionService', () => {
       listTransactionsByWorkspaceId: jest.fn(),
       getTopExpensesByCategory: jest.fn(),
       sumTransactionsByDateRange: jest.fn(),
-      updateWithBalanceUpdate: jest.fn(),
-      deleteWithBalanceReversion: jest.fn(),
-      toggleStatusWithBalanceUpdate: jest.fn(),
+      updateWithBalanceEffect: jest.fn(),
+      deleteWithBalanceEffect: jest.fn(),
+      toggleStatusWithBalanceEffect: jest.fn(),
       findCreditCardLedger: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
@@ -171,10 +172,12 @@ describe('CreateTransactionService', () => {
   it('should create a transaction and return right on success', async () => {
     arrangeSuccessMocks();
 
-    const result = await service.execute(makeRequest());
+    const result = await service.execute(makeRequest({ date: '2023-12-15' }));
     expect(result.isRight()).toBe(true);
-    expect(transactionRepository.createWithBalanceUpdate).toHaveBeenCalledTimes(
-      1,
+    expect(transactionRepository.createWithBalanceUpdate).toHaveBeenCalledWith(
+      expect.any(Transaction),
+      -5000n,
+      undefined,
     );
   });
 
