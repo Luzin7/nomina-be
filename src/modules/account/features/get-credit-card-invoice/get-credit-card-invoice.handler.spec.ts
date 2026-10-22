@@ -52,6 +52,7 @@ describe('GetCreditCardInvoiceService', () => {
     accountRepository = {
       findByNameAndWorkspaceId: jest.fn(),
       create: jest.fn(),
+      createWithOpeningMovement: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),

@@ -3,6 +3,9 @@ import type { ArgumentsHost } from '@nestjs/common/interfaces/features/arguments
 import { SentryExceptionCaptured } from '@sentry/nestjs';
 import { Request, Response } from 'express';
 
+const POSTGRES_TIMEOUT_CODES = ['55P03', '57014'];
+const MAX_CAUSE_DEPTH = 5;
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionsFilter');
@@ -21,11 +24,37 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return;
     }
 
+    if (this.isPostgresTimeout(exception)) {
+      response.status(503).json({
+        statusCode: 503,
+        message: 'Service temporarily unavailable',
+        path: request.url,
+      });
+      return;
+    }
+
     response.status(500).json({
       statusCode: 500,
       message: 'Internal server error',
       path: request.url,
     });
+  }
+
+  private isPostgresTimeout(exception: unknown): boolean {
+    let current: unknown = exception;
+
+    for (let depth = 0; depth <= MAX_CAUSE_DEPTH; depth++) {
+      if (!(current instanceof Error)) return false;
+
+      const { code } = current as Error & { code?: unknown };
+      if (typeof code === 'string' && POSTGRES_TIMEOUT_CODES.includes(code)) {
+        return true;
+      }
+
+      current = current.cause;
+    }
+
+    return false;
   }
 
   private logCauseChain(exception: unknown): void {

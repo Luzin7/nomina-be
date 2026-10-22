@@ -23,7 +23,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
     "db:rollback": "drizzle-kit rollback",
-    "db:status": "drizzle-kit status"
+    "db:status": "drizzle-kit status",
+    "db:backfill-balance-movements": "tsx scripts/backfill-balance-movements.ts"
   },
   "engines": {
     "node": "^22.14.0 || >=24.10.0"

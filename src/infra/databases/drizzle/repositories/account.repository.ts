@@ -1,3 +1,4 @@
+import { BalanceMovementCause } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -17,6 +18,27 @@ export class AccountRepositoryImplementation implements AccountRepository {
       .returning();
 
     return AccountMapper.toDomain(createdAccount);
+  }
+
+  async createWithOpeningMovement(
+    account: AnyAccount,
+    actorId?: string,
+  ): Promise<void> {
+    await this.drizzle.db.transaction(async (tx) => {
+      await tx
+        .insert(schema.accounts)
+        .values(AccountMapper.toDatabase(account));
+
+      await tx.insert(schema.balanceMovements).values({
+        workspaceId: account.workspaceId,
+        accountId: account.id,
+        transactionId: null,
+        cause: BalanceMovementCause.OPENING,
+        delta: Number(account.balance),
+        balanceAfter: Number(account.balance),
+        actorId: actorId ?? null,
+      });
+    });
   }
 
   async findByNameAndWorkspaceId(

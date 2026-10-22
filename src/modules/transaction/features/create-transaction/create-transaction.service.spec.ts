@@ -10,6 +10,7 @@ import { Transaction } from '@modules/transaction/entities/Transaction';
 import { CreditCardTransferNotAllowedError } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { randomUUID } from 'crypto';
 import { CreateTransactionService } from './create-transaction.service';
@@ -58,6 +59,7 @@ describe('CreateTransactionService', () => {
     accountRepository = {
       findById: jest.fn(),
       create: jest.fn(),
+      createWithOpeningMovement: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
       findByNameAndWorkspaceId: jest.fn(),
@@ -138,7 +140,9 @@ describe('CreateTransactionService', () => {
       type: TransactionType.EXPENSE,
       parentId: null,
     } as jest.Mocked<Category>);
-    transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue(
+      right(undefined),
+    );
   }
 
   it('should return left(UnauthorizedError) when account is not found', async () => {
@@ -171,13 +175,25 @@ describe('CreateTransactionService', () => {
 
   it('should create a transaction and return right on success', async () => {
     arrangeSuccessMocks();
+    const lockedAccount = makeAccount();
+    let deltas: Map<string, bigint> | undefined;
+    transactionRepository.createWithBalanceUpdate.mockImplementation(
+      (_transaction, applyEffects) => {
+        const applied = applyEffects(
+          new Map([[lockedAccount.id, lockedAccount]]),
+        );
+        if (applied.isLeft()) throw applied.value;
+        deltas = applied.value;
+        return Promise.resolve(right(undefined));
+      },
+    );
 
     const result = await service.execute(makeRequest({ date: '2023-12-15' }));
     expect(result.isRight()).toBe(true);
+    expect(deltas?.get(lockedAccount.id)).toBe(-5000n);
     expect(transactionRepository.createWithBalanceUpdate).toHaveBeenCalledWith(
       expect.any(Transaction),
-      -5000n,
-      undefined,
+      expect.any(Function),
     );
   });
 
@@ -200,23 +216,46 @@ describe('CreateTransactionService', () => {
       accountRepository.findById
         .mockResolvedValueOnce(makeAccount())
         .mockResolvedValueOnce(makeAccount('ws-1', 'acc-2'));
-      transactionRepository.createWithBalanceUpdate.mockResolvedValue();
+      transactionRepository.createWithBalanceUpdate.mockResolvedValue(
+        right(undefined),
+      );
     }
 
-    function makeTransferRequest() {
+    function makeTransferRequest(overrides: { date?: string } = {}) {
       return makeRequest({
         type: TransactionType.TRANSFER,
         destinationAccountId: 'acc-2',
         categoryId: undefined,
+        ...overrides,
       });
     }
 
     it('should create a TRANSFER when the destination account is valid', async () => {
       arrangeTransferMocks();
+      const source = makeAccount();
+      const destination = makeAccount('ws-1', 'acc-2');
+      let deltas: Map<string, bigint> | undefined;
+      transactionRepository.createWithBalanceUpdate.mockImplementation(
+        (_transaction, applyEffects) => {
+          const applied = applyEffects(
+            new Map([
+              [source.id, source],
+              [destination.id, destination],
+            ]),
+          );
+          if (applied.isLeft()) throw applied.value;
+          deltas = applied.value;
+          return Promise.resolve(right(undefined));
+        },
+      );
 
-      const result = await service.execute(makeTransferRequest());
+      const result = await service.execute(
+        makeTransferRequest({ date: '2023-12-15' }),
+      );
 
       expect(result.isRight()).toBe(true);
+      expect(deltas?.get('acc-1')).toBe(-5000n);
+      expect(deltas?.get('acc-2')).toBe(5000n);
       expect(
         transactionRepository.createWithBalanceUpdate,
       ).toHaveBeenCalledTimes(1);

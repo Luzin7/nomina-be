@@ -1,13 +1,15 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountNotFoundError } from '@modules/account/errors';
-import { TransactionStatus } from '@constants/enums';
+import { BalanceMovementCause, TransactionStatus } from '@constants/enums';
 import {
   Transaction,
   TransactionBalanceEffect,
 } from '@modules/transaction/entities/Transaction';
 import { TransactionNotFoundError } from '@modules/transaction/errors';
 import {
+  BalanceMovementContext,
+  CreateBalanceMutation,
   ListTransactionsParams,
   TransactionRepository,
   UpdateTransactionMutation,
@@ -36,6 +38,12 @@ import * as schema from '../schema';
 type DrizzleTransaction = Parameters<
   Parameters<DrizzleService['db']['transaction']>[0]
 >[0];
+
+type BalanceMovementEntry = {
+  transactionId: string | null;
+  cause: BalanceMovementCause;
+  actorId?: string;
+};
 
 @Injectable()
 export class TransactionRepositoryImplementation implements TransactionRepository {
@@ -200,33 +208,45 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
   async createWithBalanceUpdate(
     transaction: Transaction,
-    sourceDelta: bigint,
-    destinationDelta?: bigint,
-  ): Promise<void> {
-    await this.drizzle.db.transaction(async (tx) => {
-      await tx
-        .insert(schema.transactions)
-        .values(TransactionMapper.toDatabase(transaction));
+    applyEffects: CreateBalanceMutation,
+    context?: BalanceMovementContext,
+  ): Promise<Either<Error, void>> {
+    try {
+      await this.drizzle.db.transaction(async (tx) => {
+        await tx.execute(sql`set local lock_timeout = '3s'`);
+        await tx.execute(sql`set local statement_timeout = '15s'`);
 
-      const deltas = new Map<string, bigint>([
-        [transaction.accountId, sourceDelta],
-      ]);
-
-      if (transaction.destinationAccountId && destinationDelta !== undefined) {
-        const currentDelta = deltas.get(transaction.destinationAccountId) ?? 0n;
-        deltas.set(
+        const accounts = await this.lockAccounts(tx, [
+          transaction.accountId,
           transaction.destinationAccountId,
-          currentDelta + destinationDelta,
-        );
-      }
+        ]);
 
-      await this.writeBalanceDeltas(tx, deltas);
-    });
+        const applied = applyEffects(accounts);
+        if (applied.isLeft()) throw applied.value;
+
+        const [created] = await tx
+          .insert(schema.transactions)
+          .values(TransactionMapper.toDatabase(transaction))
+          .returning({ id: schema.transactions.id });
+
+        await this.writeBalanceDeltas(tx, applied.value, {
+          transactionId: created.id,
+          cause: context?.cause ?? BalanceMovementCause.TRANSACTION_CREATED,
+          actorId: context?.actorId,
+        });
+      });
+
+      return right(undefined);
+    } catch (error) {
+      if (error instanceof DomainError) return left(error);
+      throw error;
+    }
   }
 
   async updateWithBalanceEffect(
     transactionId: string,
     mutate: UpdateTransactionMutation,
+    context?: BalanceMovementContext,
   ): Promise<Either<Error, Transaction>> {
     try {
       const updated = await this.drizzle.db.transaction(async (tx) => {
@@ -252,7 +272,11 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
           ...next.balanceEffects(),
         ]);
 
-        await this.writeBalanceDeltas(tx, deltas);
+        await this.writeBalanceDeltas(tx, deltas, {
+          transactionId: next.id,
+          cause: context?.cause ?? BalanceMovementCause.TRANSACTION_UPDATED,
+          actorId: context?.actorId,
+        });
         await tx
           .update(schema.transactions)
           .set(TransactionMapper.toDatabase(next))
@@ -270,6 +294,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
   async deleteWithBalanceEffect(
     transactionId: string,
+    context?: BalanceMovementContext,
   ): Promise<Either<Error, boolean>> {
     try {
       const deleted = await this.drizzle.db.transaction(async (tx) => {
@@ -295,7 +320,11 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
           .returning({ id: schema.transactions.id });
         if (rows.length === 0) return false;
 
-        await this.writeBalanceDeltas(tx, deltas);
+        await this.writeBalanceDeltas(tx, deltas, {
+          transactionId: current.id,
+          cause: context?.cause ?? BalanceMovementCause.TRANSACTION_DELETED,
+          actorId: context?.actorId,
+        });
 
         return true;
       });
@@ -309,6 +338,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
   async toggleStatusWithBalanceEffect(
     transactionId: string,
+    context?: BalanceMovementContext,
   ): Promise<Either<Error, Transaction>> {
     try {
       const toggled = await this.drizzle.db.transaction(async (tx) => {
@@ -335,7 +365,11 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
           ...current.balanceEffects(),
         ]);
 
-        await this.writeBalanceDeltas(tx, deltas);
+        await this.writeBalanceDeltas(tx, deltas, {
+          transactionId: current.id,
+          cause: context?.cause ?? BalanceMovementCause.STATUS_CHANGED,
+          actorId: context?.actorId,
+        });
         await tx
           .update(schema.transactions)
           .set(TransactionMapper.toDatabase(current))
@@ -426,6 +460,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   private async writeBalanceDeltas(
     tx: DrizzleTransaction,
     deltas: Map<string, bigint>,
+    movement: BalanceMovementEntry,
   ): Promise<void> {
     const ordered = [...deltas.entries()]
       .filter(([, delta]) => delta !== 0n)
@@ -434,10 +469,26 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
       );
 
     for (const [accountId, delta] of ordered) {
-      await tx
+      const [account] = await tx
         .update(schema.accounts)
         .set({ balance: sql`${schema.accounts.balance} + ${delta}` })
-        .where(eq(schema.accounts.id, accountId));
+        .where(eq(schema.accounts.id, accountId))
+        .returning({
+          balance: schema.accounts.balance,
+          workspaceId: schema.accounts.workspaceId,
+        });
+
+      if (!account) throw new AccountNotFoundError('Conta não encontrada.');
+
+      await tx.insert(schema.balanceMovements).values({
+        workspaceId: account.workspaceId,
+        accountId,
+        transactionId: movement.transactionId,
+        cause: movement.cause,
+        delta: Number(delta),
+        balanceAfter: account.balance,
+        actorId: movement.actorId ?? null,
+      });
     }
   }
 

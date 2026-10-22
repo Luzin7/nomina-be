@@ -1,4 +1,4 @@
-import { TransactionStatus } from '@constants/enums';
+import { BalanceMovementCause, TransactionStatus } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import {
@@ -86,7 +86,6 @@ export class PayCreditCardInvoiceService implements Service<
 
     const sourceAccountOrError = await this.validateSourceAccount(props);
     if (sourceAccountOrError.isLeft()) return left(sourceAccountOrError.value);
-    const sourceAccount = sourceAccountOrError.value;
 
     const amountBigInt = BigInt(props.amount);
     const now = this.dateProvider.now();
@@ -130,22 +129,59 @@ export class PayCreditCardInvoiceService implements Service<
     if (transactionOrError.isLeft()) return left(transactionOrError.value);
     const transaction = transactionOrError.value;
 
+    const persisted = await this.transactionRepository.createWithBalanceUpdate(
+      transaction,
+      (lockedAccounts) => this.applyPaymentEffects(lockedAccounts, transaction),
+      { cause: BalanceMovementCause.INVOICE_PAID, actorId: props.sub },
+    );
+    if (persisted.isLeft()) return left(persisted.value);
+
+    return right(transaction);
+  }
+
+  /**
+   * Debita a origem e abate a fatura nas contas travadas pelo repositório.
+   * Devolve a variação de cada conta: quem decide o valor é a regra da conta.
+   */
+  private applyPaymentEffects(
+    lockedAccounts: Map<string, AnyAccount>,
+    transaction: Transaction,
+  ): Either<Error, Map<string, bigint>> {
+    const sourceAccount = lockedAccounts.get(transaction.accountId);
+    if (!sourceAccount) {
+      return left(new AccountNotFoundError('Conta de origem não encontrada.'));
+    }
+
+    const creditCardAccount = transaction.destinationAccountId
+      ? lockedAccounts.get(transaction.destinationAccountId)
+      : undefined;
+    if (!creditCardAccount) return left(new AccountNotFoundError());
+    if (!(creditCardAccount instanceof CreditCard)) {
+      return left(
+        new InvalidAccountError(
+          'A conta de destino deve ser um cartão de crédito.',
+        ),
+      );
+    }
+
     const sourceBalanceBefore = sourceAccount.balance;
     const creditCardBalanceBefore = creditCardAccount.balance;
 
-    const debitResult = sourceAccount.debit(amountBigInt);
+    const debitResult = sourceAccount.debit(transaction.amount);
     if (debitResult.isLeft()) return left(debitResult.value);
 
-    const paymentResult = creditCardAccount.payInvoice(amountBigInt);
+    const paymentResult = creditCardAccount.payInvoice(transaction.amount);
     if (paymentResult.isLeft()) return left(paymentResult.value);
 
-    await this.transactionRepository.createWithBalanceUpdate(
-      transaction,
-      sourceAccount.balance - sourceBalanceBefore,
-      creditCardAccount.balance - creditCardBalanceBefore,
+    return right(
+      new Map([
+        [sourceAccount.id, sourceAccount.balance - sourceBalanceBefore],
+        [
+          creditCardAccount.id,
+          creditCardAccount.balance - creditCardBalanceBefore,
+        ],
+      ]),
     );
-
-    return right(transaction);
   }
 
   private explicitInvoiceKey(props: Request): string | undefined {
