@@ -21,10 +21,10 @@ import { ListRecurringTransactionsController } from './features/list-recurring-t
 import { ListRecurringTransactionsService } from './features/list-recurring-transactions/list-recurring-transactions.service';
 import { ListTransactionController } from './features/list-transaction/list-transaction.controller';
 import { ListTransactionsService } from './features/list-transaction/list-transaction.service';
+import { SetTransactionStatusController } from './features/set-transaction-status/set-transaction-status.controller';
+import { SetTransactionStatusService } from './features/set-transaction-status/set-transaction-status.service';
 import { ToggleActiveRecurringTransactionController } from './features/toggle-active-recurring-transaction/toggle-active-recurring-transaction.controller';
 import { ToggleActiveRecurringTransactionService } from './features/toggle-active-recurring-transaction/toggle-active-recurring-transaction.service';
-import { ToggleTransactionStatusController } from './features/toggle-transaction-status/toggle-transaction-status.controller';
-import { ToggleTransactionStatusService } from './features/toggle-transaction-status/toggle-transaction-status.service';
 import { UpdateRecurringTransactionController } from './features/update-recurring-transaction/update-recurring-transaction.controller';
 import { UpdateRecurringTransactionService } from './features/update-recurring-transaction/update-recurring-transaction.service';
 import { UpdateTransactionController } from './features/update-transaction/update-transaction.controller';
@@ -45,7 +45,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     ListRecurringTransactionsController,
     FindTransactionController,
     UpdateTransactionController,
-    ToggleTransactionStatusController,
+    SetTransactionStatusController,
     CreateRecurringTransactionController,
     GenerateRecurringTransactionsJobController,
     ReconcileBalancesJobController,
@@ -62,7 +62,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     FindTransactionByIdService,
     ListTransactionsService,
     UpdateTransactionService,
-    ToggleTransactionStatusService,
+    SetTransactionStatusService,
     CreateRecurringTransactionService,
     UpdateRecurringTransactionService,
     DeleteRecurringTransactionService,

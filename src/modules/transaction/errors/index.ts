@@ -1,7 +1,7 @@
 import {
   BusinessRuleDomainError,
+  ConflictDomainError,
   DomainError,
-  InvalidOperationDomainError,
 } from '@shared/core/errors/DomainError';
 
 export class InvalidAmountError extends BusinessRuleDomainError {
@@ -114,15 +114,23 @@ export class TypeRequiredError extends BusinessRuleDomainError {
   }
 }
 
-export class TransactionAlreadyCompletedError extends InvalidOperationDomainError {
+export class TransactionAlreadyCompletedError extends ConflictDomainError {
   constructor() {
     super('A transação já está concluída.');
   }
 }
 
-export class TransactionAlreadyPendingError extends InvalidOperationDomainError {
+export class TransactionAlreadyPendingError extends ConflictDomainError {
   constructor() {
     super('A transação já está pendente.');
+  }
+}
+
+export class TransactionStatusChangedConcurrentlyError extends ConflictDomainError {
+  constructor() {
+    super(
+      'O status da transação foi alterado por outra requisição. Tente novamente.',
+    );
   }
 }
 
