@@ -1,8 +1,9 @@
 import { env } from '@infra/env';
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 import Redis, { RedisOptions } from 'ioredis';
-import { CacheProvider } from '../contracts/CacheProvider';
+import { CacheProvider, LockHandle } from '../contracts/CacheProvider';
 import { RedisUnavailableError } from './errors/RedisUnavailableError';
 
 const COMMAND_TIMEOUT_MS = 2000;
@@ -11,6 +12,8 @@ const MAX_RETRIES_PER_REQUEST = 1;
 const RECONNECT_MIN_DELAY_MS = 50;
 const RECONNECT_MAX_DELAY_MS = 2000;
 const DEFAULT_LOCK_TTL_SECONDS = 30;
+export const RELEASE_LOCK_SCRIPT =
+  "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end";
 
 function reconnectDelay(attempt: number): number {
   return Math.min(attempt * RECONNECT_MIN_DELAY_MS, RECONNECT_MAX_DELAY_MS);
@@ -178,8 +181,9 @@ export class RedisService implements CacheProvider, OnModuleDestroy {
   async acquireLock(
     key: string,
     ttlSeconds = DEFAULT_LOCK_TTL_SECONDS,
-  ): Promise<boolean> {
-    if (!this.isEnabled) return true;
+  ): Promise<LockHandle | null> {
+    const lock: LockHandle = { key, token: randomUUID() };
+    if (!this.isEnabled) return lock;
 
     const client = this.getClient();
     if (!client) {
@@ -188,8 +192,8 @@ export class RedisService implements CacheProvider, OnModuleDestroy {
     }
 
     try {
-      const result = await client.set(key, '1', 'EX', ttlSeconds, 'NX');
-      return result === 'OK';
+      const result = await client.set(key, lock.token, 'EX', ttlSeconds, 'NX');
+      return result === 'OK' ? lock : null;
     } catch (error) {
       this.logger.error(`Redis LOCK failed for key ${key}:`, error);
       throw new RedisUnavailableError(
@@ -198,20 +202,25 @@ export class RedisService implements CacheProvider, OnModuleDestroy {
     }
   }
 
-  async releaseLock(key: string): Promise<boolean> {
+  async releaseLock(lock: LockHandle): Promise<boolean> {
     const client = this.getClient();
     if (!client) {
       this.logger.warn(
-        `Redis UNLOCK skipped for key ${key}: client is not available`,
+        `Redis UNLOCK skipped for key ${lock.key}: client is not available`,
       );
       return false;
     }
 
     try {
-      await client.del(key);
-      return true;
+      const released = await client.eval(
+        RELEASE_LOCK_SCRIPT,
+        1,
+        lock.key,
+        lock.token,
+      );
+      return Number(released) === 1;
     } catch (error) {
-      this.logger.warn(`Redis UNLOCK failed for key ${key}:`, error);
+      this.logger.warn(`Redis UNLOCK failed for key ${lock.key}:`, error);
       return false;
     }
   }

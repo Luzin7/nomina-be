@@ -1,5 +1,8 @@
 import { RecurrenceFrequency, TransactionStatus } from '@constants/enums';
-import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import {
+  CacheProvider,
+  LockHandle,
+} from '@infra/cache/contracts/CacheProvider';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
@@ -50,15 +53,14 @@ export class GenerateRecurringTransactionsJobService {
   ) {}
 
   async execute(): Promise<Either<Error, Response>> {
-    let lockAcquired = false;
-    let lockKey: string | null = null;
+    let lock: LockHandle | null = null;
 
     try {
       const now = this.dateProvider.now();
       const day = this.dateProvider.format(now, 'YYYY-MM-DD', TIMEZONE);
 
       const cacheKey = `processed:recurring:${day}`;
-      lockKey = `lock:recurring:${day}`;
+      const lockKey = `lock:recurring:${day}`;
 
       if (!this.redis.isEnabled) {
         this.logger.warn(
@@ -73,8 +75,8 @@ export class GenerateRecurringTransactionsJobService {
         return right({ generatedCount: 0 });
       }
 
-      lockAcquired = await this.redis.acquireLock(lockKey, LOCK_TTL_SECONDS);
-      if (!lockAcquired) {
+      lock = await this.redis.acquireLock(lockKey, LOCK_TTL_SECONDS);
+      if (!lock) {
         this.logger.warn(
           'Recurring generation skipped: another run holds the lock.',
         );
@@ -103,8 +105,8 @@ export class GenerateRecurringTransactionsJobService {
 
       return left(new RecurringGenerationFailedError(err.message));
     } finally {
-      if (lockAcquired && lockKey) {
-        await this.redis.releaseLock(lockKey).catch((e) => captureException(e));
+      if (lock) {
+        await this.redis.releaseLock(lock).catch((e) => captureException(e));
       }
     }
   }

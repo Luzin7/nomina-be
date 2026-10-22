@@ -1,3 +1,4 @@
+import { LockHandle } from '@infra/cache/contracts/CacheProvider';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import {
   BadRequestException,
@@ -9,6 +10,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import {
+  idempotencyLockOf,
+  storeIdempotencyLock,
+} from '../decorators/idempotencyLock';
 import { idempotencyLockKey } from '../decorators/idempotencyKey';
 import {
   IDEMPOTENCY_KEY,
@@ -44,19 +49,23 @@ export class IdempotencyGuard implements CanActivate {
       return true;
     }
 
-    const lockAcquired = await this.acquireLock(
+    const lock = await this.acquireLock(
       key,
       options.ttlSeconds ?? DEFAULT_LOCK_TTL_SECONDS,
     );
 
-    if (!lockAcquired) {
+    if (!lock) {
       throw new ConflictException('A requisição já está sendo processada.');
     }
 
+    storeIdempotencyLock(context, lock);
     return true;
   }
 
-  private async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+  private async acquireLock(
+    key: string,
+    ttlSeconds: number,
+  ): Promise<LockHandle | null> {
     try {
       return await this.redisService.acquireLock(key, ttlSeconds);
     } catch (error) {
@@ -71,13 +80,11 @@ export class IdempotencyGuard implements CanActivate {
   }
 
   async release(context: ExecutionContext): Promise<void> {
-    if (!this.optionsFor(context)) return;
-
-    const key = idempotencyLockKey(context);
-    if (!key) return;
+    const lock = idempotencyLockOf(context);
+    if (!lock) return;
 
     try {
-      await this.redisService.releaseLock(key);
+      await this.redisService.releaseLock(lock);
     } catch (error) {
       this.logger.warn('Idempotency lock release failed', error);
     }

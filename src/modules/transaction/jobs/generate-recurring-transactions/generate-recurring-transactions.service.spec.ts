@@ -1,4 +1,7 @@
-import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import {
+  CacheProvider,
+  LockHandle,
+} from '@infra/cache/contracts/CacheProvider';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { captureException } from '@sentry/nestjs';
 import { Transaction } from '@modules/transaction/entities/Transaction';
@@ -49,6 +52,10 @@ describe('GenerateRecurringTransactionsJobService', () => {
   const NOW = new Date('2024-01-15T00:00:00.000Z');
   const LOOK_AHEAD = new Date('2024-01-22');
   const DAY = '2024-01-15';
+  const LOCK: LockHandle = {
+    key: `lock:recurring:${DAY}`,
+    token: 'token-1',
+  };
 
   beforeEach(() => {
     recurringRepository = {
@@ -78,7 +85,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       set: jest.fn().mockResolvedValue(true),
       del: jest.fn().mockResolvedValue(true),
       exists: jest.fn().mockResolvedValue(false),
-      acquireLock: jest.fn().mockResolvedValue(true),
+      acquireLock: jest.fn().mockResolvedValue(LOCK),
       releaseLock: jest.fn().mockResolvedValue(true),
       delByPattern: jest.fn().mockResolvedValue(0),
       getClient: jest.fn().mockReturnValue(null),
@@ -125,7 +132,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
   });
 
   it('skips when the lock is not acquired', async () => {
-    redis.acquireLock.mockResolvedValue(false);
+    redis.acquireLock.mockResolvedValue(null);
 
     const result = await service.execute();
 
@@ -182,7 +189,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       '1',
       86400,
     );
-    expect(redis.releaseLock).toHaveBeenCalled();
+    expect(redis.releaseLock).toHaveBeenCalledWith(LOCK);
   });
 
   it('returns left and does not release a lock it never acquired when the cache check throws', async () => {

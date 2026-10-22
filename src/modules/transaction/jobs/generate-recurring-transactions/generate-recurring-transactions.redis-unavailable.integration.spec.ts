@@ -23,7 +23,7 @@ interface RedisClientLike {
 interface RedisServiceLike {
   isEnabled: boolean;
   getClient(): RedisClientLike | null;
-  acquireLock(key: string, ttlSeconds?: number): Promise<boolean>;
+  acquireLock(key: string, ttlSeconds?: number): Promise<unknown>;
 }
 
 async function waitForRedisError(redis: RedisServiceLike): Promise<void> {
