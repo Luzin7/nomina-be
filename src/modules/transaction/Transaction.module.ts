@@ -31,6 +31,8 @@ import { UpdateTransactionController } from './features/update-transaction/updat
 import { UpdateTransactionService } from './features/update-transaction/update-transaction.service';
 import { GenerateRecurringTransactionsJobController } from './jobs/generate-recurring-transactions/generate-recurring-transactions.controller';
 import { GenerateRecurringTransactionsJobService } from './jobs/generate-recurring-transactions/generate-recurring-transactions.service';
+import { ReconcileBalancesJobController } from './jobs/reconcile-balances/reconcile-balances.controller';
+import { ReconcileBalancesJobService } from './jobs/reconcile-balances/reconcile-balances.service';
 import { CalculateNextGenerationDateService } from './services/calculate-next-generation-date.service';
 import { NextGenerationDateCalculator } from './services/contracts/NextGenerationDateCalculator';
 
@@ -46,6 +48,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     ToggleTransactionStatusController,
     CreateRecurringTransactionController,
     GenerateRecurringTransactionsJobController,
+    ReconcileBalancesJobController,
     UpdateRecurringTransactionController,
     DeleteRecurringTransactionController,
     FindRecurringTransactionController,
@@ -71,6 +74,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
       useClass: CalculateNextGenerationDateService,
     },
     GenerateRecurringTransactionsJobService,
+    ReconcileBalancesJobService,
   ],
 })
 export class TransactionModule {}

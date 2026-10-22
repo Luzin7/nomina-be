@@ -137,3 +137,28 @@ export class UnknownRecurrenceFrequencyError extends DomainError {
     super(`Frequência de recorrência desconhecida: ${frequency}`);
   }
 }
+
+export interface BalanceDivergencePayload {
+  accountId: string;
+  unexplained: number;
+}
+
+export class BalanceLedgerUncoveredError extends DomainError {
+  readonly uncovered: number;
+  readonly accountIds: readonly string[];
+
+  constructor(uncovered: number, accountIds: readonly string[]) {
+    super('Contas sem movimentação de abertura não podem ser conciliadas.');
+    this.uncovered = uncovered;
+    this.accountIds = accountIds;
+  }
+}
+
+export class BalanceReconciliationDivergenceError extends DomainError {
+  readonly divergences: readonly BalanceDivergencePayload[];
+
+  constructor(divergences: readonly BalanceDivergencePayload[]) {
+    super('Divergência entre o saldo das contas e o ledger de movimentações.');
+    this.divergences = divergences;
+  }
+}
