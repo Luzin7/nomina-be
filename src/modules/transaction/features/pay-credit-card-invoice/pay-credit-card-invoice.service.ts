@@ -130,6 +130,9 @@ export class PayCreditCardInvoiceService implements Service<
     if (transactionOrError.isLeft()) return left(transactionOrError.value);
     const transaction = transactionOrError.value;
 
+    const sourceBalanceBefore = sourceAccount.balance;
+    const creditCardBalanceBefore = creditCardAccount.balance;
+
     const debitResult = sourceAccount.debit(amountBigInt);
     if (debitResult.isLeft()) return left(debitResult.value);
 
@@ -138,8 +141,8 @@ export class PayCreditCardInvoiceService implements Service<
 
     await this.transactionRepository.createWithBalanceUpdate(
       transaction,
-      Number(sourceAccount.balance),
-      Number(creditCardAccount.balance),
+      sourceAccount.balance - sourceBalanceBefore,
+      creditCardAccount.balance - creditCardBalanceBefore,
     );
 
     return right(transaction);

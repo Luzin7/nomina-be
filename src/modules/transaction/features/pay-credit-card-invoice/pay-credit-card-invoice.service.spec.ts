@@ -62,9 +62,9 @@ describe('PayCreditCardInvoiceService', () => {
       getTopExpensesByCategory: jest.fn(),
       sumTransactionsByDateRange: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
-      updateWithBalanceUpdate: jest.fn(),
-      deleteWithBalanceReversion: jest.fn(),
-      toggleStatusWithBalanceUpdate: jest.fn(),
+      updateWithBalanceEffect: jest.fn(),
+      deleteWithBalanceEffect: jest.fn(),
+      toggleStatusWithBalanceEffect: jest.fn(),
       findCreditCardLedger: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 

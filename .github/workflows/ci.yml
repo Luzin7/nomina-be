@@ -26,6 +26,10 @@ jobs:
       - name: Run unit tests
         run: npm test -- --coverage
 
+      - name: Run concurrency integration tests
+        run: npm run test:concurrency -- --runInBand
+        timeout-minutes: 20
+
       - name: Check TypeScript compilation
         run: ./node_modules/.bin/tsc --noEmit
 
