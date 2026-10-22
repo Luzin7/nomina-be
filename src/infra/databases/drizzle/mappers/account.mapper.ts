@@ -7,6 +7,10 @@ import { InvestmentAccount } from '@modules/account/entities/InvestmentAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 type AccountDrizzle = typeof schema.accounts.$inferSelect;
 type AccountDrizzleInsert = typeof schema.accounts.$inferInsert;
+type AccountDrizzleEditable = Pick<
+  AccountDrizzleInsert,
+  'name' | 'creditLimit' | 'closingDaysBeforeDue' | 'dueDay'
+>;
 
 export class AccountMapper {
   static toDomain(raw: AccountDrizzle): AnyAccount {
@@ -76,6 +80,20 @@ export class AccountMapper {
           raw.id,
         );
     }
+  }
+
+  static toUpdatePayload(entity: AnyAccount): AccountDrizzleEditable {
+    if (!(entity instanceof CreditCard)) {
+      return { name: entity.name };
+    }
+
+    return {
+      name: entity.name,
+      creditLimit:
+        entity.creditLimit === null ? null : Number(entity.creditLimit),
+      closingDaysBeforeDue: entity.closingDaysBeforeDue,
+      dueDay: entity.dueDay,
+    };
   }
 
   static toDatabase(entity: AnyAccount): AccountDrizzleInsert {

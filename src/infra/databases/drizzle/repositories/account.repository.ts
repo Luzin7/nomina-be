@@ -76,7 +76,7 @@ export class AccountRepositoryImplementation implements AccountRepository {
   async update(account: AnyAccount): Promise<AnyAccount> {
     const [updatedAccount] = await this.drizzle.db
       .update(schema.accounts)
-      .set(AccountMapper.toDatabase(account))
+      .set(AccountMapper.toUpdatePayload(account))
       .where(eq(schema.accounts.id, account.id))
       .returning();
 
