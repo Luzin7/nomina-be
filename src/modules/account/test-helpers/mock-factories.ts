@@ -1,4 +1,5 @@
 import { AccountType } from '@constants/enums';
+import { CashAccount } from '@modules/account/entities/CashAccounts';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 
@@ -19,6 +20,26 @@ export function makeCreditCard(
       ...props,
     },
     id ?? 'acc-1',
+  );
+  if (r.isLeft()) throw r.value;
+  return r.value;
+}
+
+export function makeCashAccount(
+  overrides: Partial<Parameters<typeof CashAccount.create>[0]> & {
+    id?: string;
+  } = {},
+): CashAccount {
+  const { id, ...props } = overrides;
+  const r = CashAccount.create(
+    {
+      workspaceId: 'ws-1',
+      name: 'Cash',
+      timezone: 'UTC',
+      balance: 10000n,
+      ...props,
+    },
+    id ?? 'acc-3',
   );
   if (r.isLeft()) throw r.value;
   return r.value;

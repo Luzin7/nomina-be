@@ -33,6 +33,7 @@ describe('DeleteAccountService', () => {
       findById: jest.fn(),
       delete: jest.fn(),
       create: jest.fn(),
+      createWithOpeningMovement: jest.fn(),
       update: jest.fn(),
       findByNameAndWorkspaceId: jest.fn(),
       findManyByWorkspaceId: jest.fn(),

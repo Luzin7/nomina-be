@@ -36,6 +36,13 @@
       "when": 1792254296392,
       "tag": "0019_unique_recurring_date",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792631276970,
+      "tag": "0020_balance_movements",
+      "breakpoints": true
     }
   ]
 }

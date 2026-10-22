@@ -56,6 +56,7 @@ describe('CreateAccountService', () => {
     accountRepository = {
       findByNameAndWorkspaceId: jest.fn(),
       create: jest.fn(),
+      createWithOpeningMovement: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -91,7 +92,7 @@ describe('CreateAccountService', () => {
   function arrangeSuccessMocks() {
     userRepository.findUniqueById.mockResolvedValue(makeUser());
     accountRepository.findByNameAndWorkspaceId.mockResolvedValue(null);
-    accountRepository.create.mockImplementation(async (a) => a);
+    accountRepository.createWithOpeningMovement.mockResolvedValue();
   }
 
   it('should return left when user is not found', async () => {
@@ -118,7 +119,13 @@ describe('CreateAccountService', () => {
       makeRequest({ type: AccountType.CHECKING }),
     );
     expect(result.isRight()).toBe(true);
-    expect(accountRepository.create).toHaveBeenCalledTimes(1);
+    expect(accountRepository.createWithOpeningMovement).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(accountRepository.createWithOpeningMovement).toHaveBeenCalledWith(
+      expect.anything(),
+      'user-1',
+    );
   });
 
   it('should create a CASH account successfully', async () => {
@@ -128,7 +135,9 @@ describe('CreateAccountService', () => {
       makeRequest({ type: AccountType.CASH }),
     );
     expect(result.isRight()).toBe(true);
-    expect(accountRepository.create).toHaveBeenCalledTimes(1);
+    expect(accountRepository.createWithOpeningMovement).toHaveBeenCalledTimes(
+      1,
+    );
   });
 
   it('should create a CREDIT_CARD account successfully', async () => {
@@ -143,7 +152,9 @@ describe('CreateAccountService', () => {
       }),
     );
     expect(result.isRight()).toBe(true);
-    expect(accountRepository.create).toHaveBeenCalledTimes(1);
+    expect(accountRepository.createWithOpeningMovement).toHaveBeenCalledTimes(
+      1,
+    );
   });
 
   it('should create a CREDIT_CARD without creditLimit (unlimited)', async () => {
@@ -158,7 +169,9 @@ describe('CreateAccountService', () => {
       }),
     );
     expect(result.isRight()).toBe(true);
-    expect(accountRepository.create).toHaveBeenCalledTimes(1);
+    expect(accountRepository.createWithOpeningMovement).toHaveBeenCalledTimes(
+      1,
+    );
   });
 
   it('should NOT create a CREDIT_CARD without closingDaysBeforeDue', async () => {
@@ -173,6 +186,6 @@ describe('CreateAccountService', () => {
       }),
     );
     expect(result.isLeft()).toBe(true);
-    expect(accountRepository.create).not.toHaveBeenCalled();
+    expect(accountRepository.createWithOpeningMovement).not.toHaveBeenCalled();
   });
 });

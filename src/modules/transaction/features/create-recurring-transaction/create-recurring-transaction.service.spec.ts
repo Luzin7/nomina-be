@@ -79,6 +79,7 @@ describe('CreateRecurringTransactionService', () => {
 
     accountRepository = {
       create: jest.fn(),
+      createWithOpeningMovement: jest.fn(),
       findByNameAndWorkspaceId: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),

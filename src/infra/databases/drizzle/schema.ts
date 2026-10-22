@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { BalanceMovementCause } from '@constants/enums';
 import {
   AnyPgColumn,
   bigint,
@@ -336,6 +337,33 @@ export const transactions = pgTable(
       table.recurringId,
       table.date,
     ),
+  ],
+);
+
+export const balanceMovements = pgTable(
+  'balance_movements',
+  {
+    seq: bigint('seq', { mode: 'number' })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
+    workspaceId: text('workspace_id').notNull(),
+    accountId: text('account_id').notNull(),
+    transactionId: text('transaction_id'),
+    cause: text('cause').$type<BalanceMovementCause>().notNull(),
+    delta: bigint('delta', { mode: 'number' }).notNull(),
+    balanceAfter: bigint('balance_after', { mode: 'number' }).notNull(),
+    actorId: text('actor_id'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_balance_movements_account_seq').on(table.accountId, table.seq),
+    uniqueIndex('ux_balance_movements_opening')
+      .on(table.accountId)
+      .where(
+        sql`${table.cause} = ${sql.raw(`'${BalanceMovementCause.OPENING}'`)}`,
+      ),
   ],
 );
 
