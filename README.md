@@ -69,7 +69,8 @@ npm run test:cov      # Coverage
 npm run lint          # ESLint
 
 npm run db:migrate    # Aplicar migrations pendentes
-npm run db:generate   # Gerar nova migration a partir do schema
+npm run db:generate   # Gerar nova migration a partir do schema (já renumera)
+npm run db:generate:raw # Só o drizzle-kit generate, sem renumerar
 npm run db:status     # Ver status das migrations
 npm run db:rollback   # Reverter última migration
 ```
@@ -80,7 +81,7 @@ npm run db:rollback   # Reverter última migration
 
 > **Regra:** sempre execute `npm run db:migrate` antes de subir o servidor em produção.
 
-Para criar uma nova migration após alterar o schema em `src/infra/databases/schema/`:
+Para criar uma nova migration após alterar o schema em `src/infra/databases/drizzle/schema.ts`:
 
 ```bash
 npm run db:generate -- --name descricao-da-mudanca
@@ -89,6 +90,33 @@ npm run db:migrate
 ```
 
 Nunca edite arquivos `.sql` gerados manualmente — sempre via `db:generate`.
+
+### Numeração das migrations
+
+O `drizzle-kit generate` numera pelo último `idx` do journal, não pelo maior
+número já usado nos arquivos. Como o baseline do journal foi refeito no
+passado (`idx` 0..5 com tags `0016`..`0020`), a saída crua pode sair com um
+número menor que o das migrations existentes. Por isso `db:generate` roda o
+`drizzle-kit generate` e, em seguida, `scripts/rename-drizzle-migration.ts`:
+
+- o número alvo é o maior entre os `idx` e os prefixos numéricos já usados,
+  mais 1 (próxima migration é `0021_`);
+- o script renomeia o `.sql`, o `meta/NNNN_snapshot.json` correspondente e
+  atualiza `tag` + `idx` da última entrada do journal;
+- a operação é idempotente e normaliza `meta/_journal.json` (indentação de 2
+  espaços e newline no fim), então `db:generate` não deixa diff cosmético;
+- se não conseguir identificar a migration mais recente de forma inequívoca,
+  o script falha com exit code 1 em vez de adivinhar.
+
+Para ver a saída crua do drizzle-kit use `npm run db:generate:raw`. Não renomeie
+arquivos de migration à mão.
+
+> **Cadeia de snapshots:** o `prevId` do `0016_snapshot.json` não aponta para o
+> `id` do `0000_snapshot.json`, e os arquivos `0001`..`0015` não existem mais
+> neste repositório. O `drizzle-kit check` não valida essa ligação (só valida
+> formato e colisão de `prevId`), então "Everything's fine" não prova cadeia
+> íntegra. Consertar isso exigiria regenerar toda a história — não é feito
+> aqui. A numeração acima não depende dessa cadeia.
 
 ---
 
