@@ -1,4 +1,8 @@
 import { ConfigService } from '@nestjs/config';
+import { LockHandle } from '../contracts/CacheProvider';
+
+const EXPECTED_RELEASE_SCRIPT =
+  "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end";
 
 interface RedisClientUnderTest {
   status: string;
@@ -6,6 +10,7 @@ interface RedisClientUnderTest {
   get: jest.Mock;
   set: jest.Mock;
   del: jest.Mock;
+  eval: jest.Mock;
   exists: jest.Mock;
   ping: jest.Mock;
 }
@@ -16,6 +21,7 @@ const mockClient: RedisClientUnderTest = {
   get: jest.fn(),
   set: jest.fn(),
   del: jest.fn(),
+  eval: jest.fn(),
   exists: jest.fn(),
   ping: jest.fn(),
 };
@@ -33,8 +39,8 @@ jest.mock('dotenv', () => ({ config: jest.fn() }));
 type RedisServiceUnderTest = {
   isEnabled: boolean;
   getClient(): unknown;
-  acquireLock(key: string, ttlSeconds?: number): Promise<boolean>;
-  releaseLock(key: string): Promise<boolean>;
+  acquireLock(key: string, ttlSeconds?: number): Promise<LockHandle | null>;
+  releaseLock(lock: LockHandle): Promise<boolean>;
   get(key: string): Promise<string | null>;
   set(key: string, value: string, ttlSeconds?: number): Promise<boolean>;
   del(key: string): Promise<boolean>;
@@ -117,6 +123,7 @@ describe('RedisService', () => {
     mockClient.get.mockResolvedValue(null);
     mockClient.set.mockResolvedValue('OK');
     mockClient.del.mockResolvedValue(1);
+    mockClient.eval.mockResolvedValue(0);
     mockClient.exists.mockResolvedValue(0);
     mockClient.ping.mockResolvedValue('PONG');
   });
@@ -126,11 +133,27 @@ describe('RedisService', () => {
     delete process.env.REDIS_URL;
   });
 
-  it('returns false when the lock is held by another request', async () => {
+  it('returns null when the lock is held by another request', async () => {
     const service = loadRedisService();
     mockClient.set.mockResolvedValue(null);
 
-    await expect(service.acquireLock('lock:day')).resolves.toBe(false);
+    await expect(service.acquireLock('lock:day')).resolves.toBeNull();
+  });
+
+  it('stores a unique token as the lock value with the ttl', async () => {
+    const service = loadRedisService();
+
+    const lock = await service.acquireLock('lock:day');
+
+    expect(lock).toEqual({ key: 'lock:day', token: expect.any(String) });
+    expect(lock?.token.length).toBeGreaterThan(0);
+    expect(mockClient.set).toHaveBeenCalledWith(
+      'lock:day',
+      lock?.token,
+      'EX',
+      30,
+      'NX',
+    );
   });
 
   it('keeps reads fail-open while redis is enabled but unavailable', async () => {
@@ -148,7 +171,9 @@ describe('RedisService', () => {
   it('does not throw on release while redis is enabled but unavailable', async () => {
     const service = loadRedisService({ clientCreationFails: true });
 
-    await expect(service.releaseLock('lock:day')).resolves.toBeDefined();
+    await expect(
+      service.releaseLock({ key: 'lock:day', token: 'token-a' }),
+    ).resolves.toBe(false);
   });
 
   it('rejects acquireLock when SET NX fails', async () => {
@@ -195,13 +220,16 @@ describe('RedisService', () => {
     expect(options.commandTimeout).toBeGreaterThan(0);
   });
 
-  it('reports redis as disabled and does not throw on acquireLock', async () => {
+  it('reports redis as disabled and still hands out a lock handle', async () => {
     const service = loadRedisService({ enabled: false });
 
     expect(service.isEnabled).toBe(false);
     expect(service.getClient()).toBeNull();
 
-    await expect(service.acquireLock('lock:day')).resolves.toBeDefined();
+    await expect(service.acquireLock('lock:day')).resolves.toEqual({
+      key: 'lock:day',
+      token: expect.any(String),
+    });
   });
 
   it('acquires the lock again after a transient redis error', async () => {
@@ -222,7 +250,9 @@ describe('RedisService', () => {
     onReady();
 
     expect(service.getClient()).toBe(mockClient);
-    await expect(service.acquireLock('lock:day')).resolves.toBe(true);
+    await expect(service.acquireLock('lock:day')).resolves.toMatchObject({
+      key: 'lock:day',
+    });
   });
 
   it('keeps acquiring the lock when an error arrives on a healthy connection', async () => {
@@ -232,7 +262,9 @@ describe('RedisService', () => {
     onError(new Error('non-fatal protocol error'));
 
     expect(service.getClient()).toBe(mockClient);
-    await expect(service.acquireLock('lock:day')).resolves.toBe(true);
+    await expect(service.acquireLock('lock:day')).resolves.toMatchObject({
+      key: 'lock:day',
+    });
   });
 
   it('applies the same ioredis options on the host and port branch', () => {
@@ -250,5 +282,106 @@ describe('RedisService', () => {
     expect(hostOptions.enableOfflineQueue).toBe(false);
     expect(hostOptions.enableOfflineQueue).toBe(urlOptions.enableOfflineQueue);
     expect(hostOptions.retryStrategy).toEqual(expect.any(Function));
+  });
+
+  describe('lock ownership', () => {
+    const store = new Map<string, string>();
+
+    function useLockStore(): void {
+      mockClient.set.mockImplementation(
+        async (key: string, value: string, ...flags: string[]) => {
+          if (flags.includes('NX') && store.has(key)) return null;
+
+          store.set(key, value);
+          return 'OK';
+        },
+      );
+
+      mockClient.eval.mockImplementation(
+        async (script: string, _keys: number, key: string, token: string) => {
+          if (script !== EXPECTED_RELEASE_SCRIPT) return -1;
+          if (store.get(key) !== token) return 0;
+
+          store.delete(key);
+          return 1;
+        },
+      );
+    }
+
+    beforeEach(() => {
+      store.clear();
+      useLockStore();
+    });
+
+    async function acquireRequiredLock(
+      service: RedisServiceUnderTest,
+      key: string,
+    ): Promise<LockHandle> {
+      const lock = await service.acquireLock(key);
+      if (!lock) throw new Error(`lock ${key} was not acquired`);
+
+      return lock;
+    }
+
+    it('rejects a duplicate request while the lock is held', async () => {
+      const service = loadRedisService();
+
+      const first = await service.acquireLock('lock:day');
+      const second = await service.acquireLock('lock:day');
+
+      expect(first).not.toBeNull();
+      expect(second).toBeNull();
+    });
+
+    it('releases the lock it acquired and lets the key be taken again', async () => {
+      const service = loadRedisService();
+      const lock = await acquireRequiredLock(service, 'lock:day');
+
+      await expect(service.releaseLock(lock)).resolves.toBe(true);
+      await expect(service.acquireLock('lock:day')).resolves.toMatchObject({
+        key: 'lock:day',
+      });
+    });
+
+    it('releases atomically with EVAL instead of an unconditional DEL', async () => {
+      const service = loadRedisService();
+      const lock = await acquireRequiredLock(service, 'lock:day');
+
+      await service.releaseLock(lock);
+
+      expect(mockClient.eval).toHaveBeenCalledWith(
+        EXPECTED_RELEASE_SCRIPT,
+        1,
+        'lock:day',
+        lock.token,
+      );
+      expect(mockClient.del).not.toHaveBeenCalled();
+    });
+
+    it('does not delete the lock when the acquiring token has expired', async () => {
+      const service = loadRedisService();
+      const staleLock = await acquireRequiredLock(service, 'lock:day');
+
+      store.clear();
+      const currentLock = await acquireRequiredLock(service, 'lock:day');
+      expect(currentLock.token).not.toEqual(staleLock.token);
+
+      await expect(service.releaseLock(staleLock)).resolves.toBe(false);
+      expect(store.get('lock:day')).toBe(currentLock.token);
+      expect(mockClient.del).not.toHaveBeenCalled();
+    });
+
+    it('still releases the lock for the current holder after a stale release', async () => {
+      const service = loadRedisService();
+      const staleLock = await acquireRequiredLock(service, 'lock:day');
+
+      store.clear();
+      const currentLock = await acquireRequiredLock(service, 'lock:day');
+
+      await service.releaseLock(staleLock);
+
+      await expect(service.releaseLock(currentLock)).resolves.toBe(true);
+      expect(store.has('lock:day')).toBe(false);
+    });
   });
 });

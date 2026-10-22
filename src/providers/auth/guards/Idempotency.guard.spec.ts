@@ -1,3 +1,4 @@
+import { LockHandle } from '@infra/cache/contracts/CacheProvider';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import {
   BadRequestException,
@@ -9,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
+import { randomUUID } from 'node:crypto';
 import { Idempotent } from '../decorators/Idempotency.decorator';
 import { IdempotencyGuard } from './Idempotency.guard';
 
@@ -47,15 +49,18 @@ class FakeRedisService {
     return this.store.has(key);
   }
 
-  async acquireLock(key: string): Promise<boolean> {
-    if (this.store.has(key)) return false;
+  async acquireLock(key: string): Promise<LockHandle | null> {
+    if (this.store.has(key)) return null;
 
-    this.store.set(key, '1');
-    return true;
+    const token = randomUUID();
+    this.store.set(key, token);
+    return { key, token };
   }
 
-  async releaseLock(key: string): Promise<boolean> {
-    this.store.delete(key);
+  async releaseLock(lock: LockHandle): Promise<boolean> {
+    if (this.store.get(lock.key) !== lock.token) return false;
+
+    this.store.delete(lock.key);
     return true;
   }
 }
@@ -141,7 +146,7 @@ describe('IdempotencyGuard', () => {
     const redis = {
       isEnabled: true,
       get: jest.fn().mockResolvedValue(null),
-      acquireLock: jest.fn().mockResolvedValue(false),
+      acquireLock: jest.fn().mockResolvedValue(null),
       releaseLock: jest.fn(),
     };
 

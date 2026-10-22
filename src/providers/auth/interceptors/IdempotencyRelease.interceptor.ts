@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { from, mergeMap, Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import { idempotencyLockKey } from '../decorators/idempotencyKey';
+import { idempotencyLockOf } from '../decorators/idempotencyLock';
 
 @Injectable()
 export class IdempotencyReleaseInterceptor implements NestInterceptor {
@@ -29,11 +29,11 @@ export class IdempotencyReleaseInterceptor implements NestInterceptor {
   }
 
   private async release(context: ExecutionContext): Promise<void> {
-    const key = idempotencyLockKey(context);
-    if (!key) return;
+    const lock = idempotencyLockOf(context);
+    if (!lock) return;
 
     try {
-      await this.redisService.releaseLock(key);
+      await this.redisService.releaseLock(lock);
     } catch (error) {
       this.logger.warn('Idempotency lock release failed', error);
     }
