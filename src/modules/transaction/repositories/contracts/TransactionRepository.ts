@@ -1,5 +1,5 @@
 import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpensesByCategory';
-import { BalanceMovementCause } from '@constants/enums';
+import { BalanceMovementCause, TransactionStatus } from '@constants/enums';
 import { AnyAccount } from '@modules/account/entities/types';
 import { Either } from '@shared/core/errors/Either';
 import { Transaction } from '../../entities/Transaction';
@@ -7,6 +7,16 @@ import { Transaction } from '../../entities/Transaction';
 export type BalanceMovementContext = {
   cause?: BalanceMovementCause;
   actorId?: string;
+};
+
+/**
+ * Destino do PATCH /transaction/:id/status. O status desejado é a intenção do
+ * cliente; o UPDATE condicional decide se ela ainda está disponível.
+ */
+export type UpdateTransactionStatusParams = {
+  transactionId: string;
+  workspaceId: string;
+  status: TransactionStatus;
 };
 
 export interface ListTransactionsParams {
@@ -81,8 +91,8 @@ export abstract class TransactionRepository {
     context?: BalanceMovementContext,
   ): Promise<Either<Error, boolean>>;
 
-  abstract toggleStatusWithBalanceEffect(
-    transactionId: string,
+  abstract updateStatusWithBalanceEffect(
+    params: UpdateTransactionStatusParams,
     context?: BalanceMovementContext,
   ): Promise<Either<Error, Transaction>>;
 

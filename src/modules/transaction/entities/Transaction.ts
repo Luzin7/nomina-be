@@ -285,6 +285,21 @@ export class Transaction extends AggregateRoot<TransactionProps> {
   }
 
   /**
+   * Efeito de saldo de sair de um status e entrar no atual. Quem já confirmou a
+   * transição informa o status anterior e recebe a variação das contas.
+   */
+  public balanceEffectsFrom(
+    previousStatus: TransactionStatus,
+  ): TransactionBalanceEffect[] {
+    const previous = Transaction.restore(
+      { ...this.props, status: previousStatus },
+      this.id,
+    );
+
+    return [...previous.revertedBalanceEffects(), ...this.balanceEffects()];
+  }
+
+  /**
    * Efeito que uma transação concluída provoca nas contas envolvidas. Quem
    * persiste aplica cada efeito no saldo da conta, sem recalcular o valor: a
    * direção (débito/crédito) é regra desta transação, o quanto cada conta muda

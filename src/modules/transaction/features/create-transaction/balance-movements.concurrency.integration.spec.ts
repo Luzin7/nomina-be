@@ -34,7 +34,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { DeleteTransactionService } from '../delete-transaction/delete-transaction.service';
-import { ToggleTransactionStatusService } from '../toggle-transaction-status/toggle-transaction-status.service';
+import { SetTransactionStatusService } from '../set-transaction-status/set-transaction-status.service';
 import { CreateTransactionService } from './create-transaction.service';
 
 type CreateRequest = Parameters<
@@ -43,8 +43,8 @@ type CreateRequest = Parameters<
 type DeleteRequest = Parameters<
   typeof DeleteTransactionService.prototype.execute
 >[0];
-type ToggleRequest = Parameters<
-  typeof ToggleTransactionStatusService.prototype.execute
+type SetStatusRequest = Parameters<
+  typeof SetTransactionStatusService.prototype.execute
 >[0];
 
 const OPENING_BALANCE = 50_000n;
@@ -65,7 +65,7 @@ describe('balance movements written with the balance update', () => {
   let categoryRepository: CategoryRepository;
   let createTransactionService: CreateTransactionService;
   let deleteTransactionService: DeleteTransactionService;
-  let toggleTransactionStatusService: ToggleTransactionStatusService;
+  let setTransactionStatusService: SetTransactionStatusService;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer('postgres:16-alpine')
@@ -104,7 +104,7 @@ describe('balance movements written with the balance update', () => {
         { provide: DateProvider, useClass: DayJsDateProvider },
         CreateTransactionService,
         DeleteTransactionService,
-        ToggleTransactionStatusService,
+        SetTransactionStatusService,
       ],
     }).compile();
 
@@ -114,9 +114,7 @@ describe('balance movements written with the balance update', () => {
     categoryRepository = moduleRef.get(CategoryRepository);
     createTransactionService = moduleRef.get(CreateTransactionService);
     deleteTransactionService = moduleRef.get(DeleteTransactionService);
-    toggleTransactionStatusService = moduleRef.get(
-      ToggleTransactionStatusService,
-    );
+    setTransactionStatusService = moduleRef.get(SetTransactionStatusService);
   });
 
   afterAll(async () => {
@@ -318,12 +316,16 @@ describe('balance movements written with the balance update', () => {
       AMOUNT,
     );
 
-    for (let index = 0; index < 2; index += 1) {
-      const toggled = await toggleTransactionStatusService.execute({
+    for (const status of [
+      TransactionStatus.PENDING,
+      TransactionStatus.COMPLETED,
+    ]) {
+      const updated = await setTransactionStatusService.execute({
         transactionId,
         workspaceId,
-      } as ToggleRequest);
-      if (toggled.isLeft()) throw toggled.value;
+        status,
+      } as SetStatusRequest);
+      if (updated.isLeft()) throw updated.value;
     }
 
     const movements = await movementsOfTransaction(transactionId);

@@ -1,4 +1,8 @@
-import { TransactionStatus, TransactionType } from '@constants/enums';
+import {
+  BalanceMovementCause,
+  TransactionStatus,
+  TransactionType,
+} from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { DRIZZLE_TOKEN } from '@infra/databases/drizzle/drizzle.provider';
@@ -12,8 +16,11 @@ import { makeCheckingAccount } from '@modules/account/test-helpers/mock-factorie
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
-import { makeTransaction } from '@modules/transaction/test-helpers/mock-factories';
-import { Transaction } from '@modules/transaction/entities/Transaction';
+import {
+  TransactionAlreadyCompletedError,
+  TransactionAlreadyPendingError,
+  TransactionNotFoundError,
+} from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
@@ -25,41 +32,44 @@ import {
   PostgreSqlContainer,
   StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { CreateTransactionService } from '../create-transaction/create-transaction.service';
-import { ToggleTransactionStatusService } from './toggle-transaction-status.service';
+import { SetTransactionStatusService } from './set-transaction-status.service';
 
 type CreateRequest = Parameters<
   typeof CreateTransactionService.prototype.execute
 >[0];
-type ToggleRequest = Parameters<
-  typeof ToggleTransactionStatusService.prototype.execute
+type SetStatusRequest = Parameters<
+  typeof SetTransactionStatusService.prototype.execute
 >[0];
 
 const CONCURRENCY = 50;
 const OPENING_BALANCE = 50_000n;
 const CREATED_AMOUNT = 100n;
 const SEEDED_AMOUNT = 1_000n;
-const PENDING_BASELINE_BALANCE = OPENING_BALANCE + SEEDED_AMOUNT;
+const BALANCE_WITH_SEEDED_EXPENSE = OPENING_BALANCE - SEEDED_AMOUNT;
 const WORKSPACE_TIMEZONE = 'UTC';
+const TRANSACTION_DATE = '2024-01-20';
 const MIGRATIONS_FOLDER = resolve(__dirname, '../../../../../drizzle');
 
 jest.setTimeout(180_000);
 
-describe('account balance under concurrent mutations on a real postgres', () => {
+describe('transaction status changes against a real postgres', () => {
   let container: StartedPostgreSqlContainer;
   let queryClient: postgres.Sql;
   let moduleRef: TestingModule;
+  let drizzleService: DrizzleService;
   let workspaceRepository: WorkspaceRepository;
   let accountRepository: AccountRepository;
   let categoryRepository: CategoryRepository;
   let transactionRepository: TransactionRepository;
   let createTransactionService: CreateTransactionService;
-  let toggleTransactionStatusService: ToggleTransactionStatusService;
+  let setTransactionStatusService: SetTransactionStatusService;
   let dateProvider: DateProvider;
 
   beforeAll(async () => {
@@ -98,18 +108,17 @@ describe('account balance under concurrent mutations on a real postgres', () => 
         { provide: ConfigService, useValue: {} },
         { provide: DateProvider, useClass: DayJsDateProvider },
         CreateTransactionService,
-        ToggleTransactionStatusService,
+        SetTransactionStatusService,
       ],
     }).compile();
 
+    drizzleService = moduleRef.get(DrizzleService);
     workspaceRepository = moduleRef.get(WorkspaceRepository);
     accountRepository = moduleRef.get(AccountRepository);
     categoryRepository = moduleRef.get(CategoryRepository);
     transactionRepository = moduleRef.get(TransactionRepository);
     createTransactionService = moduleRef.get(CreateTransactionService);
-    toggleTransactionStatusService = moduleRef.get(
-      ToggleTransactionStatusService,
-    );
+    setTransactionStatusService = moduleRef.get(SetTransactionStatusService);
     dateProvider = moduleRef.get(DateProvider);
   });
 
@@ -129,7 +138,7 @@ describe('account balance under concurrent mutations on a real postgres', () => 
     const categoryId = randomUUID();
 
     const workspace = Workspace.create(
-      { name: 'Concurrency', timezone: WORKSPACE_TIMEZONE },
+      { name: 'Status changes', timezone: WORKSPACE_TIMEZONE },
       workspaceId,
     );
     if (workspace.isLeft()) throw workspace.value;
@@ -163,20 +172,74 @@ describe('account balance under concurrent mutations on a real postgres', () => 
     workspaceId: string,
     accountId: string,
     categoryId: string,
-  ): Promise<Transaction> {
-    const transaction = makeTransaction({
-      id: randomUUID(),
+  ): Promise<string> {
+    const title = `Seeded expense ${randomUUID()}`;
+    const created = await createTransactionService.execute({
       workspaceId,
+      sub: randomUUID(),
       accountId,
       categoryId,
+      title,
       amount: SEEDED_AMOUNT,
-      date: new Date('2024-01-20T12:00:00.000Z'),
+      date: TRANSACTION_DATE,
       type: TransactionType.EXPENSE,
       status: TransactionStatus.COMPLETED,
-    });
-    await transactionRepository.create(transaction);
+    } as CreateRequest);
+    if (created.isLeft()) throw created.value;
 
-    return transaction;
+    const { transactions } =
+      await transactionRepository.listTransactionsByWorkspaceId({
+        workspaceId,
+        page: 1,
+        pageSize: 1,
+        title,
+      });
+    const [seeded] = transactions;
+    if (!seeded) throw new Error('seeded transaction not found');
+
+    return seeded.id;
+  }
+
+  function setStatus(
+    transactionId: string,
+    workspaceId: string,
+    status: TransactionStatus,
+  ) {
+    return setTransactionStatusService.execute({
+      transactionId,
+      workspaceId,
+      status,
+    } as SetStatusRequest);
+  }
+
+  async function balanceOf(accountId: string): Promise<number> {
+    const account = await accountRepository.findById(accountId);
+    if (!account) throw new Error('seeded account not found');
+
+    return Number(account.balance);
+  }
+
+  async function statusOf(transactionId: string): Promise<TransactionStatus> {
+    const transaction =
+      await transactionRepository.findUniqueById(transactionId);
+    if (!transaction) throw new Error('seeded transaction not found');
+
+    return transaction.status;
+  }
+
+  async function statusChangesOf(transactionId: string) {
+    return drizzleService.db
+      .select()
+      .from(schema.balanceMovements)
+      .where(
+        and(
+          eq(schema.balanceMovements.transactionId, transactionId),
+          eq(
+            schema.balanceMovements.cause,
+            BalanceMovementCause.STATUS_CHANGED,
+          ),
+        ),
+      );
   }
 
   it('keeps the balance when 50 expenses are created for the same account', async () => {
@@ -217,9 +280,88 @@ describe('account balance under concurrent mutations on a real postgres', () => 
     );
   });
 
-  it('keeps status and balance consistent when 50 toggles hit the same transaction', async () => {
+  it('moves the balance once when the requested status differs', async () => {
     const { workspaceId, accountId, categoryId } = await seedWorkspace();
-    const transaction = await seedCompletedExpense(
+    const transactionId = await seedCompletedExpense(
+      workspaceId,
+      accountId,
+      categoryId,
+    );
+
+    const result = await setStatus(
+      transactionId,
+      workspaceId,
+      TransactionStatus.PENDING,
+    );
+
+    expect(result.isRight()).toBe(true);
+    expect(await statusOf(transactionId)).toBe(TransactionStatus.PENDING);
+    expect(await balanceOf(accountId)).toBe(Number(OPENING_BALANCE));
+
+    const statusChanges = await statusChangesOf(transactionId);
+    expect(statusChanges).toHaveLength(1);
+    expect(statusChanges[0].delta).toBe(Number(SEEDED_AMOUNT));
+    expect(statusChanges[0].balanceAfter).toBe(Number(OPENING_BALANCE));
+  });
+
+  it('rejects a request for the status already set and writes nothing', async () => {
+    const { workspaceId, accountId, categoryId } = await seedWorkspace();
+    const transactionId = await seedCompletedExpense(
+      workspaceId,
+      accountId,
+      categoryId,
+    );
+
+    const first = await setStatus(
+      transactionId,
+      workspaceId,
+      TransactionStatus.PENDING,
+    );
+    expect(first.isRight()).toBe(true);
+
+    const second = await setStatus(
+      transactionId,
+      workspaceId,
+      TransactionStatus.PENDING,
+    );
+
+    expect(second.isLeft()).toBe(true);
+    if (second.isLeft()) {
+      expect(second.value).toBeInstanceOf(TransactionAlreadyPendingError);
+    }
+    expect(await statusOf(transactionId)).toBe(TransactionStatus.PENDING);
+    expect(await balanceOf(accountId)).toBe(Number(OPENING_BALANCE));
+    expect(await statusChangesOf(transactionId)).toHaveLength(1);
+  });
+
+  it('rejects a completed transaction asked to complete again', async () => {
+    const { workspaceId, accountId, categoryId } = await seedWorkspace();
+    const transactionId = await seedCompletedExpense(
+      workspaceId,
+      accountId,
+      categoryId,
+    );
+
+    const result = await setStatus(
+      transactionId,
+      workspaceId,
+      TransactionStatus.COMPLETED,
+    );
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(TransactionAlreadyCompletedError);
+    }
+    expect(await statusOf(transactionId)).toBe(TransactionStatus.COMPLETED);
+    expect(await balanceOf(accountId)).toBe(
+      Number(BALANCE_WITH_SEEDED_EXPENSE),
+    );
+    expect(await statusChangesOf(transactionId)).toHaveLength(0);
+  });
+
+  it('moves the balance once when 50 requests ask for the same status at once', async () => {
+    const { workspaceId, accountId, categoryId } = await seedWorkspace();
+    const transactionId = await seedCompletedExpense(
       workspaceId,
       accountId,
       categoryId,
@@ -227,30 +369,50 @@ describe('account balance under concurrent mutations on a real postgres', () => 
 
     const results = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        toggleTransactionStatusService.execute({
-          transactionId: transaction.id,
-          workspaceId,
-        } as ToggleRequest),
+        setStatus(transactionId, workspaceId, TransactionStatus.PENDING),
       ),
     );
 
+    const successes = results.filter((result) => result.isRight());
     const failures = results
       .filter((result) => result.isLeft())
       .map((result) => result.value);
-    expect(failures).toHaveLength(0);
 
-    const [storedTransaction, storedAccount] = await Promise.all([
-      transactionRepository.findUniqueById(transaction.id),
-      accountRepository.findById(accountId),
-    ]);
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(CONCURRENCY - 1);
+    expect(
+      failures.every(
+        (failure) => failure instanceof TransactionAlreadyPendingError,
+      ),
+    ).toBe(true);
 
-    const finalStatus = storedTransaction?.status;
-    const expectedBalance =
-      finalStatus === TransactionStatus.COMPLETED
-        ? PENDING_BASELINE_BALANCE - SEEDED_AMOUNT
-        : PENDING_BASELINE_BALANCE;
+    expect(await statusOf(transactionId)).toBe(TransactionStatus.PENDING);
+    expect(await balanceOf(accountId)).toBe(Number(OPENING_BALANCE));
+    expect(await statusChangesOf(transactionId)).toHaveLength(1);
+  });
 
-    expect(finalStatus).toBe(TransactionStatus.COMPLETED);
-    expect(storedAccount?.balance).toBe(expectedBalance);
+  it('returns not found and writes nothing for another workspace', async () => {
+    const { workspaceId, accountId, categoryId } = await seedWorkspace();
+    const transactionId = await seedCompletedExpense(
+      workspaceId,
+      accountId,
+      categoryId,
+    );
+
+    const result = await setStatus(
+      transactionId,
+      randomUUID(),
+      TransactionStatus.PENDING,
+    );
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(TransactionNotFoundError);
+    }
+    expect(await statusOf(transactionId)).toBe(TransactionStatus.COMPLETED);
+    expect(await balanceOf(accountId)).toBe(
+      Number(BALANCE_WITH_SEEDED_EXPENSE),
+    );
+    expect(await statusChangesOf(transactionId)).toHaveLength(0);
   });
 });

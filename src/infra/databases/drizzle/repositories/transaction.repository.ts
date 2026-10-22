@@ -6,13 +6,19 @@ import {
   Transaction,
   TransactionBalanceEffect,
 } from '@modules/transaction/entities/Transaction';
-import { TransactionNotFoundError } from '@modules/transaction/errors';
+import {
+  TransactionAlreadyCompletedError,
+  TransactionAlreadyPendingError,
+  TransactionNotFoundError,
+  TransactionStatusChangedConcurrentlyError,
+} from '@modules/transaction/errors';
 import {
   BalanceMovementContext,
   CreateBalanceMutation,
   ListTransactionsParams,
   TransactionRepository,
   UpdateTransactionMutation,
+  UpdateTransactionStatusParams,
 } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpensesByCategory';
 import { Injectable } from '@nestjs/common';
@@ -25,6 +31,7 @@ import {
   ilike,
   inArray,
   lte,
+  ne,
   or,
   sql,
   sum,
@@ -336,52 +343,96 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     }
   }
 
-  async toggleStatusWithBalanceEffect(
-    transactionId: string,
+  async updateStatusWithBalanceEffect(
+    params: UpdateTransactionStatusParams,
     context?: BalanceMovementContext,
   ): Promise<Either<Error, Transaction>> {
     try {
-      const toggled = await this.drizzle.db.transaction(async (tx) => {
+      const confirmed = await this.drizzle.db.transaction(async (tx) => {
         await tx.execute(sql`set local lock_timeout = '3s'`);
         await tx.execute(sql`set local statement_timeout = '15s'`);
 
-        const current = await this.lockTransaction(tx, transactionId);
-        if (!current) throw new TransactionNotFoundError();
+        const [row] = await tx
+          .update(schema.transactions)
+          .set({ status: params.status })
+          .where(
+            and(
+              eq(schema.transactions.id, params.transactionId),
+              eq(schema.transactions.workspaceId, params.workspaceId),
+              ne(schema.transactions.status, params.status),
+            ),
+          )
+          .returning();
+
+        if (!row) throw await this.resolveStatusTransitionConflict(tx, params);
+
+        const updated = TransactionMapper.toDomain(row);
 
         const accounts = await this.lockAccounts(tx, [
-          current.accountId,
-          current.destinationAccountId,
+          updated.accountId,
+          updated.destinationAccountId,
         ]);
 
-        const wasCompleted = current.status === TransactionStatus.COMPLETED;
-        const revertedEffects = current.revertedBalanceEffects();
-        const toggleResult = wasCompleted
-          ? current.markAsPending()
-          : current.complete();
-        if (toggleResult.isLeft()) throw toggleResult.value;
-
-        const deltas = this.applyBalanceEffects(accounts, [
-          ...revertedEffects,
-          ...current.balanceEffects(),
-        ]);
+        const deltas = this.applyBalanceEffects(
+          accounts,
+          updated.balanceEffectsFrom(this.statusBefore(updated.status)),
+        );
 
         await this.writeBalanceDeltas(tx, deltas, {
-          transactionId: current.id,
+          transactionId: updated.id,
           cause: context?.cause ?? BalanceMovementCause.STATUS_CHANGED,
           actorId: context?.actorId,
         });
-        await tx
-          .update(schema.transactions)
-          .set(TransactionMapper.toDatabase(current))
-          .where(eq(schema.transactions.id, current.id));
 
-        return current;
+        return updated;
       });
 
-      return right(toggled);
+      return right(confirmed);
     } catch (error) {
       if (error instanceof DomainError) return left(error);
       throw error;
+    }
+  }
+
+  /**
+   * Zero linhas no UPDATE condicional: ou a transação não existe no workspace,
+   * ou já está no status pedido, ou outra requisição mudou o status antes.
+   */
+  private async resolveStatusTransitionConflict(
+    tx: DrizzleTransaction,
+    params: UpdateTransactionStatusParams,
+  ): Promise<Error> {
+    const [current] = await tx
+      .select({ status: schema.transactions.status })
+      .from(schema.transactions)
+      .where(
+        and(
+          eq(schema.transactions.id, params.transactionId),
+          eq(schema.transactions.workspaceId, params.workspaceId),
+        ),
+      )
+      .limit(1);
+
+    if (!current) return new TransactionNotFoundError();
+    if (current.status === params.status) {
+      return params.status === TransactionStatus.COMPLETED
+        ? new TransactionAlreadyCompletedError()
+        : new TransactionAlreadyPendingError();
+    }
+
+    return new TransactionStatusChangedConcurrentlyError();
+  }
+
+  /**
+   * O UPDATE só confirma quando o status anterior difere do desejado, então o
+   * status anterior é o outro valor do enum.
+   */
+  private statusBefore(status: TransactionStatus): TransactionStatus {
+    switch (status) {
+      case TransactionStatus.COMPLETED:
+        return TransactionStatus.PENDING;
+      case TransactionStatus.PENDING:
+        return TransactionStatus.COMPLETED;
     }
   }
 
