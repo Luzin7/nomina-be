@@ -1,7 +1,13 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { AnyAccount } from '@modules/account/entities/types';
+import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AccountNotFoundError } from '@modules/account/errors';
-import { BalanceMovementCause, TransactionStatus } from '@constants/enums';
+import {
+  AccountType,
+  BalanceMovementCause,
+  TransactionStatus,
+  TransactionType,
+} from '@constants/enums';
 import {
   Transaction,
   TransactionBalanceEffect,
@@ -15,6 +21,7 @@ import {
 import {
   BalanceMovementContext,
   CreateBalanceMutation,
+  DueCardTransactions,
   ListTransactionsParams,
   TransactionRepository,
   UpdateTransactionMutation,
@@ -24,15 +31,18 @@ import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpe
 import { Injectable } from '@nestjs/common';
 import {
   and,
+  AnyColumn,
   count,
   desc,
   eq,
   gte,
   ilike,
   inArray,
+  isNotNull,
   lte,
   ne,
   or,
+  SQL,
   sql,
   sum,
 } from 'drizzle-orm';
@@ -41,6 +51,15 @@ import { Either, left, right } from '@shared/core/errors/Either';
 import { AccountMapper } from '../mappers/account.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
+
+const compareIds = (left: string, right: string): number => {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+};
+
+const localDayIn = (instant: SQL, timezone: SQL.Aliased | AnyColumn): SQL =>
+  sql`(${instant} AT TIME ZONE ${timezone})::date`;
 
 type DrizzleTransaction = Parameters<
   Parameters<DrizzleService['db']['transaction']>[0]
@@ -379,6 +398,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
         const deltas = this.applyBalanceEffects(
           accounts,
           updated.balanceEffectsFrom(this.statusBefore(updated.status)),
+          { scheduledSettlement: params.scheduledSettlement },
         );
 
         await this.writeBalanceDeltas(tx, deltas, {
@@ -459,7 +479,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   ): Promise<Map<string, AnyAccount>> {
     const ids = [
       ...new Set(accountIds.filter((id): id is string => !!id)),
-    ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    ].sort(compareIds);
 
     if (ids.length === 0) return new Map();
 
@@ -481,6 +501,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   private applyBalanceEffects(
     accounts: Map<string, AnyAccount>,
     effects: TransactionBalanceEffect[],
+    options: { scheduledSettlement?: boolean } = {},
   ): Map<string, bigint> {
     const initialBalances = new Map<string, bigint>();
 
@@ -494,10 +515,9 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
         initialBalances.set(account.id, account.balance);
       }
 
-      const applied =
-        effect.kind === 'expense'
-          ? account.applyExpenseEffect(effect.amount)
-          : account.applyIncomeEffect(effect.amount);
+      const applied = options.scheduledSettlement
+        ? this.applyScheduledEffect(account, effect)
+        : this.applyEffect(account, effect);
       if (applied.isLeft()) throw applied.value;
     }
 
@@ -511,6 +531,28 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     return deltas;
   }
 
+  private applyEffect(
+    account: AnyAccount,
+    effect: TransactionBalanceEffect,
+  ): Either<Error, void> {
+    return effect.kind === 'expense'
+      ? account.applyExpenseEffect(effect.amount)
+      : account.applyIncomeEffect(effect.amount);
+  }
+
+  private applyScheduledEffect(
+    account: AnyAccount,
+    effect: TransactionBalanceEffect,
+  ): Either<Error, void> {
+    if (!(account instanceof CreditCard)) {
+      return this.applyEffect(account, effect);
+    }
+
+    return effect.kind === 'expense'
+      ? account.settleScheduledCharge(effect.amount)
+      : account.settleScheduledCredit(effect.amount);
+  }
+
   private async writeBalanceDeltas(
     tx: DrizzleTransaction,
     deltas: Map<string, bigint>,
@@ -518,9 +560,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   ): Promise<void> {
     const ordered = [...deltas.entries()]
       .filter(([, delta]) => delta !== 0n)
-      .sort(([leftId], [rightId]) =>
-        leftId < rightId ? -1 : leftId > rightId ? 1 : 0,
-      );
+      .sort(([leftId], [rightId]) => compareIds(leftId, rightId));
 
     for (const [accountId, delta] of ordered) {
       const [account] = await tx
@@ -544,6 +584,65 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
         actorId: movement.actorId,
       });
     }
+  }
+
+  async findDueCardTransactions(
+    now: Date,
+    limit: number,
+  ): Promise<DueCardTransactions> {
+    const due = this.dueCardTransactionsFilter(now);
+
+    const rows = await this.drizzle.db
+      .select({ transaction: schema.transactions })
+      .from(schema.transactions)
+      .innerJoin(
+        schema.accounts,
+        eq(schema.accounts.id, schema.transactions.accountId),
+      )
+      .where(due)
+      .orderBy(schema.transactions.date, schema.transactions.id)
+      .limit(limit);
+
+    const [totals] = await this.drizzle.db
+      .select({ totalDue: count() })
+      .from(schema.transactions)
+      .innerJoin(
+        schema.accounts,
+        eq(schema.accounts.id, schema.transactions.accountId),
+      )
+      .where(due);
+
+    return {
+      transactions: rows.map(({ transaction }) =>
+        TransactionMapper.toDomain(transaction),
+      ),
+      totalDue: totals.totalDue,
+    };
+  }
+
+  private dueCardTransactionsFilter(now: Date) {
+    const transactionDay = localDayIn(
+      sql`(${schema.transactions.date}::timestamp AT TIME ZONE 'UTC')`,
+      schema.accounts.timezone,
+    );
+    const today = localDayIn(
+      sql`${now.toISOString()}::timestamptz`,
+      schema.accounts.timezone,
+    );
+
+    return and(
+      eq(schema.transactions.status, TransactionStatus.PENDING),
+      or(
+        isNotNull(schema.transactions.recurringId),
+        isNotNull(schema.transactions.installmentGroupId),
+      ),
+      inArray(schema.transactions.type, [
+        TransactionType.EXPENSE,
+        TransactionType.INCOME,
+      ]),
+      eq(schema.accounts.type, AccountType.CREDIT_CARD),
+      sql`${transactionDay} <= ${today}`,
+    );
   }
 
   async findCreditCardLedger(

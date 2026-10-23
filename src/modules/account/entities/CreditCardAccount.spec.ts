@@ -129,6 +129,33 @@ describe('CreditCard entity', () => {
     });
   });
 
+  describe('settleScheduledCharge()', () => {
+    it('should add a charge above the available limit', () => {
+      const card = makeCard({ creditLimit: 1000n });
+
+      expect(card.settleScheduledCharge(1500n).isRight()).toBe(true);
+      expect(card.balance).toBe(1500n);
+    });
+
+    it('should reject zero amount', () => {
+      expect(makeCard().settleScheduledCharge(0n).isLeft()).toBe(true);
+    });
+  });
+
+  describe('settleScheduledCredit()', () => {
+    it('should accept a credit above the current balance', () => {
+      const card = makeCard();
+      card.registerCharge(200n);
+
+      expect(card.settleScheduledCredit(500n).isRight()).toBe(true);
+      expect(card.balance).toBe(-300n);
+    });
+
+    it('should reject zero amount', () => {
+      expect(makeCard().settleScheduledCredit(0n).isLeft()).toBe(true);
+    });
+  });
+
   describe('applyExpenseEffect()', () => {
     it('should behave like registerCharge() (increase balance)', () => {
       const card = makeCard();
