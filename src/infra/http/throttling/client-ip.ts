@@ -39,11 +39,10 @@ function matchesAnyKey(candidate: string, acceptedKeys: string[]): boolean {
 }
 
 function expandIpv6Groups(address: string): string[] {
+  if (!address.includes('::')) return address.split(':');
+
   const [head, tail] = address.split('::');
   const headGroups = head ? head.split(':') : [];
-
-  if (tail === undefined) return headGroups;
-
   const tailGroups = tail ? tail.split(':') : [];
   const ipv4TailGroups = tailGroups.at(-1)?.includes('.') ? 1 : 0;
   const zeroGroups =
