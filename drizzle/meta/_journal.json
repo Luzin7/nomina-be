@@ -64,6 +64,13 @@
       "when": 1792783104859,
       "tag": "0023_recurring_installment_count",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792793878610,
+      "tag": "0024_merge_legacy_duplicate_categories",
+      "breakpoints": true
     }
   ]
 }
