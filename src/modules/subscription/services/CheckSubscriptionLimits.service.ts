@@ -10,6 +10,7 @@ import {
   MissingWorkspaceIdError,
   PlanLimitReachedError,
   SubscriptionNotActiveError,
+  WorkspaceMemberLimitReachedError,
 } from '../errors';
 import { SubscriptionRepository } from '../repositories/contracts/SubscriptionRepository';
 
@@ -75,8 +76,11 @@ export class CheckSubscriptionLimitsService {
 
       case ResourceType.WORKSPACE_MEMBER:
         if (!workspaceId) return left(new MissingWorkspaceIdError());
-        return this.checkLimit(limits.maxMembersPerWorkspace, () =>
-          this.workspaceUserRepository.countByWorkspaceId(workspaceId),
+        return this.checkLimit(
+          limits.maxMembersPerWorkspace,
+          () => this.workspaceUserRepository.countByWorkspaceId(workspaceId),
+          () =>
+            new WorkspaceMemberLimitReachedError(limits.maxMembersPerWorkspace),
         );
 
       case ResourceType.ACCOUNT:
@@ -99,6 +103,8 @@ export class CheckSubscriptionLimitsService {
   private async checkLimit(
     limit: number,
     countFn: () => Promise<number>,
+    limitReachedError: (currentCount: number) => Error = (currentCount) =>
+      new PlanLimitReachedError(currentCount, limit),
   ): Promise<Either<Error, Response>> {
     if (limit === -1) {
       return right({ allowed: true, currentCount: 0, limit: -1 });
@@ -107,7 +113,7 @@ export class CheckSubscriptionLimitsService {
     const currentCount = await countFn();
 
     if (currentCount >= limit) {
-      return left(new PlanLimitReachedError(currentCount, limit));
+      return left(limitReachedError(currentCount));
     }
 
     return right({ allowed: true, currentCount, limit });

@@ -1,6 +1,7 @@
 import {
   ConflictException,
   ForbiddenException,
+  GoneException,
   InternalServerErrorException,
   Logger,
   NotFoundException,
@@ -12,6 +13,7 @@ import {
   AccountTypeError,
   ConflictAccountError,
 } from '@modules/account/errors';
+import { InviteExpiredError } from '@modules/workspace/errors';
 import { SessionExpiredError } from '@shared/errors/SessionExpiredError';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { ErrorPresenter } from './ErrorPresenter';
@@ -26,6 +28,12 @@ describe('ErrorPresenter', () => {
   it('should throw ForbiddenException for a ForbiddenDomainError', () => {
     expect(() => ErrorPresenter.toHTTP(new UnauthorizedError())).toThrow(
       ForbiddenException,
+    );
+  });
+
+  it('should throw GoneException for a GoneDomainError', () => {
+    expect(() => ErrorPresenter.toHTTP(new InviteExpiredError())).toThrow(
+      GoneException,
     );
   });
 

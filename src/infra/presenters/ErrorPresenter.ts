@@ -1,6 +1,7 @@
 import {
   ConflictException,
   ForbiddenException,
+  GoneException,
   HttpException,
   InternalServerErrorException,
   Logger,
@@ -12,6 +13,7 @@ import {
   BusinessRuleDomainError,
   ConflictDomainError,
   ForbiddenDomainError,
+  GoneDomainError,
   NotFoundDomainError,
   UnauthorizedDomainError,
 } from '@shared/core/errors/DomainError';
@@ -22,6 +24,10 @@ export class ErrorPresenter {
   static toHTTP(error: Error): never {
     if (error instanceof NotFoundDomainError) {
       throw new NotFoundException(error.message);
+    }
+
+    if (error instanceof GoneDomainError) {
+      throw new GoneException(error.message);
     }
 
     if (error instanceof ConflictDomainError) {

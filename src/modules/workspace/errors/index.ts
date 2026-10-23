@@ -1,5 +1,6 @@
 import {
   ConflictDomainError,
+  GoneDomainError,
   NotFoundDomainError,
 } from '@shared/core/errors/DomainError';
 
@@ -15,15 +16,27 @@ export class WorkspaceUserNotFoundError extends NotFoundDomainError {
   }
 }
 
-export class InviteExpiredError extends NotFoundDomainError {
+export class InviteNotFoundError extends NotFoundDomainError {
   constructor() {
-    super('Convite expirado');
+    super('Código não encontrado. Confira e tente de novo.');
+  }
+}
+
+export class InviteExpiredError extends GoneDomainError {
+  constructor() {
+    super('Este convite expirou. Peça um novo código.');
+  }
+}
+
+export class InviteAlreadyUsedError extends ConflictDomainError {
+  constructor() {
+    super('Este convite já foi usado. Peça um novo código.');
   }
 }
 
 export class ConflictWorkspaceUserError extends ConflictDomainError {
   constructor() {
-    super('Usuário já está no workspace');
+    super('Você já faz parte deste workspace.');
   }
 }
 
