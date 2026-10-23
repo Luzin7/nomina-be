@@ -9,6 +9,9 @@ export abstract class DomainError extends Error {
 // 404 - Recurso não encontrado
 export abstract class NotFoundDomainError extends DomainError {}
 
+// 410 - Recurso existiu mas não está mais disponível (ex: convite expirado)
+export abstract class GoneDomainError extends DomainError {}
+
 // 409 - Conflito de estado (ex: e-mail já cadastrado, nome de conta duplicado)
 export abstract class ConflictDomainError extends DomainError {}
 

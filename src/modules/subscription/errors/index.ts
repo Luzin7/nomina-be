@@ -17,6 +17,12 @@ export class PlanLimitReachedError extends ForbiddenDomainError {
   }
 }
 
+export class WorkspaceMemberLimitReachedError extends ForbiddenDomainError {
+  constructor(limit: number) {
+    super(`Seu plano permite até ${limit} pessoas por workspace.`);
+  }
+}
+
 export class WorkspaceOwnerNotFoundError extends BusinessRuleDomainError {
   constructor() {
     super('O Workspace não possui um proprietário válido atrelado.');
