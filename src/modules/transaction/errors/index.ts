@@ -62,6 +62,18 @@ export class CreditCardTransferNotAllowedError extends BusinessRuleDomainError {
   }
 }
 
+export class InvestmentAccountNotAllowedError extends BusinessRuleDomainError {
+  constructor() {
+    super('Compra parcelada não é permitida em conta de investimento.');
+  }
+}
+
+export class InstallmentCountOutOfRangeError extends BusinessRuleDomainError {
+  constructor(min: number, max: number) {
+    super(`O número de parcelas deve estar entre ${min} e ${max}.`);
+  }
+}
+
 export class SourceAndDestinationAccountMustBeDifferentError extends BusinessRuleDomainError {
   constructor() {
     super(

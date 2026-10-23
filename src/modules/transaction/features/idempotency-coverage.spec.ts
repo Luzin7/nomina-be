@@ -1,5 +1,6 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Type } from '@nestjs/common';
+import { CreateInstallmentPurchaseController } from '@modules/transaction/features/create-installment-purchase/create-installment-purchase.controller';
 import { CreateRecurringTransactionController } from '@modules/transaction/features/create-recurring-transaction/create-recurring-transaction.controller';
 import { CreateTransactionController } from '@modules/transaction/features/create-transaction/create-transaction.controller';
 import { PayCreditCardInvoiceController } from '@modules/transaction/features/pay-credit-card-invoice/pay-credit-card-invoice.controller';
@@ -37,6 +38,18 @@ describe('idempotency route coverage', () => {
   it('decorates POST /transaction/recurring with @Idempotent', () => {
     expect(
       idempotentMetadataOf(CreateRecurringTransactionController),
+    ).toBeDefined();
+  });
+
+  it('protects POST /transaction/installment-purchase with IdempotencyGuard', () => {
+    expect(guardsOf(CreateInstallmentPurchaseController)).toContain(
+      IdempotencyGuard,
+    );
+  });
+
+  it('decorates POST /transaction/installment-purchase with @Idempotent', () => {
+    expect(
+      idempotentMetadataOf(CreateInstallmentPurchaseController),
     ).toBeDefined();
   });
 
