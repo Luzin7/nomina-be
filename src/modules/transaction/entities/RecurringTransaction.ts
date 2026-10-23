@@ -21,6 +21,7 @@ export interface RecurringTransactionProps {
   amount: bigint;
   frequency: RecurrenceFrequency;
   interval: number;
+  installmentCount: number | null;
   startDate: Date;
   endDate: Date | null;
   lastGenerated: Date | null;
@@ -37,6 +38,7 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     props: Optional<
       RecurringTransactionProps,
       | 'interval'
+      | 'installmentCount'
       | 'endDate'
       | 'lastGenerated'
       | 'active'
@@ -76,6 +78,7 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
       description: props.description ?? null,
       categoryId: props.categoryId,
       interval: props.interval ?? 1,
+      installmentCount: props.installmentCount ?? null,
       endDate: props.endDate ?? null,
       lastGenerated: props.lastGenerated ?? null,
       active: props.active ?? true,
@@ -131,6 +134,10 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     return this.props.interval;
   }
 
+  get installmentCount(): number | null {
+    return this.props.installmentCount;
+  }
+
   get startDate(): Date {
     return this.props.startDate;
   }
@@ -184,6 +191,10 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     this.props.frequency = frequency;
     this.props.interval = interval;
     return right(undefined);
+  }
+
+  public changeInstallmentCount(installmentCount: number | null): void {
+    this.props.installmentCount = installmentCount;
   }
 
   public clearLastGenerated(): void {

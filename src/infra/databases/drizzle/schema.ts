@@ -249,6 +249,7 @@ export const recurringTransactions = pgTable(
 
     frequency: text('frequency').notNull(),
     interval: integer('interval').default(1).notNull(),
+    installmentCount: integer('installment_count'),
 
     startDate: timestamp('start_date', {
       withTimezone: true,

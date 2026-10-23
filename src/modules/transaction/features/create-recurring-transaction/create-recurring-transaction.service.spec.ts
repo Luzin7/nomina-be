@@ -249,4 +249,30 @@ describe('CreateRecurringTransactionService', () => {
       expect(result.value.endDate).toEqual(new Date('2099-08-01'));
     }
   });
+
+  it('should store the installment count for an installment purchase', async () => {
+    arrangeSuccessMocks();
+
+    const result = await service.execute(
+      makeRequest({
+        amount: undefined,
+        totalAmount: 300000n,
+        installments: 3,
+      }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBe(3);
+  });
+
+  it('should leave the installment count empty for a plain recurrence', async () => {
+    arrangeSuccessMocks();
+
+    const result = await service.execute(
+      makeRequest({ endDate: '2099-06-01' }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBeNull();
+  });
 });

@@ -14,6 +14,7 @@ export class RecurringTransactionPresenter {
       amount: MoneyUtils.centsToDecimal(Number(recurringTransaction.amount)),
       frequency: recurringTransaction.frequency,
       interval: recurringTransaction.interval,
+      installmentCount: recurringTransaction.installmentCount,
       startDate: recurringTransaction.startDate,
       endDate: recurringTransaction.endDate,
       type: recurringTransaction.type,

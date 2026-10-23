@@ -16,6 +16,7 @@ import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
+import { calculateInstallmentEndDate } from '@utils/installmentSchedule';
 import { MoneyUtils } from '@utils/MoneyUtils';
 import { CreateRecurringTransactionRequest } from './create-recurring-transaction.dto';
 
@@ -75,7 +76,7 @@ export class CreateRecurringTransactionService implements Service<
       return left(new StartDateCannotBeTodayOrPastError());
     }
 
-    const { amount, end } = this.resolveAmountAndEndDate(
+    const { amount, end, installmentCount } = this.resolveAmountAndEndDate(
       request,
       start,
       endDate,
@@ -92,6 +93,7 @@ export class CreateRecurringTransactionService implements Service<
       amount,
       frequency: request.frequency as RecurrenceFrequency,
       interval: request.interval,
+      installmentCount,
       type: request.type,
       startDate: start,
       endDate: end,
@@ -158,7 +160,7 @@ export class CreateRecurringTransactionService implements Service<
     start: Date,
     endDate: string | null | undefined,
     timezone: string,
-  ): { amount: bigint; end: Date | null } {
+  ): { amount: bigint; end: Date | null; installmentCount: number | null } {
     const isTotalAmountMode = request.amount === undefined;
 
     if (isTotalAmountMode) {
@@ -166,19 +168,23 @@ export class CreateRecurringTransactionService implements Service<
         request.totalAmount!,
         request.installments!,
       );
-      const end = this.calculateInstallmentEndDate(
-        start,
-        request.frequency as RecurrenceFrequency,
-        request.interval,
-        request.installments!,
-        timezone,
+      const end = calculateInstallmentEndDate(
+        {
+          startDate: start,
+          frequency: request.frequency as RecurrenceFrequency,
+          interval: request.interval,
+          installments: request.installments!,
+          timezone,
+        },
+        this.dateProvider,
       );
-      return { amount, end };
+      return { amount, end, installmentCount: request.installments! };
     }
 
     return {
       amount: request.amount!,
       end: this.resolveManualEndDate(endDate, timezone),
+      installmentCount: null,
     };
   }
 
@@ -188,41 +194,5 @@ export class CreateRecurringTransactionService implements Service<
   ): Date | null {
     if (!endDate) return null;
     return this.dateProvider.startOfDay(endDate, timezone);
-  }
-
-  private calculateInstallmentEndDate(
-    start: Date,
-    frequency: RecurrenceFrequency,
-    interval: number,
-    installments: number,
-    timezone: string,
-  ): Date {
-    const remainingOccurrences = installments - 1;
-
-    switch (frequency) {
-      case RecurrenceFrequency.WEEKLY:
-        return this.dateProvider.add(
-          start,
-          interval * 7 * remainingOccurrences,
-          'day',
-          timezone,
-        );
-      case RecurrenceFrequency.MONTHLY:
-        return this.dateProvider.add(
-          start,
-          interval * remainingOccurrences,
-          'month',
-          timezone,
-        );
-      case RecurrenceFrequency.YEARLY:
-        return this.dateProvider.add(
-          start,
-          interval * remainingOccurrences,
-          'year',
-          timezone,
-        );
-      default:
-        throw new Error(`Unknown frequency: ${frequency}`);
-    }
   }
 }

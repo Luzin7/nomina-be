@@ -1,12 +1,31 @@
+import { RecurringKind } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { Transaction } from '@modules/transaction/entities/Transaction';
-import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
+import {
+  FindManyRecurringByWorkspaceQuery,
+  RecurringTransactionRepository,
+} from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { Injectable, Logger } from '@nestjs/common';
-import { and, asc, count, eq, gt, isNull, lt, lte, or } from 'drizzle-orm';
+import {
+  SQL,
+  and,
+  asc,
+  count,
+  eq,
+  gt,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+} from 'drizzle-orm';
 import { RecurringTransactionMapper } from '../mappers/recurring-transaction.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
+
+const MIN_INSTALLMENTS_FOR_PLAN = 2;
 
 @Injectable()
 export class RecurringTransactionRepositoryImplementation implements RecurringTransactionRepository {
@@ -56,12 +75,16 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
     return RecurringTransactionMapper.toDomain(recurring);
   }
 
-  async findManyByWorkspaceId(
-    workspaceId: string,
-    page: number,
-    pageSize: number,
-    isActive?: boolean,
-  ): Promise<{ recurrings: RecurringTransaction[]; total: number }> {
+  async findManyByWorkspaceId({
+    workspaceId,
+    page,
+    pageSize,
+    isActive,
+    kind,
+  }: FindManyRecurringByWorkspaceQuery): Promise<{
+    recurrings: RecurringTransaction[];
+    total: number;
+  }> {
     const offset = (page - 1) * pageSize;
 
     const baseConditions = and(
@@ -69,6 +92,7 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
       isActive === true
         ? eq(schema.recurringTransactions.active, isActive)
         : undefined,
+      this.kindCondition(kind),
     );
 
     const [recurrings, [{ totalCount }]] = await Promise.all([
@@ -89,6 +113,24 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
       recurrings: recurrings.map(RecurringTransactionMapper.toDomain),
       total: totalCount,
     };
+  }
+
+  private kindCondition(kind?: RecurringKind): SQL | undefined {
+    const installmentCount = schema.recurringTransactions.installmentCount;
+    if (kind === RecurringKind.INSTALLMENT) {
+      return and(
+        isNotNull(installmentCount),
+        gte(installmentCount, MIN_INSTALLMENTS_FOR_PLAN),
+      );
+    }
+    if (kind === RecurringKind.RECURRING) {
+      return or(
+        isNull(installmentCount),
+        lt(installmentCount, MIN_INSTALLMENTS_FOR_PLAN),
+      );
+    }
+
+    return undefined;
   }
 
   async findNeedingGenerationByWorkspaceId(

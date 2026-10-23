@@ -1,4 +1,4 @@
-import { AccountType } from '@constants/enums';
+import { AccountType, RecurrenceFrequency } from '@constants/enums';
 import {
   CacheProvider,
   LockHandle,
@@ -15,16 +15,19 @@ import { RecurringTransactionRepository } from '@modules/transaction/repositorie
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { makeRecurring } from '@modules/transaction/test-helpers/mock-factories';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { UpdateRecurringTransactionService } from './update-recurring-transaction.service';
 
-function makeAccount(overrides: { workspaceId?: string; id?: string } = {}) {
+function makeAccount(
+  overrides: { workspaceId?: string; id?: string; timezone?: string } = {},
+) {
   const result = CheckingAccount.create(
     {
       workspaceId: overrides.workspaceId ?? 'ws-1',
       name: 'Account',
       type: AccountType.CHECKING,
-      timezone: 'America/Sao_Paulo',
+      timezone: overrides.timezone ?? 'America/Sao_Paulo',
       balance: 10000n,
     },
     overrides.id ?? 'acc-1',
@@ -101,7 +104,7 @@ describe('UpdateRecurringTransactionService', () => {
         if (unit === 'month') return addMonths(date, amount);
         return date;
       }),
-      format: jest.fn().mockReturnValue('2024-01-15'),
+      format: jest.fn((date: Date) => date.toISOString().slice(0, 10)),
       toTimezone: jest.fn(),
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
@@ -176,6 +179,106 @@ describe('UpdateRecurringTransactionService', () => {
       jobDateProvider,
     );
   }
+
+  it('should recompute the installment count when the end date changes', async () => {
+    arrangeExistingRecurring({
+      startDate: new Date('2099-01-15'),
+      endDate: new Date('2099-04-15'),
+      installmentCount: 4,
+    });
+
+    const result = await service.execute(
+      makeRequest({ endDate: '2099-06-15' }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBe(6);
+  });
+
+  it('should clear the installment count when the end date is removed', async () => {
+    arrangeExistingRecurring({
+      startDate: new Date('2099-01-15'),
+      endDate: new Date('2099-04-15'),
+      installmentCount: 4,
+    });
+
+    const result = await service.execute(makeRequest({ endDate: null }));
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBeNull();
+  });
+
+  it('should clear the installment count when the new end date is off the grid', async () => {
+    arrangeExistingRecurring({
+      startDate: new Date('2099-01-15'),
+      endDate: new Date('2099-04-15'),
+      installmentCount: 4,
+    });
+
+    const result = await service.execute(
+      makeRequest({ endDate: '2099-06-20' }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBeNull();
+  });
+
+  it('should keep the installment count when the schedule is unchanged', async () => {
+    arrangeExistingRecurring({
+      startDate: new Date('2099-01-15'),
+      endDate: new Date('2099-04-15'),
+      installmentCount: 4,
+    });
+
+    const result = await service.execute(
+      makeRequest({ endDate: '2099-04-15', title: 'Novo' }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBe(4);
+  });
+
+  it('should keep a null installment count on edit', async () => {
+    arrangeExistingRecurring({
+      startDate: new Date('2099-01-15'),
+      endDate: new Date('2099-04-15'),
+      installmentCount: null,
+    });
+
+    const result = await service.execute(
+      makeRequest({ endDate: '2099-06-15' }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBeNull();
+  });
+
+  it('should keep a correct installment count when editing a plan in a DST zone', async () => {
+    const dstService = new UpdateRecurringTransactionService(
+      recurringRepository,
+      categoryRepository,
+      accountRepository,
+      new DayJsDateProvider(),
+    );
+    const recurring = makeRecurring({
+      id: 'rec-1',
+      startDate: new Date('2099-03-02T05:00:00Z'),
+      endDate: new Date('2099-03-23T04:00:00Z'),
+      frequency: RecurrenceFrequency.WEEKLY,
+      installmentCount: 4,
+    });
+    recurringRepository.findById.mockResolvedValue(recurring);
+    accountRepository.findById.mockResolvedValue(
+      makeAccount({ timezone: 'America/New_York' }),
+    );
+
+    const result = await dstService.execute(
+      makeRequest({ endDate: '2099-03-30' }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBe(5);
+  });
 
   it('moves future generations to the new account when accountId changes', async () => {
     arrangeExistingRecurring({
