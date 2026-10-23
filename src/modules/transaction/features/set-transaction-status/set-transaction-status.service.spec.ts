@@ -18,6 +18,7 @@ function makeRequest(overrides: Partial<ServiceRequest> = {}): ServiceRequest {
   return {
     transactionId: 'tx-1',
     workspaceId: 'ws-1',
+    sub: 'user-1',
     status: TransactionStatus.COMPLETED,
     ...overrides,
   };
@@ -75,11 +76,14 @@ describe('SetTransactionStatusService', () => {
 
     expect(
       transactionRepository.updateStatusWithBalanceEffect,
-    ).toHaveBeenCalledWith({
-      transactionId: 'tx-1',
-      workspaceId: 'ws-9',
-      status: TransactionStatus.PENDING,
-    });
+    ).toHaveBeenCalledWith(
+      {
+        transactionId: 'tx-1',
+        workspaceId: 'ws-9',
+        status: TransactionStatus.PENDING,
+      },
+      { actorId: 'user-1' },
+    );
   });
 
   it('should return left(TransactionNotFoundError) from the repository', async () => {

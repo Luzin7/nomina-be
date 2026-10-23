@@ -6,7 +6,7 @@ import { Transaction } from '../../entities/Transaction';
 
 export type BalanceMovementContext = {
   cause?: BalanceMovementCause;
-  actorId?: string;
+  actorId: string;
 };
 
 /**
@@ -77,23 +77,23 @@ export abstract class TransactionRepository {
   abstract createWithBalanceUpdate(
     transaction: Transaction,
     applyEffects: CreateBalanceMutation,
-    context?: BalanceMovementContext,
+    context: BalanceMovementContext,
   ): Promise<Either<Error, void>>;
 
   abstract updateWithBalanceEffect(
     transactionId: string,
     mutate: UpdateTransactionMutation,
-    context?: BalanceMovementContext,
+    context: BalanceMovementContext,
   ): Promise<Either<Error, Transaction>>;
 
   abstract deleteWithBalanceEffect(
     transactionId: string,
-    context?: BalanceMovementContext,
+    context: BalanceMovementContext,
   ): Promise<Either<Error, boolean>>;
 
   abstract updateStatusWithBalanceEffect(
     params: UpdateTransactionStatusParams,
-    context?: BalanceMovementContext,
+    context: BalanceMovementContext,
   ): Promise<Either<Error, Transaction>>;
 
   abstract findCreditCardLedger(

@@ -25,6 +25,7 @@ export class DeleteTransactionService implements Service<Request, Error, void> {
     const deletionResult =
       await this.transactionRepository.deleteWithBalanceEffect(
         transactionResult.value.id,
+        { actorId: request.sub },
       );
     if (deletionResult.isLeft()) return left(deletionResult.value);
     if (!deletionResult.value) return left(new TransactionNotFoundError());
