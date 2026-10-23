@@ -5,6 +5,7 @@ import { AuthSessionsRepository } from '@modules/user/repositories/contracts/aut
 import { RefreshTokensRepository } from '@modules/user/repositories/contracts/refresh-token.repository';
 import { AuthTokenPairFactory } from '@modules/user/services/auth-token-pair.factory';
 import { Injectable } from '@nestjs/common';
+import { RefreshTokenGenerator } from '@providers/cryptography/contracts/RefreshTokenGenerator';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
@@ -34,6 +35,7 @@ export class IssueAuthSessionService implements Service<
     private readonly refreshTokensRepository: RefreshTokensRepository,
     private readonly authTokenPairFactory: AuthTokenPairFactory,
     private readonly dateProvider: DateProvider,
+    private readonly refreshTokenGenerator: RefreshTokenGenerator,
   ) {}
 
   async execute(
@@ -51,6 +53,7 @@ export class IssueAuthSessionService implements Service<
       role: request.role,
       sessionId: session.id,
       expiresAt: session.expiresAt,
+      rawRefreshToken: this.refreshTokenGenerator.generate(),
     });
     if (tokensOrError.isLeft()) return left(tokensOrError.value);
 

@@ -1,3 +1,4 @@
+import { REFRESH_TOKEN_REUSE_GRACE_SECONDS } from '@constants/auth';
 import { RefreshTokenStatus } from '@constants/enums';
 import {
   InvalidExpirationDateError,
@@ -14,6 +15,7 @@ export interface RefreshTokenProps {
   status: RefreshTokenStatus;
   expiresAt: Date;
   createdAt: Date;
+  rotatedAt: Date | null;
 }
 
 export class RefreshToken extends Entity<RefreshTokenProps> {
@@ -22,7 +24,7 @@ export class RefreshToken extends Entity<RefreshTokenProps> {
   }
 
   static create(
-    props: Optional<RefreshTokenProps, 'status' | 'createdAt'>,
+    props: Optional<RefreshTokenProps, 'status' | 'createdAt' | 'rotatedAt'>,
     id?: string,
   ): Either<Error, RefreshToken> {
     const validation = RefreshToken.validate(props);
@@ -36,13 +38,14 @@ export class RefreshToken extends Entity<RefreshTokenProps> {
       ...props,
       status: props.status ?? RefreshTokenStatus.ACTIVE,
       createdAt: props.createdAt ?? new Date(),
+      rotatedAt: props.rotatedAt ?? null,
     };
 
     return right(new RefreshToken(refreshTokenProps, id));
   }
 
   private static validate(
-    props: Optional<RefreshTokenProps, 'status' | 'createdAt'>,
+    props: Optional<RefreshTokenProps, 'status' | 'createdAt' | 'rotatedAt'>,
   ): Either<Error, void> {
     if (!props.tokenHash) return left(new MissingRefreshTokenHashError());
     if (!props.sessionId) return left(new MissingAuthSessionError());
@@ -75,6 +78,10 @@ export class RefreshToken extends Entity<RefreshTokenProps> {
     return this.props.createdAt;
   }
 
+  get rotatedAt(): Date | null {
+    return this.props.rotatedAt ?? null;
+  }
+
   public isActive(): boolean {
     return this.props.status === RefreshTokenStatus.ACTIVE;
   }
@@ -99,8 +106,17 @@ export class RefreshToken extends Entity<RefreshTokenProps> {
     return this.isActive() && !this.isExpired(referenceDate);
   }
 
-  public markAsRotated(): void {
+  public isWithinReuseGrace(now: Date): boolean {
+    if (!this.isRotated() || !this.rotatedAt) return false;
+
+    const elapsedInMs = now.getTime() - this.rotatedAt.getTime();
+
+    return elapsedInMs < REFRESH_TOKEN_REUSE_GRACE_SECONDS * 1_000;
+  }
+
+  public markAsRotated(at: Date): void {
     this.props.status = RefreshTokenStatus.ROTATED;
+    this.props.rotatedAt = at;
   }
 
   public revoke(): void {

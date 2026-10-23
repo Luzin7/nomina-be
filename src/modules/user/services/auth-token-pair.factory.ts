@@ -6,14 +6,18 @@ import { Encrypter } from '@providers/cryptography/contracts/Encrypter';
 import { TokenHasher } from '@providers/cryptography/contracts/TokenHasher';
 import { Either, left, right } from '@shared/core/errors/Either';
 
-export interface BuildAuthTokenPairInput {
+export interface AccessTokenClaimsInput {
   userId: string;
   userName: string;
   workspaceId: string;
   workspaceName: string;
   role: UserRole;
+}
+
+export interface BuildAuthTokenPairInput extends AccessTokenClaimsInput {
   sessionId: string;
   expiresAt: Date;
+  rawRefreshToken: string;
 }
 
 export interface AuthTokenPair {
@@ -29,36 +33,32 @@ export class AuthTokenPairFactory {
     private readonly tokenHasher: TokenHasher,
   ) {}
 
+  signAccessToken(claims: AccessTokenClaimsInput): Promise<string> {
+    return this.encrypter.encrypt(
+      {
+        sub: claims.userId,
+        name: claims.userName,
+        workspaceId: claims.workspaceId,
+        workspaceName: claims.workspaceName,
+        role: claims.role,
+      },
+      { expiresIn: env.JWT_USER_ACCESS_EXPIRES_IN },
+    );
+  }
+
   async build(
     input: BuildAuthTokenPairInput,
   ): Promise<Either<Error, AuthTokenPair>> {
-    const [accessToken, rawRefreshToken] = await Promise.all([
-      this.encrypter.encrypt(
-        {
-          sub: input.userId,
-          name: input.userName,
-          workspaceId: input.workspaceId,
-          workspaceName: input.workspaceName,
-          role: input.role,
-        },
-        { expiresIn: env.JWT_USER_ACCESS_EXPIRES_IN },
-      ),
-      this.encrypter.encrypt(
-        { sub: input.userId },
-        { expiresIn: env.JWT_USER_REFRESH_EXPIRES_IN },
-      ),
-    ]);
-
     const refreshTokenOrError = RefreshToken.create({
-      tokenHash: this.tokenHasher.hash(rawRefreshToken),
+      tokenHash: this.tokenHasher.hash(input.rawRefreshToken),
       sessionId: input.sessionId,
       expiresAt: input.expiresAt,
     });
     if (refreshTokenOrError.isLeft()) return left(refreshTokenOrError.value);
 
     return right({
-      accessToken,
-      rawRefreshToken,
+      accessToken: await this.signAccessToken(input),
+      rawRefreshToken: input.rawRefreshToken,
       refreshToken: refreshTokenOrError.value,
     });
   }

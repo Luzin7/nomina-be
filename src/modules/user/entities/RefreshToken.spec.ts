@@ -81,7 +81,7 @@ describe('RefreshToken entity', () => {
 
     it('should be invalid after being rotated', () => {
       const token = RefreshToken.create(makeProps()).value as RefreshToken;
-      token.markAsRotated();
+      token.markAsRotated(new Date());
       expect(token.status).toBe(RefreshTokenStatus.ROTATED);
       expect(token.isValid()).toBe(false);
     });
@@ -93,7 +93,7 @@ describe('RefreshToken entity', () => {
 
     it('should be reused after being rotated', () => {
       const token = RefreshToken.create(makeProps()).value as RefreshToken;
-      token.markAsRotated();
+      token.markAsRotated(new Date());
       expect(token.isReused()).toBe(true);
     });
 
@@ -101,6 +101,53 @@ describe('RefreshToken entity', () => {
       const token = RefreshToken.create(makeProps()).value as RefreshToken;
       token.revoke();
       expect(token.isReused()).toBe(true);
+    });
+  });
+
+  describe('reuse grace', () => {
+    const ROTATED_AT = new Date('2026-01-01T00:00:00Z');
+    const secondsAfter = (seconds: number) =>
+      new Date(ROTATED_AT.getTime() + seconds * 1_000);
+
+    function makeRotatedToken(): RefreshToken {
+      const token = RefreshToken.create(makeProps()).value as RefreshToken;
+      token.markAsRotated(ROTATED_AT);
+      return token;
+    }
+
+    it('should mark the token as rotated at the given time', () => {
+      const token = makeRotatedToken();
+
+      expect(token.status).toBe(RefreshTokenStatus.ROTATED);
+      expect(token.rotatedAt).toEqual(ROTATED_AT);
+    });
+
+    it('should be within the reuse grace before the window closes', () => {
+      expect(makeRotatedToken().isWithinReuseGrace(secondsAfter(59))).toBe(
+        true,
+      );
+    });
+
+    it('should not be within the reuse grace once the window closes', () => {
+      expect(makeRotatedToken().isWithinReuseGrace(secondsAfter(60))).toBe(
+        false,
+      );
+    });
+
+    it('should not be within the reuse grace without rotatedAt', () => {
+      const token = RefreshToken.restore(
+        {
+          sessionId: 'session-1',
+          tokenHash: 'hash',
+          status: RefreshTokenStatus.ROTATED,
+          expiresAt: FUTURE,
+          createdAt: ROTATED_AT,
+          rotatedAt: null,
+        },
+        'id',
+      );
+
+      expect(token.isWithinReuseGrace(ROTATED_AT)).toBe(false);
     });
   });
 });

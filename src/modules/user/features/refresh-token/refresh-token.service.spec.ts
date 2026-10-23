@@ -1,4 +1,5 @@
 import { RefreshTokenStatus, UserRole } from '@constants/enums';
+import { MAX_REFRESH_TOKEN_SUCCESSOR_HOPS } from '@constants/auth';
 import { AuthSession } from '@modules/user/entities/AuthSession';
 import { RefreshToken } from '@modules/user/entities/RefreshToken';
 import { User } from '@modules/user/entities/User';
@@ -9,6 +10,8 @@ import { UserRepository } from '@modules/user/repositories/contracts/user.reposi
 import { AuthTokenPairFactory } from '@modules/user/services/auth-token-pair.factory';
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
+import { RefreshTokenGenerator } from '@providers/cryptography/contracts/RefreshTokenGenerator';
+import { Logger } from '@nestjs/common';
 import { TokenHasher } from '@providers/cryptography/contracts/TokenHasher';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { right } from '@shared/core/errors/Either';
@@ -20,6 +23,9 @@ jest.mock('@infra/env', () => ({ env: { USER_REFRESH_EXPIRES_IN: 7 } }));
 const USER_ID = '10000000-0000-4000-8000-000000000000';
 const FUTURE = new Date(Date.now() + 604800000);
 const PAST = new Date(Date.now() - 1000);
+const NOW = new Date();
+const INSIDE_GRACE = new Date(NOW.getTime() - 10_000);
+const OUTSIDE_GRACE = new Date(NOW.getTime() - 61_000);
 
 function makeUser(): User {
   const result = User.create(
@@ -75,6 +81,7 @@ describe('RefreshTokenService', () => {
   let authTokenPairFactory: jest.Mocked<AuthTokenPairFactory>;
   let dateProvider: jest.Mocked<DateProvider>;
   let tokenHasher: jest.Mocked<TokenHasher>;
+  let refreshTokenGenerator: jest.Mocked<RefreshTokenGenerator>;
 
   beforeEach(() => {
     userRepository = {
@@ -95,7 +102,7 @@ describe('RefreshTokenService', () => {
 
     authSessionsRepository = {
       create: jest.fn(),
-      save: jest.fn(),
+      renew: jest.fn(),
       findUniqueById: jest.fn(),
       revoke: jest.fn(),
       delete: jest.fn(),
@@ -116,15 +123,22 @@ describe('RefreshTokenService', () => {
 
     authTokenPairFactory = {
       build: jest.fn(),
+      signAccessToken: jest.fn().mockResolvedValue('head-access-token'),
     } as unknown as jest.Mocked<AuthTokenPairFactory>;
 
     dateProvider = {
       addDaysInCurrentDate: jest.fn().mockReturnValue(FUTURE),
+      now: jest.fn().mockReturnValue(NOW),
     } as unknown as jest.Mocked<DateProvider>;
 
     tokenHasher = {
       hash: jest.fn((token: string) => `hashed-${token}`),
     } as jest.Mocked<TokenHasher>;
+
+    refreshTokenGenerator = {
+      generate: jest.fn(),
+      successorOf: jest.fn((token: string) => `next-${token}`),
+    } as jest.Mocked<RefreshTokenGenerator>;
 
     service = new RefreshTokenService(
       userRepository,
@@ -134,6 +148,7 @@ describe('RefreshTokenService', () => {
       authTokenPairFactory,
       dateProvider,
       tokenHasher,
+      refreshTokenGenerator,
     );
   });
 
@@ -290,7 +305,7 @@ describe('RefreshTokenService', () => {
     const [current, next] = refreshTokensRepository.rotate.mock.calls[0];
     expect(current.id).toBe('rt-1');
     expect(next.sessionId).toBe('session-1');
-    expect(authSessionsRepository.save).toHaveBeenCalledTimes(1);
+    expect(authSessionsRepository.renew).toHaveBeenCalledTimes(1);
   });
 
   it('should build the new token pair on the existing session', async () => {
@@ -307,17 +322,213 @@ describe('RefreshTokenService', () => {
     );
   });
 
-  it('should revoke the family when the rotation loses the race', async () => {
+  it('should derive the successor from the presented token', async () => {
     arrangeSuccessMocks();
-    refreshTokensRepository.rotate.mockResolvedValue(false);
 
-    const result = await service.execute('valid-token');
+    await service.execute('valid-token');
 
-    expect(result.isLeft()).toBe(true);
-    expect(result.value).toBeInstanceOf(SessionExpiredError);
-    expect(refreshTokensRepository.revokeBySessionId).toHaveBeenCalledWith(
-      'session-1',
+    expect(authTokenPairFactory.build).toHaveBeenCalledWith(
+      expect.objectContaining({ rawRefreshToken: 'next-valid-token' }),
     );
-    expect(authSessionsRepository.save).not.toHaveBeenCalled();
+  });
+
+  describe('reuse grace window', () => {
+    function arrangeRotated(rotatedAt: Date | null, session = makeSession()) {
+      refreshTokensRepository.findUniqueByTokenHash.mockImplementation(
+        async (hash) => {
+          if (hash === 'hashed-old')
+            return makeRotatedToken('hashed-old', rotatedAt);
+          if (hash === 'hashed-next-old') return makeActiveToken(hash);
+          return null;
+        },
+      );
+      authSessionsRepository.findUniqueById.mockResolvedValue(session);
+      userRepository.findUniqueById.mockResolvedValue(makeUser());
+      workspaceUserRepository.findDefaultWorkspaceByUserId.mockResolvedValue({
+        user: makeWorkspaceUser(),
+        workspaceName: 'My WS',
+      });
+    }
+
+    function makeRotatedToken(tokenHash: string, rotatedAt: Date | null) {
+      return makeStoredToken({
+        tokenHash,
+        status: RefreshTokenStatus.ROTATED,
+        rotatedAt,
+      });
+    }
+
+    function makeActiveToken(tokenHash: string) {
+      return makeStoredToken({ tokenHash });
+    }
+
+    it('should return the successor token when a token rotated inside the grace window is presented', async () => {
+      arrangeRotated(INSIDE_GRACE);
+
+      const result = await service.execute('old');
+
+      expect(result.isRight()).toBe(true);
+      expect(result.value).toEqual({
+        accessToken: 'head-access-token',
+        refreshToken: 'next-old',
+      });
+      expect(refreshTokensRepository.rotate).not.toHaveBeenCalled();
+      expect(authSessionsRepository.renew).not.toHaveBeenCalled();
+      expect(refreshTokensRepository.revokeBySessionId).not.toHaveBeenCalled();
+    });
+
+    it('should revoke the family when a token rotated outside the grace window is presented', async () => {
+      arrangeRotated(OUTSIDE_GRACE);
+
+      const result = await service.execute('old');
+
+      expect(result.isLeft()).toBe(true);
+      expect(refreshTokensRepository.revokeBySessionId).toHaveBeenCalledWith(
+        'session-1',
+      );
+      expect(authSessionsRepository.revoke).toHaveBeenCalledWith('session-1');
+    });
+
+    it('should log the user and the seconds since rotation when revoking after the grace window', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      arrangeRotated(OUTSIDE_GRACE);
+
+      await service.execute('old');
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `userId=${USER_ID} reason=reuse_after_grace secondsSinceRotation=61`,
+        ),
+      );
+    });
+
+    it('should revoke the family when a rotated token without rotatedAt is presented', async () => {
+      arrangeRotated(null);
+
+      const result = await service.execute('old');
+
+      expect(result.isLeft()).toBe(true);
+      expect(refreshTokensRepository.revokeBySessionId).toHaveBeenCalledWith(
+        'session-1',
+      );
+    });
+
+    it('should reject a token rotated inside the grace window after logout', async () => {
+      const session = makeSession();
+      session.revoke();
+      arrangeRotated(INSIDE_GRACE, session);
+
+      const result = await service.execute('old');
+
+      expect(result.isLeft()).toBe(true);
+      expect(result.value).toBeInstanceOf(SessionExpiredError);
+      expect(authTokenPairFactory.signAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('should return the current head when the successor was rotated inside the grace window', async () => {
+      arrangeRotated(INSIDE_GRACE);
+      refreshTokensRepository.findUniqueByTokenHash.mockImplementation(
+        async (hash) => {
+          if (hash === 'hashed-old')
+            return makeRotatedToken(hash, INSIDE_GRACE);
+          if (hash === 'hashed-next-old')
+            return makeRotatedToken(hash, INSIDE_GRACE);
+          if (hash === 'hashed-next-next-old') return makeActiveToken(hash);
+          return null;
+        },
+      );
+
+      const result = await service.execute('old');
+
+      expect(result.value).toEqual({
+        accessToken: 'head-access-token',
+        refreshToken: 'next-next-old',
+      });
+    });
+
+    it('should revoke the family when the successor chain is broken', async () => {
+      arrangeRotated(INSIDE_GRACE);
+      refreshTokensRepository.findUniqueByTokenHash.mockImplementation(
+        async (hash) =>
+          hash === 'hashed-old' ? makeRotatedToken(hash, INSIDE_GRACE) : null,
+      );
+
+      const result = await service.execute('old');
+
+      expect(result.isLeft()).toBe(true);
+      expect(refreshTokensRepository.revokeBySessionId).toHaveBeenCalledWith(
+        'session-1',
+      );
+    });
+
+    it('should revoke the family when the successor chain exceeds the maximum hops', async () => {
+      arrangeRotated(INSIDE_GRACE);
+      refreshTokensRepository.findUniqueByTokenHash.mockImplementation(
+        async (hash) => makeRotatedToken(hash, INSIDE_GRACE),
+      );
+
+      const result = await service.execute('old');
+
+      expect(result.isLeft()).toBe(true);
+      expect(
+        refreshTokensRepository.findUniqueByTokenHash,
+      ).toHaveBeenCalledTimes(1 + MAX_REFRESH_TOKEN_SUCCESSOR_HOPS);
+      expect(refreshTokensRepository.revokeBySessionId).toHaveBeenCalledWith(
+        'session-1',
+      );
+    });
+
+    it('should revoke the family when the successor belongs to another session', async () => {
+      arrangeRotated(INSIDE_GRACE);
+      refreshTokensRepository.findUniqueByTokenHash.mockImplementation(
+        async (hash) =>
+          hash === 'hashed-old'
+            ? makeRotatedToken(hash, INSIDE_GRACE)
+            : makeStoredToken({ tokenHash: hash, sessionId: 'session-2' }),
+      );
+
+      const result = await service.execute('old');
+
+      expect(result.isLeft()).toBe(true);
+      expect(refreshTokensRepository.revokeBySessionId).toHaveBeenCalledWith(
+        'session-1',
+      );
+    });
+
+    it('should return the successor when the rotation loses the race', async () => {
+      arrangeSuccessMocks();
+      refreshTokensRepository.rotate.mockResolvedValue(false);
+      refreshTokensRepository.findUniqueByTokenHash
+        .mockResolvedValueOnce(makeActiveToken('hashed-valid-token'))
+        .mockResolvedValueOnce(
+          makeRotatedToken('hashed-valid-token', INSIDE_GRACE),
+        )
+        .mockResolvedValueOnce(makeActiveToken('hashed-next-valid-token'));
+
+      const result = await service.execute('valid-token');
+
+      expect(result.value).toEqual({
+        accessToken: 'head-access-token',
+        refreshToken: 'next-valid-token',
+      });
+      expect(refreshTokensRepository.revokeBySessionId).not.toHaveBeenCalled();
+      expect(authSessionsRepository.renew).not.toHaveBeenCalled();
+    });
+
+    it('should reject when the rotation loses the race to a revocation', async () => {
+      arrangeSuccessMocks();
+      refreshTokensRepository.rotate.mockResolvedValue(false);
+      refreshTokensRepository.findUniqueByTokenHash
+        .mockResolvedValueOnce(makeActiveToken('hashed-valid-token'))
+        .mockResolvedValueOnce(
+          makeStoredToken({ status: RefreshTokenStatus.REVOKED }),
+        );
+
+      const result = await service.execute('valid-token');
+
+      expect(result.isLeft()).toBe(true);
+      expect(result.value).toBeInstanceOf(SessionExpiredError);
+      expect(authSessionsRepository.renew).not.toHaveBeenCalled();
+    });
   });
 });

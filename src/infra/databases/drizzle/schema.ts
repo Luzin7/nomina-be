@@ -89,6 +89,7 @@ export const refreshTokens = pgTable(
     })
       .defaultNow()
       .notNull(),
+    rotatedAt: timestamp('rotated_at', { withTimezone: true, mode: 'date' }),
   },
   (table) => [index('idx_refresh_tokens_session_id').on(table.sessionId)],
 );
