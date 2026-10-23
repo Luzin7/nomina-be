@@ -1,3 +1,4 @@
+import { RecurringKind } from '@constants/enums';
 import { ZodValidationPipe } from '@shared/pipes/ZodValidation';
 import { z } from 'zod';
 
@@ -17,6 +18,7 @@ const listRecurringTransactionsSchema = z.object({
     .string()
     .transform((val) => val === 'true')
     .optional(),
+  kind: z.nativeEnum(RecurringKind).optional(),
 });
 
 export const ListRecurringTransactionsPipe = new ZodValidationPipe(

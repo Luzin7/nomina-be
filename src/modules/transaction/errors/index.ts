@@ -1,6 +1,7 @@
 import {
   BusinessRuleDomainError,
-  InvalidOperationDomainError,
+  ConflictDomainError,
+  DomainError,
 } from '@shared/core/errors/DomainError';
 
 export class InvalidAmountError extends BusinessRuleDomainError {
@@ -61,6 +62,18 @@ export class CreditCardTransferNotAllowedError extends BusinessRuleDomainError {
   }
 }
 
+export class InvestmentAccountNotAllowedError extends BusinessRuleDomainError {
+  constructor() {
+    super('Compra parcelada não é permitida em conta de investimento.');
+  }
+}
+
+export class InstallmentCountOutOfRangeError extends BusinessRuleDomainError {
+  constructor(min: number, max: number) {
+    super(`O número de parcelas deve estar entre ${min} e ${max}.`);
+  }
+}
+
 export class SourceAndDestinationAccountMustBeDifferentError extends BusinessRuleDomainError {
   constructor() {
     super(
@@ -113,14 +126,67 @@ export class TypeRequiredError extends BusinessRuleDomainError {
   }
 }
 
-export class TransactionAlreadyCompletedError extends InvalidOperationDomainError {
+export class TransactionAlreadyCompletedError extends ConflictDomainError {
   constructor() {
     super('A transação já está concluída.');
   }
 }
 
-export class TransactionAlreadyPendingError extends InvalidOperationDomainError {
+export class TransactionAlreadyPendingError extends ConflictDomainError {
   constructor() {
     super('A transação já está pendente.');
+  }
+}
+
+export class TransactionStatusChangedConcurrentlyError extends ConflictDomainError {
+  constructor() {
+    super(
+      'O status da transação foi alterado por outra requisição. Tente novamente.',
+    );
+  }
+}
+
+export class RecurringGenerationFailedError extends DomainError {
+  constructor(reason: string) {
+    super(`Falha ao gerar transações recorrentes: ${reason}`);
+  }
+}
+
+export class CardInstallmentSettlementFailedError extends DomainError {
+  constructor(failedCount: number, processedCount: number) {
+    super(
+      `Falha ao liquidar parcelas de cartão: ${failedCount} de ${processedCount} falharam.`,
+    );
+  }
+}
+
+export class UnknownRecurrenceFrequencyError extends DomainError {
+  constructor(frequency: string) {
+    super(`Frequência de recorrência desconhecida: ${frequency}`);
+  }
+}
+
+export interface BalanceDivergencePayload {
+  accountId: string;
+  unexplained: number;
+}
+
+export class BalanceLedgerUncoveredError extends DomainError {
+  readonly uncovered: number;
+  readonly accountIds: readonly string[];
+
+  constructor(uncovered: number, accountIds: readonly string[]) {
+    super('Contas sem movimentação de abertura não podem ser conciliadas.');
+    this.uncovered = uncovered;
+    this.accountIds = accountIds;
+  }
+}
+
+export class BalanceReconciliationDivergenceError extends DomainError {
+  readonly divergences: readonly BalanceDivergencePayload[];
+
+  constructor(divergences: readonly BalanceDivergencePayload[]) {
+    super('Divergência entre o saldo das contas e o ledger de movimentações.');
+    this.divergences = divergences;
   }
 }

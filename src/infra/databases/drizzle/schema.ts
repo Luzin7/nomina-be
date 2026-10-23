@@ -1,3 +1,6 @@
+import { sql } from 'drizzle-orm';
+import { BalanceMovementCause } from '@constants/enums';
+import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import {
   AnyPgColumn,
   bigint,
@@ -9,6 +12,8 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+
+const OPENING_CAUSE_LITERAL = `'${BalanceMovementCause.OPENING}'`;
 
 // --------------------------------------------------------
 // INFRAESTRUTURA & AUTH
@@ -32,22 +37,64 @@ export const users = pgTable('users', {
   }).$onUpdate(() => new Date()),
 });
 
+export const authSessions = pgTable(
+  'auth_sessions',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'date',
+    })
+      .defaultNow()
+      .notNull(),
+    lastUsedAt: timestamp('last_used_at', {
+      withTimezone: true,
+      mode: 'date',
+    })
+      .defaultNow()
+      .notNull(),
+    expiresAt: timestamp('expires_at', {
+      withTimezone: true,
+      mode: 'date',
+    }).notNull(),
+    revokedAt: timestamp('revoked_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+  },
+  (table) => [index('idx_auth_sessions_user_id').on(table.userId)],
+);
+
 export const refreshTokens = pgTable(
   'refresh_tokens',
   {
     id: text('id')
       .primaryKey()
       .$default(() => crypto.randomUUID()),
-    token: text('token').notNull(),
-    expiresIn: timestamp('expires_in', {
+    tokenHash: text('token_hash').notNull().unique(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => authSessions.id, { onDelete: 'cascade' }),
+    expiresAt: timestamp('expires_at', {
       withTimezone: true,
       mode: 'date',
     }).notNull(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('active'),
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+      mode: 'date',
+    })
+      .defaultNow()
+      .notNull(),
+    rotatedAt: timestamp('rotated_at', { withTimezone: true, mode: 'date' }),
   },
-  (table) => [index('idx_refresh_token_user_id').on(table.userId)],
+  (table) => [index('idx_refresh_tokens_session_id').on(table.sessionId)],
 );
 
 // --------------------------------------------------------
@@ -60,7 +107,7 @@ export const workspaces = pgTable('workspaces', {
     .$default(() => crypto.randomUUID()),
   name: text('name').notNull(),
   currency: text('currency').default('BRL').notNull(),
-  timezone: text('time_zone').default('America/Sao_Paulo').notNull(),
+  timezone: text('time_zone').default(DEFAULT_TIMEZONE).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .defaultNow()
     .notNull(),
@@ -78,7 +125,7 @@ export const workspaceUsers = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    timezone: text('time_zone').notNull().default('America/Sao_Paulo'),
+    timezone: text('time_zone').notNull().default(DEFAULT_TIMEZONE),
     isDefault: boolean('is_default').default(false).notNull(),
     role: text('role').notNull(),
     joinedAt: timestamp('joined_at', { withTimezone: true, mode: 'date' })
@@ -134,7 +181,7 @@ export const accounts = pgTable(
     name: text('name').notNull(),
     type: text('type').notNull(),
     balance: bigint('balance', { mode: 'number' }).default(0).notNull(),
-    timezone: text('time_zone').notNull().default('America/Sao_Paulo'),
+    timezone: text('time_zone').notNull().default(DEFAULT_TIMEZONE),
     closingDaysBeforeDue: integer('closing_days_before_due')
       .default(7)
       .notNull(),
@@ -166,12 +213,14 @@ export const categories = pgTable(
     parentId: text('parent_id').references((): AnyPgColumn => categories.id),
   },
   (table) => [
-    uniqueIndex('unq_cat_ws_name_type_parent').on(
-      table.workspaceId,
-      table.name,
-      table.type,
-      table.parentId,
-    ),
+    uniqueIndex('unq_cat_ws_name_type_parent')
+      .on(table.workspaceId, table.name, table.type, table.parentId)
+      .where(sql`${table.workspaceId} IS NOT NULL`),
+    uniqueIndex('unq_cat_sys_name_type_parent')
+      .on(table.name, table.type, table.parentId)
+      .where(
+        sql`${table.workspaceId} IS NULL AND ${table.isSystemCategory} = true`,
+      ),
     index('idx_cat_ws_type').on(table.workspaceId, table.type),
     index('idx_cat_parent').on(table.parentId),
     index('idx_cat_system').on(table.isSystemCategory),
@@ -194,9 +243,7 @@ export const recurringTransactions = pgTable(
       () => accounts.id,
       { onDelete: 'set null' },
     ),
-    categoryId: text('category_id')
-      .references(() => categories.id)
-      .notNull(),
+    categoryId: text('category_id').references(() => categories.id),
     type: text('type').notNull(),
 
     title: text('title').notNull(),
@@ -205,6 +252,7 @@ export const recurringTransactions = pgTable(
 
     frequency: text('frequency').notNull(),
     interval: integer('interval').default(1).notNull(),
+    installmentCount: integer('installment_count'),
 
     startDate: timestamp('start_date', {
       withTimezone: true,
@@ -288,6 +336,35 @@ export const transactions = pgTable(
     ),
     index('idx_trans_destination_account').on(table.destinationAccountId),
     index('idx_trans_installment_group').on(table.installmentGroupId),
+    uniqueIndex('ux_transactions_recurring_date').on(
+      table.recurringId,
+      table.date,
+    ),
+  ],
+);
+
+export const balanceMovements = pgTable(
+  'balance_movements',
+  {
+    seq: bigint('seq', { mode: 'number' })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
+    workspaceId: text('workspace_id').notNull(),
+    accountId: text('account_id').notNull(),
+    transactionId: text('transaction_id'),
+    cause: text('cause').$type<BalanceMovementCause>().notNull(),
+    delta: bigint('delta', { mode: 'number' }).notNull(),
+    balanceAfter: bigint('balance_after', { mode: 'number' }).notNull(),
+    actorId: text('actor_id'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_balance_movements_account_seq').on(table.accountId, table.seq),
+    uniqueIndex('ux_balance_movements_opening')
+      .on(table.accountId)
+      .where(sql`${table.cause} = ${sql.raw(OPENING_CAUSE_LITERAL)}`),
   ],
 );
 

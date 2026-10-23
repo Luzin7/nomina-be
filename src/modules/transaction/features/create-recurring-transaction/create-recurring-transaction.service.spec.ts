@@ -74,11 +74,12 @@ describe('CreateRecurringTransactionService', () => {
       findManyByWorkspaceId: jest.fn(),
       findNeedingGenerationByWorkspaceId: jest.fn(),
       listNeedingGeneration: jest.fn(),
-      createGeneratedTransactions: jest.fn(),
+      createGeneratedTransactions: jest.fn().mockResolvedValue(0),
     } as jest.Mocked<RecurringTransactionRepository>;
 
     accountRepository = {
       create: jest.fn(),
+      createWithOpeningMovement: jest.fn(),
       findByNameAndWorkspaceId: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
@@ -100,7 +101,6 @@ describe('CreateRecurringTransactionService', () => {
       countTransactions: jest.fn(),
       reassignChildren: jest.fn(),
       findManyByIds: jest.fn(),
-      findSystemCategoryByName: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
     dateProvider = {
@@ -248,5 +248,31 @@ describe('CreateRecurringTransactionService', () => {
     if (result.isRight()) {
       expect(result.value.endDate).toEqual(new Date('2099-08-01'));
     }
+  });
+
+  it('should store the installment count for an installment purchase', async () => {
+    arrangeSuccessMocks();
+
+    const result = await service.execute(
+      makeRequest({
+        amount: undefined,
+        totalAmount: 300000n,
+        installments: 3,
+      }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBe(3);
+  });
+
+  it('should leave the installment count empty for a plain recurrence', async () => {
+    arrangeSuccessMocks();
+
+    const result = await service.execute(
+      makeRequest({ endDate: '2099-06-01' }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.installmentCount).toBeNull();
   });
 });

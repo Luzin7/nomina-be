@@ -1,12 +1,15 @@
 import { AccountType, UserRole } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { buildDefaultCategories } from '@modules/category/constants/default-categories';
 import { PlanType } from '@modules/subscription';
 import { User } from '@modules/user/entities/User';
 import { UserRepository } from '@modules/user/repositories/contracts/user.repository';
 import { Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
+import { CategoryMapper } from '../mappers/category.mapper';
 import { UserMapper } from '../mappers/user.mapper';
 import * as schema from '../schema';
+import { insertOpeningMovement } from './opening-movement';
 
 @Injectable()
 export class UserRepositoryImplementation implements UserRepository {
@@ -51,13 +54,28 @@ export class UserRepositoryImplementation implements UserRepository {
         joinedAt: new Date(),
       });
 
+      const accountId = crypto.randomUUID();
       await tx.insert(schema.accounts).values({
-        id: crypto.randomUUID(),
+        id: accountId,
         workspaceId,
         name: 'Carteira',
         type: AccountType.CASH,
         balance: 0,
       });
+      await insertOpeningMovement(tx, {
+        workspaceId,
+        accountId,
+        balance: 0,
+        actorId: user.id,
+      });
+
+      await tx
+        .insert(schema.categories)
+        .values(
+          buildDefaultCategories(workspaceId).map((category) =>
+            CategoryMapper.toDatabase(category),
+          ),
+        );
     });
   }
 

@@ -6,6 +6,7 @@ import { Injectable } from '@nestjs/common';
 import { and, count, eq } from 'drizzle-orm';
 import { WorkspaceUserMapper } from '../mappers/workspace-user.mapper';
 import * as schema from '../schema';
+import { ensureEntityId } from './ensure-entity-id';
 
 @Injectable()
 export class WorkspaceUserRepositoryImplementation implements WorkspaceUserRepository {
@@ -101,7 +102,7 @@ export class WorkspaceUserRepositoryImplementation implements WorkspaceUserRepos
     const [createdWorkspaceUser] = await this.drizzle.db
       .insert(schema.workspaceUsers)
       .values({
-        id: workspaceUser.id,
+        id: ensureEntityId(workspaceUser),
         userId: workspaceUser.userId,
         workspaceId: workspaceUser.workspaceId,
         role: workspaceUser.role,

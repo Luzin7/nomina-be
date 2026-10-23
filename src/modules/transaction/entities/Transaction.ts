@@ -14,6 +14,18 @@ import {
   TypeRequiredError,
 } from '../errors';
 
+export type BalanceEffectKind = 'expense' | 'income';
+
+export interface TransactionBalanceEffect {
+  accountId: string;
+  amount: bigint;
+  kind: BalanceEffectKind;
+}
+
+function invertKind(kind: BalanceEffectKind): BalanceEffectKind {
+  return kind === 'expense' ? 'income' : 'expense';
+}
+
 export interface TransactionProps {
   workspaceId: string;
   accountId: string;
@@ -270,5 +282,71 @@ export class Transaction extends AggregateRoot<TransactionProps> {
     this.props.status = TransactionStatus.PENDING;
     this.touch();
     return right(undefined);
+  }
+
+  /**
+   * Efeito de saldo de sair de um status e entrar no atual. Quem já confirmou a
+   * transição informa o status anterior e recebe a variação das contas.
+   */
+  public balanceEffectsFrom(
+    previousStatus: TransactionStatus,
+  ): TransactionBalanceEffect[] {
+    const previous = Transaction.restore(
+      { ...this.props, status: previousStatus },
+      this.id,
+    );
+
+    return [...previous.revertedBalanceEffects(), ...this.balanceEffects()];
+  }
+
+  /**
+   * Efeito que uma transação concluída provoca nas contas envolvidas. Quem
+   * persiste aplica cada efeito no saldo da conta, sem recalcular o valor: a
+   * direção (débito/crédito) é regra desta transação, o quanto cada conta muda
+   * é regra da conta.
+   */
+  public balanceEffects(): TransactionBalanceEffect[] {
+    return this.resolveBalanceEffects(false);
+  }
+
+  /**
+   * Efeito inverso, usado para desfazer uma transação já concluída.
+   */
+  public revertedBalanceEffects(): TransactionBalanceEffect[] {
+    return this.resolveBalanceEffects(true);
+  }
+
+  private resolveBalanceEffects(reverted: boolean): TransactionBalanceEffect[] {
+    if (this.props.status !== TransactionStatus.COMPLETED) return [];
+
+    const sourceKind: BalanceEffectKind =
+      this.props.type === TransactionType.INCOME ? 'income' : 'expense';
+
+    const effects = [
+      this.buildEffect(this.props.accountId, sourceKind, reverted),
+    ];
+
+    if (
+      this.props.type === TransactionType.TRANSFER &&
+      this.props.destinationAccountId
+    ) {
+      effects.push(
+        this.buildEffect(this.props.destinationAccountId, 'income', reverted),
+      );
+    }
+
+    return effects;
+  }
+
+  private buildEffect(
+    accountId: string,
+    kind: BalanceEffectKind,
+    reverted: boolean,
+  ): TransactionBalanceEffect {
+    return {
+      accountId,
+      amount: this.props.amount,
+      kind: reverted ? invertKind(kind) : kind,
+    };
   }
 }

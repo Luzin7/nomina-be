@@ -16,6 +16,7 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 
 import { CategoryNotFoundError } from '@modules/category/errors';
+import { AccountNotFoundError } from '@modules/account/errors';
 import {
   CreditCardTransferNotAllowedError,
   DestinationAccountRequiredForTransferError,
@@ -43,7 +44,7 @@ export class CreateTransactionService implements Service<
   async execute(request: Request): Promise<Either<Error, Transaction>> {
     const accountsResult = await this.validateAndFetchAccounts(request);
     if (accountsResult.isLeft()) return left(accountsResult.value);
-    const { account, destinationAccount } = accountsResult.value;
+    const { account } = accountsResult.value;
 
     const categoryResult = await this.resolveCategoryId(request);
     if (categoryResult.isLeft()) return left(categoryResult.value);
@@ -71,22 +72,12 @@ export class CreateTransactionService implements Service<
     if (transactionOrError.isLeft()) return left(transactionOrError.value);
     const transaction = transactionOrError.value;
 
-    if (resolvedStatus === TransactionStatus.COMPLETED) {
-      const mutationResult = this.applyFinancialMutations(
-        account,
-        destinationAccount,
-        request.type,
-        request.amount,
-      );
-      if (mutationResult.isLeft()) return left(mutationResult.value);
-    }
-
-    await this.persistTransaction(
+    const persisted = await this.transactionRepository.createWithBalanceUpdate(
       transaction,
-      account,
-      destinationAccount,
-      request.type,
+      (lockedAccounts) => this.applyBalanceEffects(lockedAccounts, transaction),
+      { actorId: request.sub },
     );
+    if (persisted.isLeft()) return left(persisted.value);
 
     await this.redisService.delByPattern(`report:*:${request.workspaceId}:*`);
 
@@ -167,10 +158,59 @@ export class CreateTransactionService implements Service<
     return { transactionDate, resolvedStatus };
   }
 
-  private applyFinancialMutations(
+  /**
+   * Aplica o efeito da transação nas contas travadas pelo repositório e devolve
+   * a variação de saldo de cada uma. A conta calcula o novo saldo; aqui só
+   * medimos a diferença antes/depois, sem repetir a aritmética da regra.
+   */
+  private applyBalanceEffects(
+    lockedAccounts: Map<string, AnyAccount>,
+    transaction: Transaction,
+  ): Either<Error, Map<string, bigint>> {
+    if (transaction.status !== TransactionStatus.COMPLETED) {
+      return right(new Map());
+    }
+
+    const account = lockedAccounts.get(transaction.accountId);
+    if (!account) {
+      return left(new AccountNotFoundError('Conta não encontrada.'));
+    }
+
+    const destinationAccount = transaction.destinationAccountId
+      ? lockedAccounts.get(transaction.destinationAccountId)
+      : null;
+    if (transaction.destinationAccountId && !destinationAccount) {
+      return left(new AccountNotFoundError('Conta não encontrada.'));
+    }
+
+    const balancesBefore = new Map<string, bigint>([
+      [account.id, account.balance],
+    ]);
+    if (destinationAccount) {
+      balancesBefore.set(destinationAccount.id, destinationAccount.balance);
+    }
+
+    const mutationResult = this.applyEffects(
+      account,
+      destinationAccount ?? null,
+      transaction.type,
+      transaction.amount,
+    );
+    if (mutationResult.isLeft()) return left(mutationResult.value);
+
+    const deltas = new Map<string, bigint>();
+    for (const [accountId, balanceBefore] of balancesBefore) {
+      const affected = lockedAccounts.get(accountId);
+      if (affected) deltas.set(accountId, affected.balance - balanceBefore);
+    }
+
+    return right(deltas);
+  }
+
+  private applyEffects(
     account: AnyAccount,
     destinationAccount: AnyAccount | null,
-    type: TransactionType,
+    type: keyof typeof TransactionType,
     amount: bigint,
   ): Either<Error, void> {
     if (type === 'EXPENSE') {
@@ -189,25 +229,5 @@ export class CreateTransactionService implements Service<
     }
 
     return right(undefined);
-  }
-
-  private async persistTransaction(
-    transaction: Transaction,
-    account: AnyAccount,
-    destinationAccount: AnyAccount | null,
-    type: TransactionType,
-  ): Promise<void> {
-    if (type === 'TRANSFER' && destinationAccount) {
-      await this.transactionRepository.createWithBalanceUpdate(
-        transaction,
-        Number(account.balance),
-        Number(destinationAccount.balance),
-      );
-    } else {
-      await this.transactionRepository.createWithBalanceUpdate(
-        transaction,
-        Number(account.balance),
-      );
-    }
   }
 }

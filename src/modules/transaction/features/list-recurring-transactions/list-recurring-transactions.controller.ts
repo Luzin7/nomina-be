@@ -1,3 +1,4 @@
+import { RecurringKind } from '@constants/enums';
 import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
 import { RecurringTransactionPresenter } from '@modules/transaction/presenters/RecurringTransaction.presenter';
 import { Controller, Get, HttpCode, Query } from '@nestjs/common';
@@ -26,10 +27,16 @@ export class ListRecurringTransactionsController {
     type: Boolean,
     example: false,
   })
+  @ApiQuery({
+    name: 'kind',
+    required: false,
+    enum: RecurringKind,
+    example: RecurringKind.INSTALLMENT,
+  })
   async handle(
     @CurrentLoggedUser() { sub, workspaceId }: TokenPayloadSchema,
     @Query(ListRecurringTransactionsPipe)
-    { page, pageSize, activeOnly }: ListRecurringTransactionsRequest,
+    { page, pageSize, activeOnly, kind }: ListRecurringTransactionsRequest,
   ) {
     const data = await this.service.execute({
       page,
@@ -37,6 +44,7 @@ export class ListRecurringTransactionsController {
       sub,
       workspaceId,
       activeOnly,
+      kind,
     });
 
     if (data.isLeft()) {

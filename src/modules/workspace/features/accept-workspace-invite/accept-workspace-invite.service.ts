@@ -1,7 +1,9 @@
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import {
   ConflictWorkspaceUserError,
+  InviteAlreadyUsedError,
   InviteExpiredError,
+  InviteNotFoundError,
 } from '@modules/workspace/errors';
 import { WorkspaceInviteRepository } from '@modules/workspace/repositories/contracts/WorkspaceInviteRepository';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
@@ -25,18 +27,19 @@ export class AcceptWorkspaceInviteService implements Service<
   ) {}
 
   async execute({ code, sub }: Request): Promise<Either<Error, WorkspaceUser>> {
-    const invite = await this.workspaceInviteRepository.findByCode(code);
+    const invite = await this.workspaceInviteRepository.findByCode(
+      code.trim().toUpperCase(),
+    );
 
     if (!invite) {
-      return left(new InviteExpiredError());
-    }
-
-    const now = new Date();
-    if (invite.expiresAt < now) {
-      return left(new InviteExpiredError());
+      return left(new InviteNotFoundError());
     }
 
     if (invite.usedAt !== null) {
+      return left(new InviteAlreadyUsedError());
+    }
+
+    if (invite.expiresAt < new Date()) {
       return left(new InviteExpiredError());
     }
 
@@ -64,9 +67,18 @@ export class AcceptWorkspaceInviteService implements Service<
 
     const workspaceUser = workspaceUserOrError.value;
 
-    await this.workspaceUserRepository.addUserToWorkspace(workspaceUser);
+    const outcome = await this.workspaceInviteRepository.accept(
+      invite,
+      workspaceUser,
+    );
 
-    await this.workspaceInviteRepository.markAsUsed(invite.id, sub);
+    if (outcome === 'already_used') {
+      return left(new InviteAlreadyUsedError());
+    }
+
+    if (outcome === 'already_member') {
+      return left(new ConflictWorkspaceUserError());
+    }
 
     return right(workspaceUser);
   }

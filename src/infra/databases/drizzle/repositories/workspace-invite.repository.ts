@@ -1,10 +1,15 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
 import { WorkspaceInvite } from '@modules/workspace/entities/WorkspaceInvite';
-import { WorkspaceInviteRepository } from '@modules/workspace/repositories/contracts/WorkspaceInviteRepository';
+import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
+import {
+  AcceptInviteOutcome,
+  WorkspaceInviteRepository,
+} from '@modules/workspace/repositories/contracts/WorkspaceInviteRepository';
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, TransactionRollbackError } from 'drizzle-orm';
 import { WorkspaceInviteMapper } from '../mappers/workspace-invite.mapper';
+import { ensureEntityId } from './ensure-entity-id';
 
 @Injectable()
 export class WorkspaceInviteRepositoryImplementation implements WorkspaceInviteRepository {
@@ -30,13 +35,52 @@ export class WorkspaceInviteRepositoryImplementation implements WorkspaceInviteR
     return WorkspaceInviteMapper.toDomain(rawInvite);
   }
 
-  async markAsUsed(id: string, usedByUserId: string): Promise<void> {
-    await this.drizzle.db
-      .update(schema.workspaceInvites)
-      .set({
-        usedAt: new Date(),
-        usedBy: usedByUserId,
-      })
-      .where(eq(schema.workspaceInvites.id, id));
+  async accept(
+    invite: WorkspaceInvite,
+    workspaceUser: WorkspaceUser,
+  ): Promise<AcceptInviteOutcome> {
+    try {
+      return await this.claimAndInsert(invite, workspaceUser);
+    } catch (error) {
+      if (error instanceof TransactionRollbackError) return 'already_member';
+      throw error;
+    }
+  }
+
+  private claimAndInsert(
+    invite: WorkspaceInvite,
+    workspaceUser: WorkspaceUser,
+  ): Promise<AcceptInviteOutcome> {
+    return this.drizzle.db.transaction(async (tx) => {
+      const claimed = await tx
+        .update(schema.workspaceInvites)
+        .set({ usedAt: new Date(), usedBy: workspaceUser.userId })
+        .where(
+          and(
+            eq(schema.workspaceInvites.id, invite.id),
+            isNull(schema.workspaceInvites.usedAt),
+          ),
+        )
+        .returning({ id: schema.workspaceInvites.id });
+
+      if (claimed.length === 0) return 'already_used';
+
+      const inserted = await tx
+        .insert(schema.workspaceUsers)
+        .values({
+          id: ensureEntityId(workspaceUser),
+          userId: workspaceUser.userId,
+          workspaceId: workspaceUser.workspaceId,
+          role: workspaceUser.role,
+          isDefault: workspaceUser.isDefault,
+          joinedAt: workspaceUser.joinedAt,
+        })
+        .onConflictDoNothing()
+        .returning({ id: schema.workspaceUsers.id });
+
+      if (inserted.length > 0) return 'accepted';
+
+      return tx.rollback();
+    });
   }
 }

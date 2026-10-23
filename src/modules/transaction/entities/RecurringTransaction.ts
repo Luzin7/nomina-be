@@ -8,6 +8,7 @@ import {
   InvalidRecurrenceIntervalError,
   InvalidTransferError,
   MissingCategoryError,
+  SourceAndDestinationAccountMustBeDifferentError,
 } from '../errors';
 
 export interface RecurringTransactionProps {
@@ -20,6 +21,7 @@ export interface RecurringTransactionProps {
   amount: bigint;
   frequency: RecurrenceFrequency;
   interval: number;
+  installmentCount: number | null;
   startDate: Date;
   endDate: Date | null;
   lastGenerated: Date | null;
@@ -36,6 +38,7 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     props: Optional<
       RecurringTransactionProps,
       | 'interval'
+      | 'installmentCount'
       | 'endDate'
       | 'lastGenerated'
       | 'active'
@@ -75,6 +78,7 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
       description: props.description ?? null,
       categoryId: props.categoryId,
       interval: props.interval ?? 1,
+      installmentCount: props.installmentCount ?? null,
       endDate: props.endDate ?? null,
       lastGenerated: props.lastGenerated ?? null,
       active: props.active ?? true,
@@ -128,6 +132,10 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
 
   get interval(): number {
     return this.props.interval;
+  }
+
+  get installmentCount(): number | null {
+    return this.props.installmentCount;
   }
 
   get startDate(): Date {
@@ -185,6 +193,26 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     return right(undefined);
   }
 
+  public changeInstallmentCount(installmentCount: number | null): void {
+    this.props.installmentCount = installmentCount;
+  }
+
+  public clearLastGenerated(): void {
+    this.props.lastGenerated = null;
+  }
+
+  public changeAccount(accountId: string): Either<Error, void> {
+    if (
+      this.props.type === 'TRANSFER' &&
+      accountId === this.props.destinationAccountId
+    ) {
+      return left(new SourceAndDestinationAccountMustBeDifferentError());
+    }
+
+    this.props.accountId = accountId;
+    return right(undefined);
+  }
+
   public convertToTransfer(destinationAccountId: string): Either<Error, void> {
     if (!destinationAccountId)
       return left(new InvalidTransferError('Conta destino é obrigatória.'));
@@ -203,8 +231,8 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     this.props.destinationAccountId = null;
   }
 
-  public markAsGenerated(generationDate: Date): void {
-    this.props.lastGenerated = generationDate;
+  public markAsGenerated(occurrenceDate: Date): void {
+    this.props.lastGenerated = occurrenceDate;
   }
 
   public deactivate(): void {

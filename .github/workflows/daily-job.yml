@@ -11,8 +11,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Run daily task
+      - name: Generate recurring transactions
         run: |
-          curl -X POST \
+          curl -fsS --max-time 40 -X POST \
             -H "x-api-key: ${{ secrets.CRON_API_KEY }}" \
             https://nomina-be-qico.onrender.com/api/v1/internal/generate-recurring-transactions
+
+      - name: Settle card installments
+        run: |
+          curl -fsS --max-time 40 -X POST \
+            -H "x-api-key: ${{ secrets.CRON_API_KEY }}" \
+            https://nomina-be-qico.onrender.com/api/v1/internal/settle-card-installments
+
+      - name: Reconcile balances
+        if: always()
+        run: |
+          curl -fsS --max-time 40 -X POST \
+            -H "x-api-key: ${{ secrets.CRON_API_KEY }}" \
+            https://nomina-be-qico.onrender.com/api/v1/internal/reconcile-balances

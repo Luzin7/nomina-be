@@ -130,4 +130,33 @@ describe('Transaction entity', () => {
       expect(tx.status).toBe(TransactionStatus.PENDING);
     });
   });
+
+  describe('balanceEffectsFrom()', () => {
+    function makeTx(status: TransactionStatus) {
+      const result = Transaction.create(
+        makeProps({
+          date: status === TransactionStatus.PENDING ? futureDate : pastDate,
+          status,
+        }),
+      );
+      if (result.isLeft()) throw result.value;
+      return result.value;
+    }
+
+    it('should charge the account when leaving PENDING', () => {
+      const tx = makeTx(TransactionStatus.COMPLETED);
+
+      expect(tx.balanceEffectsFrom(TransactionStatus.PENDING)).toEqual([
+        { accountId: 'account-1', amount: 5000n, kind: 'expense' },
+      ]);
+    });
+
+    it('should refund the account when leaving COMPLETED', () => {
+      const tx = makeTx(TransactionStatus.PENDING);
+
+      expect(tx.balanceEffectsFrom(TransactionStatus.COMPLETED)).toEqual([
+        { accountId: 'account-1', amount: 5000n, kind: 'income' },
+      ]);
+    });
+  });
 });

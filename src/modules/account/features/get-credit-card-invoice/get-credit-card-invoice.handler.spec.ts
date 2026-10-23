@@ -52,6 +52,7 @@ describe('GetCreditCardInvoiceService', () => {
     accountRepository = {
       findByNameAndWorkspaceId: jest.fn(),
       create: jest.fn(),
+      createWithOpeningMovement: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -67,10 +68,12 @@ describe('GetCreditCardInvoiceService', () => {
       getTopExpensesByCategory: jest.fn(),
       sumTransactionsByDateRange: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
-      updateWithBalanceUpdate: jest.fn(),
-      deleteWithBalanceReversion: jest.fn(),
-      toggleStatusWithBalanceUpdate: jest.fn(),
+      createInstallmentPlan: jest.fn(),
+      updateWithBalanceEffect: jest.fn(),
+      deleteWithBalanceEffect: jest.fn(),
+      updateStatusWithBalanceEffect: jest.fn(),
       findCreditCardLedger: jest.fn().mockResolvedValue([]),
+      findDueCardTransactions: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
     dateProvider = new DayJsDateProvider();

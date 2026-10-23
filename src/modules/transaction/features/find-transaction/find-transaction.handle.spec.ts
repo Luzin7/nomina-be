@@ -39,10 +39,12 @@ describe('FindTransactionByIdService', () => {
       getTopExpensesByCategory: jest.fn(),
       sumTransactionsByDateRange: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
-      updateWithBalanceUpdate: jest.fn(),
-      deleteWithBalanceReversion: jest.fn(),
-      toggleStatusWithBalanceUpdate: jest.fn(),
+      createInstallmentPlan: jest.fn(),
+      updateWithBalanceEffect: jest.fn(),
+      deleteWithBalanceEffect: jest.fn(),
+      updateStatusWithBalanceEffect: jest.fn(),
       findCreditCardLedger: jest.fn(),
+      findDueCardTransactions: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
     service = new FindTransactionByIdService(transactionRepository);

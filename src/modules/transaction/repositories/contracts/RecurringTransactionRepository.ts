@@ -1,5 +1,14 @@
+import { RecurringKind } from '@constants/enums';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { Transaction } from '@modules/transaction/entities/Transaction';
+
+export type FindManyRecurringByWorkspaceQuery = {
+  workspaceId: string;
+  page: number;
+  pageSize: number;
+  isActive?: boolean;
+  kind?: RecurringKind;
+};
 
 export abstract class RecurringTransactionRepository {
   abstract create(
@@ -15,10 +24,7 @@ export abstract class RecurringTransactionRepository {
   abstract findById(id: string): Promise<RecurringTransaction | null>;
 
   abstract findManyByWorkspaceId(
-    workspaceId: string,
-    page: number,
-    pageSize: number,
-    isActive?: boolean,
+    query: FindManyRecurringByWorkspaceQuery,
   ): Promise<{ recurrings: RecurringTransaction[]; total: number }>;
 
   abstract findNeedingGenerationByWorkspaceId(
@@ -29,11 +35,11 @@ export abstract class RecurringTransactionRepository {
   abstract listNeedingGeneration(
     referenceDate: Date,
     limit: number,
-    offset: number,
+    afterId: string | null,
   ): Promise<RecurringTransaction[]>;
 
   abstract createGeneratedTransactions(
     transactions: Transaction[],
     updatedRecurring: RecurringTransaction,
-  ): Promise<void>;
+  ): Promise<number>;
 }

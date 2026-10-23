@@ -24,6 +24,12 @@ type Request = UpdateTransactionRequest & {
   transactionId: string;
 } & TokenPayloadBase;
 
+interface ResolvedEdit {
+  categoryId: string;
+  date: Date;
+  status: TransactionStatus;
+}
+
 @Injectable()
 export class UpdateTransactionService implements Service<
   Request,
@@ -48,64 +54,89 @@ export class UpdateTransactionService implements Service<
 
     const accountsResult = await this.fetchInvolvedAccounts(currentTx, request);
     if (accountsResult.isLeft()) return left(accountsResult.value);
-    const accountsMap = accountsResult.value;
 
-    let categoryId = request.categoryId;
+    const categoryId = await this.resolveCategoryId(request);
+    if (categoryId.isLeft()) return left(categoryId.value);
 
-    if (categoryId) {
-      const catError = await this.validateCategory(
-        categoryId,
-        request.workspaceId,
+    const resolvedEdit = this.resolveEdit(
+      request,
+      categoryId.value,
+      accountsResult.value.get(request.accountId)!,
+    );
+
+    const updateResult =
+      await this.transactionRepository.updateWithBalanceEffect(
+        request.transactionId,
+        (current) =>
+          this.buildUpdatedTransaction(current, request, resolvedEdit),
+        { actorId: request.sub },
       );
-      if (catError) return left(catError);
-    } else {
-      // Transferência: o backend atribui a categoria de sistema, o usuário não
-      // escolhe. Ver create-transaction.service.ts.
-      categoryId = SYSTEM_CATEGORY.TRANSFER.id;
-    }
-
-    const newSourceAccount = accountsMap.get(request.accountId)!;
-    const resolvedDate = this.dateProvider.startOfDay(
-      request.date,
-      newSourceAccount.timezone,
-    );
-    const today = this.dateProvider.startOfDay(
-      this.dateProvider.now(),
-      newSourceAccount.timezone,
-    );
-    const resolvedStatus =
-      resolvedDate > today ? TransactionStatus.PENDING : request.status;
-
-    const newTxOrError = Transaction.create(
-      {
-        ...request,
-        workspaceId: request.workspaceId,
-        date: resolvedDate,
-        status: resolvedStatus,
-        destinationAccountId: request.destinationAccountId ?? null,
-        categoryId,
-        description: request.description ?? null,
-        recurringId: currentTx.recurringId,
-        createdAt: currentTx.createdAt,
-        updatedAt: new Date(),
-      },
-      currentTx.id,
-    );
-
-    if (newTxOrError.isLeft()) return left(newTxOrError.value);
-    const newTx = newTxOrError.value;
-
-    const revertResult = this.revertMutations(currentTx, accountsMap);
-    if (revertResult.isLeft()) return left(revertResult.value);
-
-    const applyResult = this.applyMutations(newTx, accountsMap);
-    if (applyResult.isLeft()) return left(applyResult.value);
-
-    await this.persistChanges(currentTx, newTx, accountsMap);
+    if (updateResult.isLeft()) return left(updateResult.value);
 
     await this.redisService.delByPattern(`report:*:${request.workspaceId}:*`);
 
-    return right(newTx);
+    return right(updateResult.value);
+  }
+
+  /**
+   * Transferência: o backend atribui a categoria de sistema, o usuário não
+   * escolhe. Ver create-transaction.service.ts.
+   */
+  private async resolveCategoryId(
+    request: Request,
+  ): Promise<Either<Error, string>> {
+    if (!request.categoryId) return right(SYSTEM_CATEGORY.TRANSFER.id);
+
+    const categoryError = await this.validateCategory(
+      request.categoryId,
+      request.workspaceId,
+    );
+    if (categoryError) return left(categoryError);
+
+    return right(request.categoryId);
+  }
+
+  private resolveEdit(
+    request: Request,
+    categoryId: string,
+    sourceAccount: AnyAccount,
+  ): ResolvedEdit {
+    const date = this.dateProvider.startOfDay(
+      request.date,
+      sourceAccount.timezone,
+    );
+    const today = this.dateProvider.startOfDay(
+      this.dateProvider.now(),
+      sourceAccount.timezone,
+    );
+
+    return {
+      categoryId,
+      date,
+      status: date > today ? TransactionStatus.PENDING : request.status,
+    };
+  }
+
+  private buildUpdatedTransaction(
+    current: Transaction,
+    request: Request,
+    edit: ResolvedEdit,
+  ): Either<Error, Transaction> {
+    return Transaction.create(
+      {
+        ...request,
+        workspaceId: request.workspaceId,
+        date: edit.date,
+        status: edit.status,
+        destinationAccountId: request.destinationAccountId ?? null,
+        categoryId: edit.categoryId,
+        description: request.description ?? null,
+        recurringId: current.recurringId,
+        createdAt: current.createdAt,
+        updatedAt: new Date(),
+      },
+      current.id,
+    );
   }
 
   private async fetchInvolvedAccounts(
@@ -154,105 +185,5 @@ export class UpdateTransactionService implements Service<
       return new UnauthorizedError('Categoria inválida.');
     }
     return null;
-  }
-
-  private revertMutations(
-    tx: Transaction,
-    accounts: Map<string, AnyAccount>,
-  ): Either<Error, void> {
-    if (tx.status !== TransactionStatus.COMPLETED) return right(undefined);
-
-    const acc = accounts.get(tx.accountId)!;
-    const dest = tx.destinationAccountId
-      ? accounts.get(tx.destinationAccountId)
-      : null;
-
-    if (tx.type === 'EXPENSE')
-      return acc instanceof CreditCard
-        ? acc.payInvoice(tx.amount)
-        : acc.credit(tx.amount);
-    if (tx.type === 'INCOME')
-      return acc instanceof CreditCard
-        ? acc.registerCharge(tx.amount)
-        : acc.debit(tx.amount);
-    if (tx.type === 'TRANSFER' && dest) {
-      const creditRes =
-        acc instanceof CreditCard
-          ? acc.payInvoice(tx.amount)
-          : acc.credit(tx.amount);
-      if (creditRes.isLeft()) return creditRes;
-      return dest instanceof CreditCard
-        ? dest.registerCharge(tx.amount)
-        : dest.debit(tx.amount);
-    }
-    return right(undefined);
-  }
-
-  private applyMutations(
-    tx: Transaction,
-    accounts: Map<string, AnyAccount>,
-  ): Either<Error, void> {
-    if (tx.status !== TransactionStatus.COMPLETED) return right(undefined);
-
-    const acc = accounts.get(tx.accountId)!;
-    const dest = tx.destinationAccountId
-      ? accounts.get(tx.destinationAccountId)
-      : null;
-
-    if (tx.type === 'EXPENSE')
-      return acc instanceof CreditCard
-        ? acc.registerCharge(tx.amount)
-        : acc.debit(tx.amount);
-    if (tx.type === 'INCOME')
-      return acc instanceof CreditCard
-        ? acc.payInvoice(tx.amount)
-        : acc.credit(tx.amount);
-    if (tx.type === 'TRANSFER' && dest) {
-      const debitRes =
-        acc instanceof CreditCard
-          ? acc.registerCharge(tx.amount)
-          : acc.debit(tx.amount);
-      if (debitRes.isLeft()) return debitRes;
-      return dest instanceof CreditCard
-        ? dest.payInvoice(tx.amount)
-        : dest.credit(tx.amount);
-    }
-    return right(undefined);
-  }
-
-  private async persistChanges(
-    oldTx: Transaction,
-    newTx: Transaction,
-    accounts: Map<string, AnyAccount>,
-  ): Promise<void> {
-    const sourceNewBalance = Number(accounts.get(newTx.accountId)!.balance);
-    const destNewBalance = newTx.destinationAccountId
-      ? Number(accounts.get(newTx.destinationAccountId)!.balance)
-      : undefined;
-
-    const oldSourceId =
-      oldTx.accountId === newTx.accountId ? undefined : oldTx.accountId;
-    const oldSourceNewBalance = oldSourceId
-      ? Number(accounts.get(oldSourceId)!.balance)
-      : undefined;
-
-    const oldDestId =
-      oldTx.destinationAccountId &&
-      oldTx.destinationAccountId !== newTx.destinationAccountId
-        ? oldTx.destinationAccountId
-        : null;
-    const oldDestNewBalance = oldDestId
-      ? Number(accounts.get(oldDestId)!.balance)
-      : undefined;
-
-    await this.transactionRepository.updateWithBalanceUpdate(
-      newTx,
-      sourceNewBalance,
-      destNewBalance,
-      oldDestId,
-      oldDestNewBalance,
-      oldSourceId,
-      oldSourceNewBalance,
-    );
   }
 }

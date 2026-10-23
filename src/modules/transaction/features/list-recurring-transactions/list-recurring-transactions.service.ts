@@ -28,14 +28,16 @@ export class ListRecurringTransactionsService implements Service<
     page,
     pageSize,
     activeOnly,
+    kind,
   }: Request): Promise<Either<never, Response>> {
     const { recurrings, total } =
-      await this.recurringRepository.findManyByWorkspaceId(
+      await this.recurringRepository.findManyByWorkspaceId({
         workspaceId,
         page,
         pageSize,
-        activeOnly,
-      );
+        isActive: activeOnly,
+        kind,
+      });
 
     return right({ recurrings, total });
   }

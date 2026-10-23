@@ -3,6 +3,7 @@ import { CategoryRepository } from '@modules/category/repositories/contracts/Cat
 import { SubscriptionRepository } from '@modules/subscription/repositories/contracts/SubscriptionRepository';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { AuthSessionsRepository } from '@modules/user/repositories/contracts/auth-session.repository';
 import { RefreshTokensRepository } from '@modules/user/repositories/contracts/refresh-token.repository';
 import { UserRepository } from '@modules/user/repositories/contracts/user.repository';
 import { WorkspaceInviteRepository } from '@modules/workspace/repositories/contracts/WorkspaceInviteRepository';
@@ -15,6 +16,7 @@ import {
 } from './drizzle/drizzle.provider';
 import { DrizzleService } from './drizzle/drizzle.service';
 import { AccountRepositoryImplementation } from './drizzle/repositories/account.repository';
+import { AuthSessionRepositoryImplementation } from './drizzle/repositories/auth-session.repository';
 import { CategoryRepositoryImplementation } from './drizzle/repositories/category.repository';
 import { RecurringTransactionRepositoryImplementation } from './drizzle/repositories/recurring-transaction.repository';
 import { RefreshTokenRepositoryImplementation } from './drizzle/repositories/refresh-token.repository';
@@ -51,6 +53,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: RefreshTokenRepositoryImplementation,
     },
     {
+      provide: AuthSessionsRepository,
+      useClass: AuthSessionRepositoryImplementation,
+    },
+    {
       provide: TransactionRepository,
       useClass: TransactionRepositoryImplementation,
     },
@@ -78,6 +84,7 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     WorkspaceUserRepository,
     WorkspaceInviteRepository,
     RefreshTokensRepository,
+    AuthSessionsRepository,
     TransactionRepository,
     RecurringTransactionRepository,
     AccountRepository,

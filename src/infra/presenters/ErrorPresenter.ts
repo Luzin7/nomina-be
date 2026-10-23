@@ -1,15 +1,21 @@
 import {
   ConflictException,
+  ForbiddenException,
+  GoneException,
   HttpException,
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
   BusinessRuleDomainError,
   ConflictDomainError,
+  ForbiddenDomainError,
+  GoneDomainError,
   NotFoundDomainError,
+  UnauthorizedDomainError,
 } from '@shared/core/errors/DomainError';
 
 export class ErrorPresenter {
@@ -20,12 +26,24 @@ export class ErrorPresenter {
       throw new NotFoundException(error.message);
     }
 
+    if (error instanceof GoneDomainError) {
+      throw new GoneException(error.message);
+    }
+
     if (error instanceof ConflictDomainError) {
       throw new ConflictException(error.message);
     }
 
     if (error instanceof BusinessRuleDomainError) {
       throw new UnprocessableEntityException(error.message);
+    }
+
+    if (error instanceof UnauthorizedDomainError) {
+      throw new UnauthorizedException(error.message);
+    }
+
+    if (error instanceof ForbiddenDomainError) {
+      throw new ForbiddenException(error.message);
     }
 
     if (error instanceof HttpException) {

@@ -48,8 +48,41 @@ jobs:
           fi
           echo "Build successful - dist directory created"
 
-  release:
+  migrate:
     needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check required secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::O secret DATABASE_URL não está configurado neste repositório."
+            exit 1
+          fi
+
+      - name: Run database migrations
+        run: npx drizzle-kit migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ALLOW_PROD_MIGRATE: '1'
+
+  release:
+    needs: [verify, migrate]
     runs-on: ubuntu-latest
 
     steps:
@@ -102,6 +135,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Print deployable digest
+      - name: Deploy image to Render
         if: steps.release.outputs.version != ''
-        run: echo "Deploy ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}"
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          IMAGE: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::O secret RENDER_DEPLOY_HOOK_URL não está configurado neste repositório."
+            exit 1
+          fi
+          image_url=$(jq -rn --arg image "$IMAGE" '$image | @uri')
+          curl -fsS --max-time 30 --retry 2 -X POST "${RENDER_DEPLOY_HOOK_URL}&imgURL=${image_url}" > /dev/null
+          echo "Deploy disparado no Render: $IMAGE"

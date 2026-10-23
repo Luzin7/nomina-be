@@ -40,6 +40,14 @@ describe('RecurringTransaction entity', () => {
       expect(tx.lastGenerated).toBeNull();
     });
 
+    it('should default installmentCount to null', () => {
+      expect(makeTx().installmentCount).toBeNull();
+    });
+
+    it('should keep the given installmentCount', () => {
+      expect(makeTx({ installmentCount: 12 }).installmentCount).toBe(12);
+    });
+
     it('should reject zero amount', () => {
       expect(
         RecurringTransaction.create(makeProps({ amount: 0n })).isLeft(),
@@ -149,6 +157,29 @@ describe('RecurringTransaction entity', () => {
           .updateSchedule(END_DATE, START_DATE, RecurrenceFrequency.MONTHLY, 1)
           .isLeft(),
       ).toBe(true);
+    });
+  });
+
+  describe('changeAccount()', () => {
+    it('should move the recurring to another account', () => {
+      const tx = makeTx();
+      const result = tx.changeAccount('acc-2');
+      expect(result.isRight()).toBe(true);
+      expect(tx.accountId).toBe('acc-2');
+    });
+
+    it('should reject a transfer whose destination would become the source', () => {
+      const tx = makeTx({ type: 'TRANSFER', destinationAccountId: 'acc-2' });
+      expect(tx.changeAccount('acc-2').isLeft()).toBe(true);
+    });
+  });
+
+  describe('clearLastGenerated()', () => {
+    it('should reset the generation anchor', () => {
+      const tx = makeTx();
+      tx.markAsGenerated(new Date('2024-02-01'));
+      tx.clearLastGenerated();
+      expect(tx.lastGenerated).toBeNull();
     });
   });
 

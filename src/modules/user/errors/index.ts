@@ -47,3 +47,33 @@ export class PasswordTooWeakError extends BusinessRuleDomainError {
     );
   }
 }
+
+export class InvalidUserAgentError extends BusinessRuleDomainError {
+  constructor() {
+    super('O agente do usuário é inválido');
+  }
+}
+
+export class MissingUserIdError extends BusinessRuleDomainError {
+  constructor() {
+    super('O usuário é obrigatório');
+  }
+}
+
+export class MissingAuthSessionError extends BusinessRuleDomainError {
+  constructor() {
+    super('A sessão é obrigatória');
+  }
+}
+
+export class MissingRefreshTokenHashError extends BusinessRuleDomainError {
+  constructor() {
+    super('O hash do token é obrigatório');
+  }
+}
+
+export class InvalidExpirationDateError extends BusinessRuleDomainError {
+  constructor() {
+    super('A data de expiração é inválida');
+  }
+}

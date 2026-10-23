@@ -1,12 +1,15 @@
 import { AccountType, UserRole } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { Category } from '@modules/category/entities/Category';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { Injectable } from '@nestjs/common';
 import { and, count, eq } from 'drizzle-orm';
+import { CategoryMapper } from '../mappers/category.mapper';
 import { WorkspaceMapper } from '../mappers/workspace.mapper';
 import * as schema from '../schema';
+import { insertOpeningMovement } from './opening-movement';
 
 @Injectable()
 export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
@@ -29,6 +32,7 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
   async createWithOwnerAndAccount(
     workspace: Workspace,
     owner: WorkspaceUser,
+    categories: Category[],
   ): Promise<void> {
     await this.drizzle.db.transaction(async (tx) => {
       if (owner.isDefault) {
@@ -59,13 +63,27 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
         joinedAt: owner.joinedAt,
       });
 
+      const accountId = crypto.randomUUID();
       await tx.insert(schema.accounts).values({
+        id: accountId,
         workspaceId: workspace.id,
         name: 'Carteira',
         type: AccountType.CASH,
         balance: 0,
         timezone: workspace.timezone,
       });
+      await insertOpeningMovement(tx, {
+        workspaceId: workspace.id,
+        accountId,
+        balance: 0,
+        actorId: owner.userId,
+      });
+
+      await tx
+        .insert(schema.categories)
+        .values(
+          categories.map((category) => CategoryMapper.toDatabase(category)),
+        );
     });
   }
 

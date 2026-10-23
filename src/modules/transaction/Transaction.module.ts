@@ -5,6 +5,8 @@ import { UserModule } from '@modules/user/User.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
 import { DateModule } from '@providers/date/Date.module';
+import { CreateInstallmentPurchaseController } from './features/create-installment-purchase/create-installment-purchase.controller';
+import { CreateInstallmentPurchaseService } from './features/create-installment-purchase/create-installment-purchase.service';
 import { CreateRecurringTransactionController } from './features/create-recurring-transaction/create-recurring-transaction.controller';
 import { CreateRecurringTransactionService } from './features/create-recurring-transaction/create-recurring-transaction.service';
 import { CreateTransactionController } from './features/create-transaction/create-transaction.controller';
@@ -21,17 +23,22 @@ import { ListRecurringTransactionsController } from './features/list-recurring-t
 import { ListRecurringTransactionsService } from './features/list-recurring-transactions/list-recurring-transactions.service';
 import { ListTransactionController } from './features/list-transaction/list-transaction.controller';
 import { ListTransactionsService } from './features/list-transaction/list-transaction.service';
+import { SetTransactionStatusController } from './features/set-transaction-status/set-transaction-status.controller';
+import { SetTransactionStatusService } from './features/set-transaction-status/set-transaction-status.service';
 import { ToggleActiveRecurringTransactionController } from './features/toggle-active-recurring-transaction/toggle-active-recurring-transaction.controller';
 import { ToggleActiveRecurringTransactionService } from './features/toggle-active-recurring-transaction/toggle-active-recurring-transaction.service';
-import { ToggleTransactionStatusController } from './features/toggle-transaction-status/toggle-transaction-status.controller';
-import { ToggleTransactionStatusService } from './features/toggle-transaction-status/toggle-transaction-status.service';
 import { UpdateRecurringTransactionController } from './features/update-recurring-transaction/update-recurring-transaction.controller';
 import { UpdateRecurringTransactionService } from './features/update-recurring-transaction/update-recurring-transaction.service';
 import { UpdateTransactionController } from './features/update-transaction/update-transaction.controller';
 import { UpdateTransactionService } from './features/update-transaction/update-transaction.service';
-import { GenerateRecurringTransactionJobController } from './jobs/create-recurring-transaction.controller';
-import { GenerateRecurringTransactionsJobService } from './jobs/create-recurring-transaction.service';
+import { GenerateRecurringTransactionsJobController } from './jobs/generate-recurring-transactions/generate-recurring-transactions.controller';
+import { GenerateRecurringTransactionsJobService } from './jobs/generate-recurring-transactions/generate-recurring-transactions.service';
+import { ReconcileBalancesJobController } from './jobs/reconcile-balances/reconcile-balances.controller';
+import { ReconcileBalancesJobService } from './jobs/reconcile-balances/reconcile-balances.service';
+import { SettleCardInstallmentsJobController } from './jobs/settle-card-installments/settle-card-installments.controller';
+import { SettleCardInstallmentsJobService } from './jobs/settle-card-installments/settle-card-installments.service';
 import { CalculateNextGenerationDateService } from './services/calculate-next-generation-date.service';
+import { NextGenerationDateCalculator } from './services/contracts/NextGenerationDateCalculator';
 
 @Module({
   controllers: [
@@ -42,9 +49,12 @@ import { CalculateNextGenerationDateService } from './services/calculate-next-ge
     ListRecurringTransactionsController,
     FindTransactionController,
     UpdateTransactionController,
-    ToggleTransactionStatusController,
+    SetTransactionStatusController,
     CreateRecurringTransactionController,
-    GenerateRecurringTransactionJobController,
+    CreateInstallmentPurchaseController,
+    GenerateRecurringTransactionsJobController,
+    ReconcileBalancesJobController,
+    SettleCardInstallmentsJobController,
     UpdateRecurringTransactionController,
     DeleteRecurringTransactionController,
     FindRecurringTransactionController,
@@ -58,15 +68,21 @@ import { CalculateNextGenerationDateService } from './services/calculate-next-ge
     FindTransactionByIdService,
     ListTransactionsService,
     UpdateTransactionService,
-    ToggleTransactionStatusService,
+    SetTransactionStatusService,
     CreateRecurringTransactionService,
+    CreateInstallmentPurchaseService,
     UpdateRecurringTransactionService,
     DeleteRecurringTransactionService,
     ListRecurringTransactionsService,
     FindRecurringTransactionService,
     ToggleActiveRecurringTransactionService,
-    CalculateNextGenerationDateService,
+    {
+      provide: NextGenerationDateCalculator,
+      useClass: CalculateNextGenerationDateService,
+    },
     GenerateRecurringTransactionsJobService,
+    ReconcileBalancesJobService,
+    SettleCardInstallmentsJobService,
   ],
 })
 export class TransactionModule {}

@@ -86,7 +86,7 @@ export class FindMonthSummaryService implements Service<
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 
     const currentMonthStart = this.dateProvider.startOfMonth(now, timezone);
-    const cacheKey = `report:month-summary:${workspaceId}:${this.dateProvider.format(currentMonthStart, 'YYYY-MM', timezone)}`;
+    const cacheKey = `report:month-summary:v2:${workspaceId}:${this.dateProvider.format(currentMonthStart, 'YYYY-MM', timezone)}`;
     const cached = await this.cache.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
@@ -117,7 +117,19 @@ export class FindMonthSummaryService implements Service<
       timezone,
     );
 
-    const [currentMonthData, previousMonthData, accounts] = await Promise.all([
+    const previousMonthToDateEnd = this.previousMonthToDateEnd(
+      now,
+      previousMonthStart,
+      previousMonthEnd,
+      timezone,
+    );
+
+    const [
+      currentMonthData,
+      previousMonthData,
+      previousMonthToDateData,
+      accounts,
+    ] = await Promise.all([
       this.transactionRepository.sumTransactionsByDateRange(
         workspaceId,
         currentMonthStart,
@@ -127,6 +139,11 @@ export class FindMonthSummaryService implements Service<
         workspaceId,
         previousMonthStart,
         previousMonthEnd,
+      ),
+      this.transactionRepository.sumTransactionsByDateRange(
+        workspaceId,
+        previousMonthStart,
+        previousMonthToDateEnd,
       ),
       this.accountRepository.findAllByWorkspaceId(workspaceId),
     ]);
@@ -146,6 +163,10 @@ export class FindMonthSummaryService implements Service<
           previousMonthData.totalIncome - previousMonthData.totalExpense,
         ),
       },
+      previousMonthToDate: {
+        totalIncome: previousMonthToDateData.totalIncome,
+        totalExpense: previousMonthToDateData.totalExpense,
+      },
     });
 
     await this.cache.set(
@@ -158,10 +179,29 @@ export class FindMonthSummaryService implements Service<
         totalInvestmentBalance: monthSummary.totalInvestmentBalance,
         totalCreditCardBalance: monthSummary.totalCreditCardBalance,
         rate: monthSummary.rate,
+        previousMonthToDate: monthSummary.previousMonthToDate,
       }),
       CACHE_TTL,
     );
 
     return right(monthSummary);
+  }
+
+  private previousMonthToDateEnd(
+    now: Date,
+    previousMonthStart: Date,
+    previousMonthEnd: Date,
+    timezone: string,
+  ): Date {
+    const dayOfMonth = Number(this.dateProvider.format(now, 'D', timezone));
+    const sameDay = this.dateProvider.add(
+      previousMonthStart,
+      dayOfMonth - 1,
+      'day',
+      timezone,
+    );
+    const sameDayEnd = this.dateProvider.endOfDay(sameDay, timezone);
+
+    return sameDayEnd > previousMonthEnd ? previousMonthEnd : sameDayEnd;
   }
 }

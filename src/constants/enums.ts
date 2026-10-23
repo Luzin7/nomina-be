@@ -23,6 +23,16 @@ export enum AccountType {
   INVESTMENT = 'INVESTMENT',
 }
 
+export enum BalanceMovementCause {
+  OPENING = 'OPENING',
+  TRANSACTION_CREATED = 'TRANSACTION_CREATED',
+  TRANSACTION_UPDATED = 'TRANSACTION_UPDATED',
+  TRANSACTION_DELETED = 'TRANSACTION_DELETED',
+  STATUS_CHANGED = 'STATUS_CHANGED',
+  INVOICE_PAID = 'INVOICE_PAID',
+  RECONCILIATION = 'RECONCILIATION',
+}
+
 export const CLOSING_DAYS_BEFORE_DUE_OPTIONS = [5, 7, 10] as const;
 
 export type ClosingDaysBeforeDue =
@@ -59,9 +69,20 @@ export enum RecurrenceFrequency {
   YEARLY = 'YEARLY',
 }
 
+export enum RecurringKind {
+  INSTALLMENT = 'installment',
+  RECURRING = 'recurring',
+}
+
 export enum SubscriptionStatus {
   ACTIVE = 'ACTIVE',
   CANCELED = 'CANCELED',
   PAST_DUE = 'PAST_DUE',
   TRIALING = 'TRIALING',
+}
+
+export enum RefreshTokenStatus {
+  ACTIVE = 'active',
+  ROTATED = 'rotated',
+  REVOKED = 'revoked',
 }

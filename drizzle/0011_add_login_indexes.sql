@@ -1,2 +1,0 @@
-CREATE INDEX "idx_refresh_token_user_id" ON "refresh_tokens" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "idx_wu_user_default" ON "workspace_users" USING btree ("user_id","is_default");

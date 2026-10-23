@@ -29,11 +29,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     props: Omit<CreditCardProps, 'balance'> & { balance?: bigint },
     id?: string,
   ): Either<Error, CreditCard> {
-    if (
-      props.creditLimit !== null &&
-      props.creditLimit !== undefined &&
-      props.creditLimit <= 0n
-    ) {
+    if (props.creditLimit !== null && props.creditLimit <= 0n) {
       return left(
         new ValidationAccountError(
           'O limite de crédito deve ser superior a zero.',
@@ -116,6 +112,32 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
 
     if (this.props.balance - amount < 0n) {
       return left(new PaymentExceedsInvoiceBalanceError());
+    }
+
+    this.props.balance -= amount;
+    return right(undefined);
+  }
+
+  public settleScheduledCharge(amount: bigint): Either<Error, void> {
+    if (amount <= 0n) {
+      return left(
+        new ValidationAccountError(
+          'O valor da cobrança deve ser maior que zero.',
+        ),
+      );
+    }
+
+    this.props.balance += amount;
+    return right(undefined);
+  }
+
+  public settleScheduledCredit(amount: bigint): Either<Error, void> {
+    if (amount <= 0n) {
+      return left(
+        new ValidationAccountError(
+          'O valor do pagamento deve ser maior que zero.',
+        ),
+      );
     }
 
     this.props.balance -= amount;

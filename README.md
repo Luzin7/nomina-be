@@ -69,10 +69,10 @@ npm run test:cov      # Coverage
 npm run lint          # ESLint
 
 npm run db:migrate    # Aplicar migrations pendentes
-npm run db:generate   # Gerar nova migration a partir do schema
+npm run db:generate   # Gerar nova migration a partir do schema (já renumera)
+npm run db:generate:raw # Só o drizzle-kit generate, sem renumerar
 npm run db:status     # Ver status das migrations
 npm run db:rollback   # Reverter última migration
-npm run seed          # Popular banco com dados iniciais
 ```
 
 ---
@@ -81,7 +81,7 @@ npm run seed          # Popular banco com dados iniciais
 
 > **Regra:** sempre execute `npm run db:migrate` antes de subir o servidor em produção.
 
-Para criar uma nova migration após alterar o schema em `src/infra/databases/schema/`:
+Para criar uma nova migration após alterar o schema em `src/infra/databases/drizzle/schema.ts`:
 
 ```bash
 npm run db:generate -- --name descricao-da-mudanca
@@ -90,6 +90,33 @@ npm run db:migrate
 ```
 
 Nunca edite arquivos `.sql` gerados manualmente — sempre via `db:generate`.
+
+### Numeração das migrations
+
+O `drizzle-kit generate` numera pelo último `idx` do journal, não pelo maior
+número já usado nos arquivos. Como o baseline do journal foi refeito no
+passado (`idx` 0..5 com tags `0016`..`0020`), a saída crua pode sair com um
+número menor que o das migrations existentes. Por isso `db:generate` roda o
+`drizzle-kit generate` e, em seguida, `scripts/rename-drizzle-migration.ts`:
+
+- o número alvo é o maior entre os `idx` e os prefixos numéricos já usados,
+  mais 1 (próxima migration é `0021_`);
+- o script renomeia o `.sql`, o `meta/NNNN_snapshot.json` correspondente e
+  atualiza `tag` + `idx` da última entrada do journal;
+- a operação é idempotente e normaliza `meta/_journal.json` (indentação de 2
+  espaços e newline no fim), então `db:generate` não deixa diff cosmético;
+- se não conseguir identificar a migration mais recente de forma inequívoca,
+  o script falha com exit code 1 em vez de adivinhar.
+
+Para ver a saída crua do drizzle-kit use `npm run db:generate:raw`. Não renomeie
+arquivos de migration à mão.
+
+> **Cadeia de snapshots:** o `prevId` do `0016_snapshot.json` não aponta para o
+> `id` do `0000_snapshot.json`, e os arquivos `0001`..`0015` não existem mais
+> neste repositório. O `drizzle-kit check` não valida essa ligação (só valida
+> formato e colisão de `prevId`), então "Everything's fine" não prova cadeia
+> íntegra. Consertar isso exigiria regenerar toda a história — não é feito
+> aqui. A numeração acima não depende dessa cadeia.
 
 ---
 
@@ -174,36 +201,42 @@ Demais endpoints autenticados: **120 requisições por minuto**.
 
 ## Deploy
 
-```bash
-npm run build
-npm run db:migrate   # sempre antes de iniciar
-npm run start:prod
-```
+Produção roda no Render a partir da imagem publicada no GitHub Container
+Registry (`ghcr.io/luzin7/nomina-be`, pública). O Render não builda nada: só
+puxa a imagem.
 
-### Variáveis de ambiente (produção)
+A cada push na `main`, o `release.yml`:
 
-```env
-DATABASE_URL="postgresql://user:pass@host:5432/nomina"
-JWT_PRIVATE_KEY_BASE64="..."
-JWT_PUBLIC_KEY_BASE64="..."
-NODE_ENV="production"
-PORT=8080
-REDIS_ENABLED=true
-REDIS_HOST="..."
-REDIS_PORT=6379
-PROD_URL="https://seu-dominio.com"
-DEV_URL="http://localhost:3000"
-CRON_API_KEY="chave-para-job-diario"
-```
+1. roda testes, `tsc` e build;
+2. aplica as migrations pendentes no banco de produção;
+3. gera a versão com semantic-release e publica a imagem com as tags
+   `vX.Y.Z`, `sha-<commit>` e `latest`;
+4. chama o deploy hook do Render com o digest da imagem publicada.
+
+Commit que não gera versão (sem `feat`/`fix`) roda as migrations, mas não
+publica imagem nem faz deploy. Como as migrations entram antes da imagem nova,
+elas precisam funcionar com o código da versão anterior (adicionar antes,
+remover depois).
+
+### Serviço no Render
+
+- Source: imagem `ghcr.io/luzin7/nomina-be` (pública, sem credencial). O
+  workflow sempre manda o digest; a tag configurada no painel só vale para
+  "Manual Deploy", então um deploy manual volta para ela
+- Health check path: `/api/v1/health` (o Render injeta `PORT=10000`)
+- Variáveis: as do schema em `src/infra/env/index.ts`, com `NODE_ENV=production`
+  e `NOMINA_INTERNAL_KEYS` obrigatória (uma ou mais chaves de 32+ caracteres,
+  separadas por vírgula; a mesma chave vai no front como `x-nomina-internal-key`
+  para o rate limit enxergar o IP real do cliente em `x-nomina-client-ip`)
 
 ### Secrets do GitHub Actions
 
-Os workflows dependem de dois secrets que **precisam** ser configurados em
-**Settings → Secrets and variables → Actions**:
+Configurar em **Settings → Secrets and variables → Actions**:
 
 | Secret | Workflow | Uso |
 |--------|----------|-----|
-| `DATABASE_URL` | `run-migrations.yml` | Migrations no deploy |
+| `DATABASE_URL` | `release.yml` | Migrations antes do deploy. `drizzle-kit` recusa host não local por padrão; `ALLOW_PROD_MIGRATE=1` libera de propósito e runners de CI (`CI=true`) são liberados automaticamente |
+| `RENDER_DEPLOY_HOOK_URL` | `release.yml` | Deploy da imagem no Render |
 | `CRON_API_KEY` | `daily-job.yml` | Job diário de recorrências |
 
 ---

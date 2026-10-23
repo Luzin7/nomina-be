@@ -69,6 +69,7 @@ describe('UpdateAccountService', () => {
       findByNameAndWorkspaceId: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
+      createWithOpeningMovement: jest.fn(),
       delete: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),

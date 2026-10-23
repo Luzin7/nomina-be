@@ -5,6 +5,8 @@ import { Injectable } from '@nestjs/common';
 import { and, count, eq } from 'drizzle-orm';
 import { AccountMapper } from '../mappers/account.mapper';
 import * as schema from '../schema';
+import { ensureEntityId } from './ensure-entity-id';
+import { insertOpeningMovement } from './opening-movement';
 
 @Injectable()
 export class AccountRepositoryImplementation implements AccountRepository {
@@ -17,6 +19,26 @@ export class AccountRepositoryImplementation implements AccountRepository {
       .returning();
 
     return AccountMapper.toDomain(createdAccount);
+  }
+
+  async createWithOpeningMovement(
+    account: AnyAccount,
+    actorId: string,
+  ): Promise<void> {
+    const accountId = ensureEntityId(account);
+
+    await this.drizzle.db.transaction(async (tx) => {
+      await tx
+        .insert(schema.accounts)
+        .values(AccountMapper.toDatabase(account));
+
+      await insertOpeningMovement(tx, {
+        workspaceId: account.workspaceId,
+        accountId,
+        balance: Number(account.balance),
+        actorId,
+      });
+    });
   }
 
   async findByNameAndWorkspaceId(
@@ -54,7 +76,7 @@ export class AccountRepositoryImplementation implements AccountRepository {
   async update(account: AnyAccount): Promise<AnyAccount> {
     const [updatedAccount] = await this.drizzle.db
       .update(schema.accounts)
-      .set(AccountMapper.toDatabase(account))
+      .set(AccountMapper.toUpdatePayload(account))
       .where(eq(schema.accounts.id, account.id))
       .returning();
 

@@ -103,10 +103,12 @@ export class CreateAccountService implements Service<
       return left(accountOrError.value);
     }
 
-    const account = await this.accountRepository.create(accountOrError.value);
+    const account = accountOrError.value;
+
+    await this.accountRepository.createWithOpeningMovement(account, sub);
 
     await this.redisService.delByPattern(
-      `report:month-summary:${workspaceId}:*`,
+      `report:month-summary:v2:${workspaceId}:*`,
     );
 
     return right(account);

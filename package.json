@@ -5,6 +5,7 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "packageManager": "npm@10.9.9",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -12,17 +13,20 @@
     "dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/src/infra/http/main.js",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "lint": "eslint \"{src,apps,libs,test,scripts}/**/*.ts\" --fix",
     "test": "jest",
+    "test:concurrency": "jest --testPathPattern=concurrency --testPathIgnorePatterns=/node_modules/",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed": "tsx drizzle/seed.ts",
     "db:migrate": "drizzle-kit migrate",
-    "db:generate": "drizzle-kit generate",
+    "db:generate": "sh -c 'drizzle-kit generate \"$@\" && tsx scripts/rename-drizzle-migration.ts' --",
+    "db:generate:raw": "drizzle-kit generate",
     "db:rollback": "drizzle-kit rollback",
-    "db:status": "drizzle-kit status"
+    "db:status": "drizzle-kit status",
+    "db:backfill-balance-movements": "tsx scripts/backfill-balance-movements.ts",
+    "db:backfill-recurring-installment-count": "tsx scripts/backfill-recurring-installment-count.ts"
   },
   "engines": {
     "node": "^22.14.0 || >=24.10.0"
@@ -67,6 +71,7 @@
     "@semantic-release/release-notes-generator": "^14.1.1",
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.15.11",
+    "@testcontainers/postgresql": "^11.14.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^4.17.17",
     "@types/ioredis": "^4.28.10",
@@ -103,29 +108,34 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
+    "rootDir": ".",
     "setupFiles": [
-      "<rootDir>/test-setup.ts"
+      "<rootDir>/src/test-setup.ts"
     ],
     "testRegex": ".*\\.spec\\.ts$",
+    "testPathIgnorePatterns": [
+      "<rootDir>/node_modules/",
+      "<rootDir>/dist/",
+      "concurrency\\.integration\\.spec\\.ts$"
+    ],
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
-    "coverageDirectory": "../coverage",
+    "coverageDirectory": "./coverage",
     "testEnvironment": "node",
     "moduleNameMapper": {
-      "^@shared/(.*)$": "<rootDir>/shared/$1",
-      "^@infra/(.*)$": "<rootDir>/infra/$1",
-      "^@config/(.*)$": "<rootDir>/config/$1",
-      "^@@types/(.*)$": "<rootDir>/@types/$1",
-      "^@constants/(.*)$": "<rootDir>/constants/$1",
-      "^@modules/(.*)$": "<rootDir>/modules/$1",
-      "^@providers/(.*)$": "<rootDir>/providers/$1",
-      "^@utils/(.*)$": "<rootDir>/utils/$1",
-      "^@test/(.*)$": "<rootDir>/test/$1"
+      "^@shared/(.*)$": "<rootDir>/src/shared/$1",
+      "^@infra/(.*)$": "<rootDir>/src/infra/$1",
+      "^@config/(.*)$": "<rootDir>/src/config/$1",
+      "^@@types/(.*)$": "<rootDir>/src/@types/$1",
+      "^@constants/(.*)$": "<rootDir>/src/constants/$1",
+      "^@modules/(.*)$": "<rootDir>/src/modules/$1",
+      "^@providers/(.*)$": "<rootDir>/src/providers/$1",
+      "^@utils/(.*)$": "<rootDir>/src/utils/$1",
+      "^@test/(.*)$": "<rootDir>/src/test/$1"
     }
   },
   "overrides": {

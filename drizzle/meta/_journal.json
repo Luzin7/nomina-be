@@ -12,106 +12,64 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1774616888422,
-      "tag": "0001_add_title_field",
+      "when": 1791848201257,
+      "tag": "0016_add_auth_sessions",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1774996266236,
-      "tag": "0002_add_recurring_indexes",
+      "when": 1791848220070,
+      "tag": "0017_recreate_refresh_tokens",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1775067733790,
-      "tag": "0003_add_destination_account_id",
+      "when": 1792030877587,
+      "tag": "0018_workspace_default_categories",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1775067754552,
-      "tag": "0004_add_credit_limit",
+      "when": 1792254296392,
+      "tag": "0019_unique_recurring_date",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1775072438678,
-      "tag": "0005_make_category_id_nullable",
+      "when": 1792631276970,
+      "tag": "0020_balance_movements",
       "breakpoints": true
     },
     {
-      "idx": 6,
+      "idx": 21,
       "version": "7",
-      "when": 1775079777038,
-      "tag": "0006_fix_account_cascade_delete",
+      "when": 1792765481140,
+      "tag": "0021_sleepy_jasper_sitwell",
       "breakpoints": true
     },
     {
-      "idx": 7,
+      "idx": 22,
       "version": "7",
-      "when": 1777135774878,
-      "tag": "0007_sweet_vargas",
+      "when": 1792780331992,
+      "tag": "0022_refresh_token_rotated_at",
       "breakpoints": true
     },
     {
-      "idx": 8,
+      "idx": 23,
       "version": "7",
-      "when": 1777223290963,
-      "tag": "0008_charming_silhouette",
+      "when": 1792783104859,
+      "tag": "0023_recurring_installment_count",
       "breakpoints": true
     },
     {
-      "idx": 9,
+      "idx": 24,
       "version": "7",
-      "when": 1746130000000,
-      "tag": "0009_make_recurring_category_id_nullable",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1777811926636,
-      "tag": "0010_youthful_galactus",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1777831084948,
-      "tag": "0011_add_login_indexes",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1785888233730,
-      "tag": "0012_right_falcon",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1785892689206,
-      "tag": "0013_wild_aaron_stack",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1789260774138,
-      "tag": "0014_foamy_blink",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1789347174138,
-      "tag": "0015_backfill_invoice_period",
+      "when": 1792793878610,
+      "tag": "0024_merge_legacy_duplicate_categories",
       "breakpoints": true
     }
   ]

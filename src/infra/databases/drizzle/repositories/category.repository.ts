@@ -3,7 +3,18 @@ import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { CategoryMapper } from '../mappers/category.mapper';
 import * as schema from '../schema';
 
@@ -77,7 +88,11 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
     filters?: { type?: TransactionType; parentId?: string | null },
     page?: number,
     limit?: number,
-  ): Promise<{ categories: Category[]; total: number; usageCounts: Record<string, number> }> {
+  ): Promise<{
+    categories: Category[];
+    total: number;
+    usageCounts: Record<string, number>;
+  }> {
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
@@ -105,7 +120,9 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
         type: schema.categories.type,
         isSystemCategory: schema.categories.isSystemCategory,
         parentId: schema.categories.parentId,
-        usageCount: sql<number>`count(${schema.transactions.id})`.mapWith(Number),
+        usageCount: sql<number>`count(${schema.transactions.id})`.mapWith(
+          Number,
+        ),
       })
       .from(schema.categories)
       .leftJoin(
@@ -148,7 +165,9 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
 
     return {
       categories: rows.map((row) =>
-        CategoryMapper.toDomain(row as unknown as typeof schema.categories.$inferSelect),
+        CategoryMapper.toDomain(
+          row as unknown as typeof schema.categories.$inferSelect,
+        ),
       ),
       total: totalCount,
       usageCounts,

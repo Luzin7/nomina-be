@@ -27,6 +27,7 @@ describe('ListAccountsService', () => {
       findManyByWorkspaceId: jest.fn(),
       findById: jest.fn(),
       create: jest.fn(),
+      createWithOpeningMovement: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
       findByNameAndWorkspaceId: jest.fn(),

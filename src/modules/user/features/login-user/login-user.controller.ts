@@ -1,11 +1,15 @@
+import { RATE_LIMITS } from '@constants/rateLimits';
 import {
   clearRefreshTokenCookie,
   setRefreshTokenCookie,
 } from '@infra/http/cookies/authCookie';
+import {
+  LimitByAccount,
+  LimitByClient,
+} from '@infra/http/throttling/decorators';
 import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
-import { Body, Controller, HttpCode, Post, Res } from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, Post, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { Public } from '@providers/auth/decorators/IsPublic.decorator';
 import { statusCode } from '@shared/core/types/statusCode';
 import type { Response } from 'express';
@@ -18,14 +22,16 @@ export class LoginUserController {
   constructor(private readonly service: LoginUserService) {}
 
   @Public()
-  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
+  @LimitByClient(RATE_LIMITS.client.login)
+  @LimitByAccount(RATE_LIMITS.account.login)
   @Post('login')
   @HttpCode(statusCode.OK)
   async handle(
+    @Headers('user-agent') agent: string | undefined,
     @Body(LoginUserPipe) body: LoginUserRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const data = await this.service.execute(body);
+    const data = await this.service.execute({ ...body, agent });
 
     if (data.isLeft()) {
       clearRefreshTokenCookie(res);

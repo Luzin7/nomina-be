@@ -2,6 +2,11 @@ import { AnyAccount } from '@modules/account/entities/types';
 
 export abstract class AccountRepository {
   abstract create(account: AnyAccount): Promise<AnyAccount>;
+  abstract createWithOpeningMovement(
+    account: AnyAccount,
+    actorId: string,
+  ): Promise<void>;
+
   abstract findByNameAndWorkspaceId(
     name: string,
     workspaceId: string,

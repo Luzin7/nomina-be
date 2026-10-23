@@ -1,21 +1,15 @@
 import { RefreshToken } from '@modules/user/entities/RefreshToken';
 
 export abstract class RefreshTokensRepository {
-  abstract findUniqueByUserIdAndToken(
-    userId: string,
-    token: string,
+  abstract create(refreshToken: RefreshToken): Promise<void>;
+
+  abstract findUniqueByTokenHash(
+    tokenHash: string,
   ): Promise<RefreshToken | null>;
 
-  abstract replaceByToken(
-    userId: string,
-    currentToken: string,
-    nextRefreshToken: RefreshToken,
-  ): Promise<boolean>;
+  abstract rotate(current: RefreshToken, next: RefreshToken): Promise<boolean>;
 
-  abstract replaceAllByUserId(
-    userId: string,
-    nextRefreshToken: RefreshToken,
-  ): Promise<void>;
+  abstract revokeBySessionId(sessionId: string): Promise<void>;
 
   abstract delete(id: string): Promise<void>;
 }

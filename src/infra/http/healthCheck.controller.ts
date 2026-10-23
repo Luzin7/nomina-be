@@ -1,6 +1,7 @@
 import { RedisService } from '@infra/cache/redis/RedisService';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { env } from '@infra/env';
+import { SkipAllRateLimits } from './throttling/decorators';
 import {
   Controller,
   Get,
@@ -19,6 +20,7 @@ export class HealthController {
   ) {}
 
   @Public()
+  @SkipAllRateLimits()
   @Get()
   @HttpCode(statusCode.OK)
   checkLiveness() {

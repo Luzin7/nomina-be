@@ -1,8 +1,12 @@
+import { UserRole } from '@constants/enums';
 import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
 import { RecurringTransactionPresenter } from '@modules/transaction/presenters/RecurringTransaction.presenter';
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentLoggedUser } from '@providers/auth/decorators/CurrentLoggedUser.decorator';
+import { Idempotent } from '@providers/auth/decorators/Idempotency.decorator';
+import { Roles } from '@providers/auth/decorators/Roles.decorator';
+import { RolesGuard } from '@providers/auth/guards/Roles.guard';
 import { type TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { statusCode } from '@shared/core/types/statusCode';
 import {
@@ -11,12 +15,15 @@ import {
 } from './create-recurring-transaction.dto';
 import { CreateRecurringTransactionService } from './create-recurring-transaction.service';
 
+@UseGuards(RolesGuard)
+@Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.USER)
 @ApiTags('Recurring Transaction')
 @Controller('transaction')
 export class CreateRecurringTransactionController {
   constructor(private readonly service: CreateRecurringTransactionService) {}
 
   @Post('recurring')
+  @Idempotent()
   @HttpCode(statusCode.CREATED)
   async handle(
     @CurrentLoggedUser() { sub, workspaceId }: TokenPayloadSchema,

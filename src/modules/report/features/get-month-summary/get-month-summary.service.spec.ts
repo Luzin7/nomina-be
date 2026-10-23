@@ -3,15 +3,35 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
-import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { FindMonthSummaryService } from './get-month-summary.service';
 
 const NOW = new Date('2026-09-15T12:00:00.000Z');
 const CURRENT_START = new Date('2026-09-01T03:00:00.000Z');
-const CURRENT_END = new Date('2026-10-01T02:59:59.999Z');
-const PREVIOUS_REFERENCE = new Date('2026-08-01T03:00:00.000Z');
-const PREVIOUS_START = new Date('2026-08-01T03:00:00.000Z');
-const PREVIOUS_END = new Date('2026-09-01T02:59:59.999Z');
+
+type FakeTransaction = {
+  date: Date;
+  type: 'INCOME' | 'EXPENSE';
+  amount: number;
+};
+
+function sumByRange(transactions: FakeTransaction[]) {
+  return async (_workspaceId: string, start: Date, end: Date) => {
+    const inRange = transactions.filter(
+      (t) => t.date >= start && t.date <= end,
+    );
+    const sum = (type: FakeTransaction['type']) =>
+      inRange
+        .filter((t) => t.type === type)
+        .reduce((total, t) => total + t.amount, 0);
+
+    return {
+      totalIncome: sum('INCOME'),
+      totalExpense: sum('EXPENSE'),
+      balance: sum('INCOME') - sum('EXPENSE'),
+    };
+  };
+}
 
 function makeAccounts() {
   return [
@@ -27,7 +47,8 @@ describe('FindMonthSummaryService', () => {
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let accountRepository: jest.Mocked<AccountRepository>;
   let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
-  let dateProvider: jest.Mocked<DateProvider>;
+  let dateProvider: DayJsDateProvider;
+  let nowSpy: jest.SpyInstance<Date, []>;
   let cache: jest.Mocked<CacheProvider>;
 
   beforeEach(() => {
@@ -43,19 +64,8 @@ describe('FindMonthSummaryService', () => {
       execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
     } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
 
-    dateProvider = {
-      now: jest.fn().mockReturnValue(NOW),
-      startOfMonth: jest
-        .fn()
-        .mockReturnValueOnce(CURRENT_START)
-        .mockReturnValueOnce(PREVIOUS_START),
-      endOfMonth: jest
-        .fn()
-        .mockReturnValueOnce(CURRENT_END)
-        .mockReturnValueOnce(PREVIOUS_END),
-      add: jest.fn().mockReturnValue(PREVIOUS_REFERENCE),
-      format: jest.fn().mockReturnValue('2026-09'),
-    } as unknown as jest.Mocked<DateProvider>;
+    dateProvider = new DayJsDateProvider();
+    nowSpy = jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
 
     cache = {
       get: jest.fn().mockResolvedValue(null),
@@ -75,6 +85,7 @@ describe('FindMonthSummaryService', () => {
 
   it('aggregates balances, saving rate and previous month comparison', async () => {
     transactionRepository.sumTransactionsByDateRange
+      .mockResolvedValue({ totalIncome: 0, totalExpense: 0, balance: 0 })
       .mockResolvedValueOnce({
         totalIncome: 10000,
         totalExpense: 4000,
@@ -103,6 +114,96 @@ describe('FindMonthSummaryService', () => {
     expect(result.value.rate.previousMonthCompareSaving).toBe(100);
   });
 
+  describe('previousMonthToDate', () => {
+    async function executeAt(now: Date, transactions: FakeTransaction[]) {
+      nowSpy.mockReturnValue(now);
+      transactionRepository.sumTransactionsByDateRange.mockImplementation(
+        sumByRange(transactions),
+      );
+
+      const result = await service.execute({
+        sub: 'user-1',
+        workspaceId: 'ws-1',
+      });
+      if (!result.isRight()) throw new Error('expected right');
+
+      return result.value.previousMonthToDate;
+    }
+
+    it('should return the previous month totals up to the same day', async () => {
+      const previousMonthToDate = await executeAt(NOW, [
+        {
+          date: new Date('2026-08-01T10:00:00.000Z'),
+          type: 'INCOME',
+          amount: 1000,
+        },
+        {
+          date: new Date('2026-08-15T10:00:00.000Z'),
+          type: 'EXPENSE',
+          amount: 300,
+        },
+        {
+          date: new Date('2026-08-15T20:00:00.000Z'),
+          type: 'EXPENSE',
+          amount: 200,
+        },
+      ]);
+
+      expect(previousMonthToDate).toEqual({
+        totalIncome: 1000,
+        totalExpense: 500,
+      });
+    });
+
+    it('should clamp the day to the end of a shorter previous month', async () => {
+      const previousMonthToDate = await executeAt(
+        new Date('2026-03-31T12:00:00.000Z'),
+        [
+          {
+            date: new Date('2026-02-28T20:00:00.000Z'),
+            type: 'EXPENSE',
+            amount: 700,
+          },
+          {
+            date: new Date('2026-03-01T10:00:00.000Z'),
+            type: 'EXPENSE',
+            amount: 900,
+          },
+        ],
+      );
+
+      expect(previousMonthToDate).toEqual({
+        totalIncome: 0,
+        totalExpense: 700,
+      });
+    });
+
+    it('should not include previous month transactions after the same day', async () => {
+      const previousMonthToDate = await executeAt(NOW, [
+        {
+          date: new Date('2026-08-10T10:00:00.000Z'),
+          type: 'EXPENSE',
+          amount: 400,
+        },
+        {
+          date: new Date('2026-08-16T10:00:00.000Z'),
+          type: 'EXPENSE',
+          amount: 5000,
+        },
+        {
+          date: new Date('2026-08-31T10:00:00.000Z'),
+          type: 'INCOME',
+          amount: 9000,
+        },
+      ]);
+
+      expect(previousMonthToDate).toEqual({
+        totalIncome: 0,
+        totalExpense: 400,
+      });
+    });
+  });
+
   it('returns cached summary without querying repositories', async () => {
     cache.get.mockResolvedValue(
       JSON.stringify({
@@ -113,6 +214,7 @@ describe('FindMonthSummaryService', () => {
         totalInvestmentBalance: 4,
         totalCreditCardBalance: 5,
         rate: { currentMonthSaving: 6, previousMonthCompareSaving: 7 },
+        previousMonthToDate: { totalIncome: 8, totalExpense: 9 },
       }),
     );
 

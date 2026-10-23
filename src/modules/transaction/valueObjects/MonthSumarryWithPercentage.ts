@@ -1,5 +1,10 @@
 import { ValueObject } from '@shared/core/Entities/ValueObject';
 
+export type PeriodTotals = {
+  totalIncome: number;
+  totalExpense: number;
+};
+
 export type MonthSummaryType = {
   month: Date;
   totalIncome: number;
@@ -11,6 +16,7 @@ export type MonthSummaryType = {
     currentMonthSaving: number;
     previousMonthCompareSaving: number;
   };
+  previousMonthToDate: PeriodTotals;
 };
 
 export class MonthSummary extends ValueObject<MonthSummaryType> {
@@ -48,5 +54,9 @@ export class MonthSummary extends ValueObject<MonthSummaryType> {
 
   get rate() {
     return this.props.rate;
+  }
+
+  get previousMonthToDate() {
+    return this.props.previousMonthToDate;
   }
 }
