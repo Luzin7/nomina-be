@@ -8,6 +8,7 @@ import {
   InvalidRecurrenceIntervalError,
   InvalidTransferError,
   MissingCategoryError,
+  SourceAndDestinationAccountMustBeDifferentError,
 } from '../errors';
 
 export interface RecurringTransactionProps {
@@ -182,6 +183,22 @@ export class RecurringTransaction extends AggregateRoot<RecurringTransactionProp
     this.props.endDate = endDate;
     this.props.frequency = frequency;
     this.props.interval = interval;
+    return right(undefined);
+  }
+
+  public clearLastGenerated(): void {
+    this.props.lastGenerated = null;
+  }
+
+  public changeAccount(accountId: string): Either<Error, void> {
+    if (
+      this.props.type === 'TRANSFER' &&
+      accountId === this.props.destinationAccountId
+    ) {
+      return left(new SourceAndDestinationAccountMustBeDifferentError());
+    }
+
+    this.props.accountId = accountId;
     return right(undefined);
   }
 

@@ -1,3 +1,4 @@
+import { AccountType } from '@constants/enums';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountNotFoundError } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -6,7 +7,9 @@ import { CategoryRepository } from '@modules/category/repositories/contracts/Cat
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import {
   CannotRemoveDestinationAccountError,
+  CreditCardTransferNotAllowedError,
   RecurringTransactionNotFoundError,
+  SourceAndDestinationAccountMustBeDifferentError,
   StartDateCannotBeTodayOrPastError,
 } from '@modules/transaction/errors';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
@@ -41,7 +44,11 @@ export class UpdateRecurringTransactionService implements Service<
     if (baseValidation.isLeft()) return left(baseValidation.value);
     const { recurring, account } = baseValidation.value;
 
-    const depsValidation = await this.validateDependencies(request);
+    const depsValidation = await this.validateDependencies(
+      request,
+      recurring,
+      account.id,
+    );
     if (depsValidation.isLeft()) return left(depsValidation.value);
 
     const mutationResult = this.applyMutations(
@@ -69,14 +76,23 @@ export class UpdateRecurringTransactionService implements Service<
         new UnauthorizedError('Transação não pertence ao workspace.'),
       );
 
-    const account = await this.accountRepository.findById(recurring.accountId);
+    const account = await this.accountRepository.findById(
+      request.accountId ?? recurring.accountId,
+    );
     if (!account) return left(new AccountNotFoundError());
+    if (account.workspaceId !== request.workspaceId) {
+      return left(
+        new UnauthorizedError('Conta inválida ou não pertence ao workspace.'),
+      );
+    }
 
     return right({ recurring, account });
   }
 
   private async validateDependencies(
     request: Request,
+    recurring: RecurringTransaction,
+    sourceAccountId: string,
   ): Promise<Either<Error, void>> {
     if (request.categoryId) {
       const categoryError = await this.validateCategory(
@@ -97,6 +113,20 @@ export class UpdateRecurringTransactionService implements Service<
           ),
         );
       }
+      if (destAccount.type === AccountType.CREDIT_CARD) {
+        return left(new CreditCardTransferNotAllowedError());
+      }
+    }
+
+    const isTransfer =
+      recurring.type === 'TRANSFER' || Boolean(request.destinationAccountId);
+    const destinationAccountId =
+      request.destinationAccountId !== undefined
+        ? request.destinationAccountId
+        : recurring.destinationAccountId;
+
+    if (isTransfer && destinationAccountId === sourceAccountId) {
+      return left(new SourceAndDestinationAccountMustBeDifferentError());
     }
 
     return right(undefined);
@@ -125,6 +155,9 @@ export class UpdateRecurringTransactionService implements Service<
   ): Either<Error, void> {
     this.updateDetails(recurring, request);
 
+    const accountResult = this.updateAccount(recurring, request.accountId);
+    if (accountResult.isLeft()) return accountResult;
+
     if (request.amount !== undefined) {
       const amountResult = recurring.updateAmount(request.amount);
       if (amountResult.isLeft()) return amountResult;
@@ -140,6 +173,17 @@ export class UpdateRecurringTransactionService implements Service<
     if (transferResult.isLeft()) return transferResult;
 
     return right(undefined);
+  }
+
+  private updateAccount(
+    recurring: RecurringTransaction,
+    accountId?: string,
+  ): Either<Error, void> {
+    if (accountId === undefined || accountId === recurring.accountId) {
+      return right(undefined);
+    }
+
+    return recurring.changeAccount(accountId);
   }
 
   private updateDetails(
@@ -184,19 +228,29 @@ export class UpdateRecurringTransactionService implements Service<
         : null;
     }
 
-    if (request.startDate !== undefined) {
+    const startDateChanged =
+      request.startDate !== undefined &&
+      newStartDate.getTime() !==
+        this.dateProvider.startOfDay(recurring.startDate, tz).getTime();
+
+    if (startDateChanged) {
       const today = this.dateProvider.startOfDay(this.dateProvider.now(), tz);
       if (newStartDate <= today) {
         return left(new StartDateCannotBeTodayOrPastError());
       }
     }
 
-    return recurring.updateSchedule(
+    const scheduleResult = recurring.updateSchedule(
       newStartDate,
       newEndDate,
       request.frequency ?? recurring.frequency,
       request.interval ?? recurring.interval,
     );
+    if (scheduleResult.isLeft()) return scheduleResult;
+
+    if (startDateChanged) recurring.clearLastGenerated();
+
+    return right(undefined);
   }
 
   private updateDestination(
