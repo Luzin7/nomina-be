@@ -2,6 +2,7 @@ import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpe
 import { BalanceMovementCause, TransactionStatus } from '@constants/enums';
 import { AnyAccount } from '@modules/account/entities/types';
 import { Either } from '@shared/core/errors/Either';
+import { RecurringTransaction } from '../../entities/RecurringTransaction';
 import { Transaction } from '../../entities/Transaction';
 
 export type BalanceMovementContext = {
@@ -88,6 +89,15 @@ export abstract class TransactionRepository {
   abstract createWithBalanceUpdate(
     transaction: Transaction,
     applyEffects: CreateBalanceMutation,
+    context: BalanceMovementContext,
+  ): Promise<Either<Error, void>>;
+
+  /**
+   * Grava a regra de parcelamento e a 1ª parcela (com o efeito no saldo) na
+   * mesma transação do banco: ou persistem as duas, ou nenhuma.
+   */
+  abstract createInstallmentPlan(
+    plan: { recurring: RecurringTransaction; firstInstallment: Transaction },
     context: BalanceMovementContext,
   ): Promise<Either<Error, void>>;
 

@@ -5,6 +5,8 @@ import { UserModule } from '@modules/user/User.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
 import { DateModule } from '@providers/date/Date.module';
+import { CreateInstallmentPurchaseController } from './features/create-installment-purchase/create-installment-purchase.controller';
+import { CreateInstallmentPurchaseService } from './features/create-installment-purchase/create-installment-purchase.service';
 import { CreateRecurringTransactionController } from './features/create-recurring-transaction/create-recurring-transaction.controller';
 import { CreateRecurringTransactionService } from './features/create-recurring-transaction/create-recurring-transaction.service';
 import { CreateTransactionController } from './features/create-transaction/create-transaction.controller';
@@ -49,6 +51,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     UpdateTransactionController,
     SetTransactionStatusController,
     CreateRecurringTransactionController,
+    CreateInstallmentPurchaseController,
     GenerateRecurringTransactionsJobController,
     ReconcileBalancesJobController,
     SettleCardInstallmentsJobController,
@@ -67,6 +70,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     UpdateTransactionService,
     SetTransactionStatusService,
     CreateRecurringTransactionService,
+    CreateInstallmentPurchaseService,
     UpdateRecurringTransactionService,
     DeleteRecurringTransactionService,
     ListRecurringTransactionsService,

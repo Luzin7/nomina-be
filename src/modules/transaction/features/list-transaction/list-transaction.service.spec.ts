@@ -31,6 +31,7 @@ describe('ListTransactionsService', () => {
       getTopExpensesByCategory: jest.fn(),
       sumTransactionsByDateRange: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
+      createInstallmentPlan: jest.fn(),
       updateWithBalanceEffect: jest.fn(),
       deleteWithBalanceEffect: jest.fn(),
       updateStatusWithBalanceEffect: jest.fn(),

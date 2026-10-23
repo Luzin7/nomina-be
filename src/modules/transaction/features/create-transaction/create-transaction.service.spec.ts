@@ -84,6 +84,7 @@ describe('CreateTransactionService', () => {
 
     transactionRepository = {
       createWithBalanceUpdate: jest.fn(),
+      createInstallmentPlan: jest.fn(),
       create: jest.fn(),
       findUniqueById: jest.fn(),
       listTransactionsByWorkspaceId: jest.fn(),

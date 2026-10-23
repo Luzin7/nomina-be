@@ -8,6 +8,7 @@ import {
   TransactionStatus,
   TransactionType,
 } from '@constants/enums';
+import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import {
   Transaction,
   TransactionBalanceEffect,
@@ -49,6 +50,7 @@ import {
 import { DomainError } from '@shared/core/errors/DomainError';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { AccountMapper } from '../mappers/account.mapper';
+import { RecurringTransactionMapper } from '../mappers/recurring-transaction.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
 
@@ -242,27 +244,15 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   ): Promise<Either<Error, void>> {
     try {
       await this.drizzle.db.transaction(async (tx) => {
-        await tx.execute(sql`set local lock_timeout = '3s'`);
-        await tx.execute(sql`set local statement_timeout = '15s'`);
+        const accounts = await this.lockAccountsForWrite(tx, transaction);
 
-        const accounts = await this.lockAccounts(tx, [
-          transaction.accountId,
-          transaction.destinationAccountId,
-        ]);
-
-        const applied = applyEffects(accounts);
-        if (applied.isLeft()) throw applied.value;
-
-        const [created] = await tx
-          .insert(schema.transactions)
-          .values(TransactionMapper.toDatabase(transaction))
-          .returning({ id: schema.transactions.id });
-
-        await this.writeBalanceDeltas(tx, applied.value, {
-          transactionId: created.id,
-          cause: context.cause ?? BalanceMovementCause.TRANSACTION_CREATED,
-          actorId: context.actorId,
-        });
+        await this.persistWithBalanceUpdate(
+          tx,
+          accounts,
+          transaction,
+          applyEffects,
+          context,
+        );
       });
 
       return right(undefined);
@@ -270,6 +260,77 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
       if (error instanceof DomainError) return left(error);
       throw error;
     }
+  }
+
+  async createInstallmentPlan(
+    plan: { recurring: RecurringTransaction; firstInstallment: Transaction },
+    context: BalanceMovementContext,
+  ): Promise<Either<Error, void>> {
+    const { recurring, firstInstallment } = plan;
+
+    try {
+      await this.drizzle.db.transaction(async (tx) => {
+        const accounts = await this.lockAccountsForWrite(tx, firstInstallment);
+
+        await tx
+          .insert(schema.recurringTransactions)
+          .values(RecurringTransactionMapper.toDatabase(recurring));
+
+        await this.persistWithBalanceUpdate(
+          tx,
+          accounts,
+          firstInstallment,
+          (lockedAccounts) =>
+            right(
+              this.applyBalanceEffects(
+                lockedAccounts,
+                firstInstallment.balanceEffects(),
+              ),
+            ),
+          context,
+        );
+      });
+
+      return right(undefined);
+    } catch (error) {
+      if (error instanceof DomainError) return left(error);
+      throw error;
+    }
+  }
+
+  private async lockAccountsForWrite(
+    tx: DrizzleTransaction,
+    transaction: Transaction,
+  ): Promise<Map<string, AnyAccount>> {
+    await tx.execute(sql`set local lock_timeout = '3s'`);
+    await tx.execute(sql`set local statement_timeout = '15s'`);
+
+    return this.lockAccounts(tx, [
+      transaction.accountId,
+      transaction.destinationAccountId,
+    ]);
+  }
+
+  private async persistWithBalanceUpdate(
+    tx: DrizzleTransaction,
+    accounts: Map<string, AnyAccount>,
+    transaction: Transaction,
+    applyEffects: CreateBalanceMutation,
+    context: BalanceMovementContext,
+  ): Promise<void> {
+    const applied = applyEffects(accounts);
+    if (applied.isLeft()) throw applied.value;
+
+    const [created] = await tx
+      .insert(schema.transactions)
+      .values(TransactionMapper.toDatabase(transaction))
+      .returning({ id: schema.transactions.id });
+
+    await this.writeBalanceDeltas(tx, applied.value, {
+      transactionId: created.id,
+      cause: context.cause ?? BalanceMovementCause.TRANSACTION_CREATED,
+      actorId: context.actorId,
+    });
   }
 
   async updateWithBalanceEffect(
