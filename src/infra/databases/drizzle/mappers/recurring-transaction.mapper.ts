@@ -1,4 +1,5 @@
 import { RecurrenceFrequency, TransactionType } from '@constants/enums';
+import { MissingRecurringCategoryError } from '@infra/databases/drizzle/errors/MissingRecurringCategoryError';
 import * as schema from '@infra/databases/drizzle/schema';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 
@@ -9,6 +10,10 @@ type RecurringTransactionDrizzleInsert =
 
 export class RecurringTransactionMapper {
   static toDomain(raw: RecurringTransactionDrizzle): RecurringTransaction {
+    if (!raw.categoryId) {
+      throw new MissingRecurringCategoryError(raw.id);
+    }
+
     return RecurringTransaction.restore(
       {
         workspaceId: raw.workspaceId,
