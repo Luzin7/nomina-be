@@ -9,7 +9,7 @@ import {
   IssueAuthSessionService,
 } from '@modules/user/services/issue-auth-session.service';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { HashComparer } from '@providers/cryptography/contracts/HashComparer';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
@@ -21,6 +21,8 @@ type Response = IssuedAuthSession;
 
 @Injectable()
 export class LoginUserService implements Service<Request, Error, Response> {
+  private readonly logger = new Logger(LoginUserService.name);
+
   constructor(
     private readonly userRepository: UserRepository,
     private readonly workspaceUserRepository: WorkspaceUserRepository,
@@ -42,7 +44,10 @@ export class LoginUserService implements Service<Request, Error, Response> {
     const user = userOrError.value;
     const defaultWorkspaceUser =
       await this.workspaceUserRepository.findDefaultWorkspaceByUserId(user.id);
-    if (!defaultWorkspaceUser) return left(new UnauthorizedError());
+    if (!defaultWorkspaceUser) {
+      this.logger.warn(`Usuário ${user.id} sem workspace padrão no login`);
+      return left(new UnauthorizedError());
+    }
 
     return this.issueAuthSessionService.execute({
       userId: user.id,
