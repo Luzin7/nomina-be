@@ -18,6 +18,14 @@ export class MonthSummaryPresenter {
       ),
       currentMonthSaving: monthSummary.rate.currentMonthSaving,
       previousMonthCompareSaving: monthSummary.rate.previousMonthCompareSaving,
+      previousMonthToDate: {
+        totalIncome: MoneyUtils.centsToDecimal(
+          monthSummary.previousMonthToDate.totalIncome,
+        ),
+        totalExpense: MoneyUtils.centsToDecimal(
+          monthSummary.previousMonthToDate.totalExpense,
+        ),
+      },
     };
   }
 }
