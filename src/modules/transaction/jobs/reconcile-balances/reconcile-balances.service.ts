@@ -1,8 +1,4 @@
-import {
-  BalanceMovementCause,
-  TransactionStatus,
-  TransactionType,
-} from '@constants/enums';
+import { BalanceMovementCause } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import {
   BalanceLedgerUncoveredError,
@@ -17,7 +13,6 @@ export interface AccountReconciliationRow extends Record<string, unknown> {
   account_name: string;
   workspace_id: string;
   balance: string | number;
-  effects: string | number;
   movements: string | number;
   has_opening: boolean;
 }
@@ -27,7 +22,6 @@ export interface BalanceDivergence {
   accountName: string;
   workspaceId: string;
   balance: number;
-  effects: number;
   movements: number;
   unexplained: number;
 }
@@ -46,7 +40,6 @@ function toBigInt(value: string | number): bigint {
 
 function toDivergence(row: AccountReconciliationRow): BalanceDivergence {
   const balance = toBigInt(row.balance);
-  const effects = toBigInt(row.effects);
   const movements = toBigInt(row.movements);
 
   return {
@@ -54,9 +47,8 @@ function toDivergence(row: AccountReconciliationRow): BalanceDivergence {
     accountName: row.account_name,
     workspaceId: row.workspace_id,
     balance: Number(balance),
-    effects: Number(effects),
     movements: Number(movements),
-    unexplained: Number(balance - effects - movements),
+    unexplained: Number(balance - movements),
   };
 }
 
@@ -112,28 +104,7 @@ export class ReconcileBalancesJobService {
         await tx.execute(sql`set local statement_timeout = '30s'`);
 
         return tx.execute<AccountReconciliationRow>(sql`
-          WITH effects AS (
-            SELECT t.account_id AS account_id, CASE t.type
-                WHEN ${TransactionType.INCOME} THEN t.amount
-                WHEN ${TransactionType.EXPENSE} THEN -t.amount
-                WHEN ${TransactionType.TRANSFER} THEN -t.amount
-                ELSE 0::bigint
-              END AS delta
-            FROM transactions t
-            WHERE t.status = ${TransactionStatus.COMPLETED}
-            UNION ALL
-            SELECT t.destination_account_id AS account_id, t.amount AS delta
-            FROM transactions t
-            WHERE t.status = ${TransactionStatus.COMPLETED}
-              AND t.type = ${TransactionType.TRANSFER}
-              AND t.destination_account_id IS NOT NULL
-          ),
-          effect_totals AS (
-            SELECT account_id, SUM(delta)::bigint AS effects
-            FROM effects
-            GROUP BY account_id
-          ),
-          movement_totals AS (
+          WITH movement_totals AS (
             SELECT account_id, SUM(delta)::bigint AS movements
             FROM balance_movements
             GROUP BY account_id
@@ -147,11 +118,9 @@ export class ReconcileBalancesJobService {
                  a.name AS account_name,
                  a.workspace_id,
                  a.balance::bigint AS balance,
-                 COALESCE(e.effects, 0)::bigint AS effects,
                  COALESCE(m.movements, 0)::bigint AS movements,
                  (o.account_id IS NOT NULL) AS has_opening
           FROM accounts a
-          LEFT JOIN effect_totals e ON e.account_id = a.id
           LEFT JOIN movement_totals m ON m.account_id = a.id
           LEFT JOIN openings o ON o.account_id = a.id
           ORDER BY a.id

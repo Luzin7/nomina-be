@@ -1,4 +1,3 @@
-import { BalanceMovementCause } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -6,6 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { and, count, eq } from 'drizzle-orm';
 import { AccountMapper } from '../mappers/account.mapper';
 import * as schema from '../schema';
+import { insertOpeningMovement } from './opening-movement';
 
 @Injectable()
 export class AccountRepositoryImplementation implements AccountRepository {
@@ -29,13 +29,10 @@ export class AccountRepositoryImplementation implements AccountRepository {
         .insert(schema.accounts)
         .values(AccountMapper.toDatabase(account));
 
-      await tx.insert(schema.balanceMovements).values({
+      await insertOpeningMovement(tx, {
         workspaceId: account.workspaceId,
         accountId: account.id,
-        transactionId: null,
-        cause: BalanceMovementCause.OPENING,
-        delta: Number(account.balance),
-        balanceAfter: Number(account.balance),
+        balance: Number(account.balance),
         actorId,
       });
     });

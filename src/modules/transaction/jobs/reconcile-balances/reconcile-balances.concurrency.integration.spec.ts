@@ -137,21 +137,9 @@ describe('balance reconciliation against a seeded account', () => {
   ): Promise<void> {
     const [snapshot] = await db.execute<{
       balance: string;
-      effects: string;
       movements: string;
     }>(sql`
       SELECT a.balance::bigint AS balance,
-             (
-               SELECT COALESCE(SUM(CASE t.type
-                 WHEN ${TransactionType.INCOME} THEN t.amount
-                 WHEN ${TransactionType.EXPENSE} THEN -t.amount
-                 WHEN ${TransactionType.TRANSFER} THEN -t.amount
-                 ELSE 0::bigint
-               END), 0)::bigint
-               FROM transactions t
-               WHERE t.status = ${TransactionStatus.COMPLETED}
-                 AND t.account_id = a.id
-             ) AS effects,
              (
                SELECT COALESCE(SUM(delta), 0)::bigint
                FROM balance_movements
@@ -162,8 +150,7 @@ describe('balance reconciliation against a seeded account', () => {
     `);
 
     const balance = BigInt(snapshot.balance);
-    const opening =
-      balance - BigInt(snapshot.effects) - BigInt(snapshot.movements);
+    const opening = balance - BigInt(snapshot.movements);
 
     await db.insert(schema.balanceMovements).values({
       workspaceId,
@@ -205,8 +192,7 @@ describe('balance reconciliation against a seeded account', () => {
         accountName: 'Checking',
         workspaceId,
         balance: -AMOUNT + ESCAPED_WRITE,
-        effects: -AMOUNT,
-        movements: 0,
+        movements: -AMOUNT,
         unexplained: ESCAPED_WRITE,
       },
     ]);

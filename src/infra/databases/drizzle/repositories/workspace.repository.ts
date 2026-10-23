@@ -9,6 +9,7 @@ import { and, count, eq } from 'drizzle-orm';
 import { CategoryMapper } from '../mappers/category.mapper';
 import { WorkspaceMapper } from '../mappers/workspace.mapper';
 import * as schema from '../schema';
+import { insertOpeningMovement } from './opening-movement';
 
 @Injectable()
 export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
@@ -62,12 +63,20 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
         joinedAt: owner.joinedAt,
       });
 
+      const accountId = crypto.randomUUID();
       await tx.insert(schema.accounts).values({
+        id: accountId,
         workspaceId: workspace.id,
         name: 'Carteira',
         type: AccountType.CASH,
         balance: 0,
         timezone: workspace.timezone,
+      });
+      await insertOpeningMovement(tx, {
+        workspaceId: workspace.id,
+        accountId,
+        balance: 0,
+        actorId: owner.userId,
       });
 
       await tx
