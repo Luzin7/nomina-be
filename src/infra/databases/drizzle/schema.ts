@@ -239,9 +239,7 @@ export const recurringTransactions = pgTable(
       () => accounts.id,
       { onDelete: 'set null' },
     ),
-    categoryId: text('category_id')
-      .references(() => categories.id)
-      .notNull(),
+    categoryId: text('category_id').references(() => categories.id),
     type: text('type').notNull(),
 
     title: text('title').notNull(),
