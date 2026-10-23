@@ -29,11 +29,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     props: Omit<CreditCardProps, 'balance'> & { balance?: bigint },
     id?: string,
   ): Either<Error, CreditCard> {
-    if (
-      props.creditLimit !== null &&
-      props.creditLimit !== undefined &&
-      props.creditLimit <= 0n
-    ) {
+    if (props.creditLimit !== null && props.creditLimit <= 0n) {
       return left(
         new ValidationAccountError(
           'O limite de crédito deve ser superior a zero.',

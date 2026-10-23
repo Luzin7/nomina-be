@@ -52,6 +52,12 @@ import { AccountMapper } from '../mappers/account.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
 
+const compareIds = (left: string, right: string): number => {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+};
+
 const localDayIn = (instant: SQL, timezone: SQL.Aliased | AnyColumn): SQL =>
   sql`(${instant} AT TIME ZONE ${timezone})::date`;
 
@@ -473,7 +479,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   ): Promise<Map<string, AnyAccount>> {
     const ids = [
       ...new Set(accountIds.filter((id): id is string => !!id)),
-    ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    ].sort(compareIds);
 
     if (ids.length === 0) return new Map();
 
@@ -554,9 +560,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   ): Promise<void> {
     const ordered = [...deltas.entries()]
       .filter(([, delta]) => delta !== 0n)
-      .sort(([leftId], [rightId]) =>
-        leftId < rightId ? -1 : leftId > rightId ? 1 : 0,
-      );
+      .sort(([leftId], [rightId]) => compareIds(leftId, rightId));
 
     for (const [accountId, delta] of ordered) {
       const [account] = await tx
@@ -612,7 +616,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
       transactions: rows.map(({ transaction }) =>
         TransactionMapper.toDomain(transaction),
       ),
-      totalDue: totals?.totalDue ?? 0,
+      totalDue: totals.totalDue,
     };
   }
 
