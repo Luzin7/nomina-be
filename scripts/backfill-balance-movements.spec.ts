@@ -26,9 +26,8 @@ function makeAccount(): AccountSnapshot {
     workspaceId: 'ws-1',
     name: 'Checking',
     balance: 10_000n,
-    effects: 4_000n,
     existing: 0n,
-    opening: 6_000n,
+    opening: 10_000n,
     hasOpening: false,
   };
 }

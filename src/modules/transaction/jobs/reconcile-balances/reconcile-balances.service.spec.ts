@@ -27,8 +27,7 @@ function makeRow(
     account_name: 'Checking',
     workspace_id: 'ws-1',
     balance: 50000,
-    effects: 1000,
-    movements: 49000,
+    movements: 50000,
     has_opening: true,
     ...overrides,
   };
@@ -60,7 +59,6 @@ describe('ReconcileBalancesJobService', () => {
         account_id: 'acc-2',
         account_name: 'Savings',
         balance: 0,
-        effects: 0,
         movements: 0,
       }),
     ]);
@@ -77,7 +75,7 @@ describe('ReconcileBalancesJobService', () => {
 
   it('reports an uncovered account and a divergence as two distinct events', async () => {
     executeQuery.mockResolvedValue([
-      makeRow({ account_id: 'acc-2', balance: 49700, movements: 49000 }),
+      makeRow({ account_id: 'acc-2', balance: 50700, movements: 50000 }),
       makeRow({ account_id: 'acc-3', has_opening: false, movements: 0 }),
     ]);
 
@@ -90,10 +88,9 @@ describe('ReconcileBalancesJobService', () => {
         accountId: 'acc-2',
         accountName: 'Checking',
         workspaceId: 'ws-1',
-        balance: 49700,
-        effects: 1000,
-        movements: 49000,
-        unexplained: -300,
+        balance: 50700,
+        movements: 50000,
+        unexplained: 700,
       },
     ]);
     expect(mockCaptureException).toHaveBeenCalledTimes(2);

@@ -15,7 +15,6 @@ export type AccountSnapshot = {
   workspaceId: string;
   name: string;
   balance: bigint;
-  effects: bigint;
   existing: bigint;
   opening: bigint;
   hasOpening: boolean;
@@ -26,7 +25,6 @@ type SnapshotRow = {
   workspace_id: string;
   name: string;
   balance: string;
-  effects: string;
   existing: string;
   opening_rows: number;
 };
@@ -85,7 +83,7 @@ class AccountNotFoundError extends Error {
 class LedgerMismatchError extends Error {
   constructor(accountId: string, recordedSum: bigint, balance: bigint) {
     super(
-      `Somatório de balance_movements + efeitos de transações (${recordedSum}) difere do saldo da conta ${accountId} (${balance}); conta ignorada nesta execução (tráfego concorrente pode ter alterado o saldo entre a leitura e a inserção) — execute o backfill novamente`,
+      `Somatório de balance_movements (${recordedSum}) difere do saldo da conta ${accountId} (${balance}); conta ignorada nesta execução (tráfego concorrente pode ter alterado o saldo entre a leitura e a inserção) — execute o backfill novamente`,
     );
     this.name = 'LedgerMismatchError';
   }
@@ -174,28 +172,7 @@ async function readAccountSnapshots(
   const accountFilter = accountId ? sql`WHERE a.id = ${accountId}` : sql``;
 
   const rows = await sql<SnapshotRow[]>`
-    WITH effects AS (
-      SELECT t.account_id AS account_id, CASE t.type
-          WHEN 'INCOME' THEN t.amount
-          WHEN 'EXPENSE' THEN -t.amount
-          WHEN 'TRANSFER' THEN -t.amount
-          ELSE 0
-        END AS delta
-      FROM transactions t
-      WHERE t.status = 'COMPLETED'
-      UNION ALL
-      SELECT t.destination_account_id AS account_id, t.amount AS delta
-      FROM transactions t
-      WHERE t.status = 'COMPLETED'
-        AND t.type = 'TRANSFER'
-        AND t.destination_account_id IS NOT NULL
-    ),
-    effect_totals AS (
-      SELECT account_id, SUM(delta)::bigint AS effects
-      FROM effects
-      GROUP BY account_id
-    ),
-    movements AS (
+    WITH movements AS (
       SELECT account_id,
              SUM(delta)::bigint AS existing,
              COUNT(*) FILTER (WHERE cause = 'OPENING')::int AS opening_rows
@@ -206,11 +183,9 @@ async function readAccountSnapshots(
            a.workspace_id,
            a.name,
            a.balance::bigint AS balance,
-           COALESCE(e.effects, 0)::bigint AS effects,
            COALESCE(m.existing, 0)::bigint AS existing,
            COALESCE(m.opening_rows, 0) AS opening_rows
     FROM accounts a
-    LEFT JOIN effect_totals e ON e.account_id = a.id
     LEFT JOIN movements m ON m.account_id = a.id
     ${accountFilter}
     ORDER BY a.id
@@ -218,7 +193,6 @@ async function readAccountSnapshots(
 
   return rows.map((row) => {
     const balance = BigInt(row.balance);
-    const effects = BigInt(row.effects);
     const existing = BigInt(row.existing);
 
     return {
@@ -226,9 +200,8 @@ async function readAccountSnapshots(
       workspaceId: row.workspace_id,
       name: row.name,
       balance,
-      effects,
       existing,
-      opening: balance - effects - existing,
+      opening: balance - existing,
       hasOpening: row.opening_rows > 0,
     };
   });
@@ -238,36 +211,16 @@ async function assertLedgerMatchesBalance(
   sql: postgres.ISql,
   account: AccountSnapshot,
 ): Promise<void> {
-  const [totals] = await sql<
-    { movements_sum: string; effects_sum: string; balance: string }[]
-  >`
-    WITH effects AS (
-      SELECT t.account_id AS account_id, CASE t.type
-          WHEN 'INCOME' THEN t.amount
-          WHEN 'EXPENSE' THEN -t.amount
-          WHEN 'TRANSFER' THEN -t.amount
-          ELSE 0
-        END AS delta
-      FROM transactions t
-      WHERE t.status = 'COMPLETED'
-        AND t.account_id = ${account.id}
-      UNION ALL
-      SELECT t.destination_account_id AS account_id, t.amount AS delta
-      FROM transactions t
-      WHERE t.status = 'COMPLETED'
-        AND t.type = 'TRANSFER'
-        AND t.destination_account_id = ${account.id}
-    )
+  const [totals] = await sql<{ movements_sum: string; balance: string }[]>`
     SELECT (SELECT COALESCE(SUM(delta), 0)::bigint
             FROM balance_movements
             WHERE account_id = ${account.id}) AS movements_sum,
-           (SELECT COALESCE(SUM(delta), 0)::bigint FROM effects) AS effects_sum,
            a.balance::bigint AS balance
     FROM accounts a
     WHERE a.id = ${account.id}
   `;
 
-  const recordedSum = BigInt(totals.movements_sum) + BigInt(totals.effects_sum);
+  const recordedSum = BigInt(totals.movements_sum);
   const balance = BigInt(totals.balance);
   if (recordedSum !== balance) {
     throw new LedgerMismatchError(account.id, recordedSum, balance);
@@ -363,7 +316,7 @@ function printDryRun(accounts: AccountSnapshot[]): BackfillSummary {
 
   console.log('Balance movements backfill — DRY RUN (no writes)');
   console.log(
-    'negative opening = the stored balance is lower than the transaction ledger explains',
+    'opening = the stored balance minus the movements already recorded',
   );
   console.log(`accounts scanned: ${accounts.length}`);
   console.log(`covered: ${pending.length}`);
@@ -374,15 +327,7 @@ function printDryRun(accounts: AccountSnapshot[]): BackfillSummary {
   );
   console.log('');
   console.log(
-    formatRow([
-      'id',
-      'name',
-      'workspace_id',
-      'balance',
-      'effects',
-      'existing',
-      'opening',
-    ]),
+    formatRow(['id', 'name', 'workspace_id', 'balance', 'existing', 'opening']),
   );
   for (const account of ranked.slice(0, TOP_DIVERGED_ACCOUNTS)) {
     console.log(
@@ -391,7 +336,6 @@ function printDryRun(accounts: AccountSnapshot[]): BackfillSummary {
         account.name,
         account.workspaceId,
         account.balance,
-        account.effects,
         account.existing,
         account.opening,
       ]),
@@ -433,7 +377,7 @@ function serializeSummary(summary: BackfillSummary): Record<string, unknown> {
   };
 }
 
-async function runApply(sql: postgres.Sql): Promise<{
+export async function runApply(sql: postgres.Sql): Promise<{
   summary: BackfillSummary;
   failedAccounts: FailedAccount[];
 }> {
