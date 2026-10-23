@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiKey } from '@providers/auth/decorators/ApiKey.decorator';
+import { SkipAllRateLimits } from '@infra/http/throttling/decorators';
 import { Public } from '@providers/auth/decorators/IsPublic.decorator';
 import { statusCode } from '@shared/core/types/statusCode';
 import { isAuthorizedCronCall } from '../is-authorized-cron-call';
@@ -21,6 +22,7 @@ export class ReconcileBalancesJobController {
   constructor(private readonly reconcileService: ReconcileBalancesJobService) {}
 
   @Public()
+  @SkipAllRateLimits()
   @Post('reconcile-balances')
   @HttpCode(statusCode.OK)
   async handle(@ApiKey() apiKey: string) {

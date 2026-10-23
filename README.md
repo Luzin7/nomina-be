@@ -225,6 +225,9 @@ remover depois).
   "Manual Deploy", então um deploy manual volta para ela
 - Health check path: `/api/v1/health` (o Render injeta `PORT=10000`)
 - Variáveis: as do schema em `src/infra/env/index.ts`, com `NODE_ENV=production`
+  e `NOMINA_INTERNAL_KEYS` obrigatória (uma ou mais chaves de 32+ caracteres,
+  separadas por vírgula; a mesma chave vai no front como `x-nomina-internal-key`
+  para o rate limit enxergar o IP real do cliente em `x-nomina-client-ip`)
 
 ### Secrets do GitHub Actions
 
