@@ -21,6 +21,8 @@ const CODE = 'ABCD1234';
 
 jest.setTimeout(180_000);
 
+const OTHER_CODE = 'WXYZ5678';
+
 describe('accept workspace invite against a real postgres', () => {
   let container: StartedPostgreSqlContainer;
   let queryClient: postgres.Sql;
@@ -88,5 +90,28 @@ describe('accept workspace invite against a real postgres', () => {
     expect(rights).toHaveLength(1);
     expect(lefts[0].value).toBeInstanceOf(InviteAlreadyUsedError);
     expect(members).toHaveLength(1);
+  });
+
+  it('should return the accepted member with the stored id', async () => {
+    const ownerId = await seedUser();
+    const workspaceId = randomUUID();
+    await db.insert(schema.workspaces).values({ id: workspaceId, name: 'WS' });
+    await db.insert(schema.workspaceInvites).values({
+      code: OTHER_CODE,
+      workspaceId,
+      role: UserRole.USER,
+      createdBy: ownerId,
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+    const memberId = await seedUser();
+
+    const result = await service.execute({ code: OTHER_CODE, sub: memberId });
+
+    if (result.isLeft()) throw result.value;
+    const [stored] = await db
+      .select()
+      .from(schema.workspaceUsers)
+      .where(eq(schema.workspaceUsers.userId, memberId));
+    expect(result.value.id).toBe(stored.id);
   });
 });

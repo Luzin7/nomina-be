@@ -4,6 +4,9 @@ import { PostgresJsDatabase, drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
 
+const bigintSafeReplacer = (_key: string, value: unknown) =>
+  typeof value === 'bigint' ? value.toString() : value;
+
 export const DRIZZLE_TOKEN = Symbol('DRIZZLE_CONNECTION');
 
 @Injectable()
@@ -40,7 +43,7 @@ export class DrizzleProvider implements OnModuleDestroy {
     if (env.NODE_ENV === 'dev') {
       const preview = query.length > 200 ? `${query.slice(0, 200)}…` : query;
       this.logger.debug(
-        `query: ${preview} | params: ${JSON.stringify(params)}`,
+        `query: ${preview} | params: ${JSON.stringify(params, bigintSafeReplacer)}`,
       );
     }
   }
