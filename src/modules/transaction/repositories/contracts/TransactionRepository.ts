@@ -18,6 +18,17 @@ export type UpdateTransactionStatusParams = {
   transactionId: string;
   workspaceId: string;
   status: TransactionStatus;
+  /**
+   * Liquidação de uma parcela já comprada: o limite do cartão e o saldo
+   * devedor foram conferidos quando a compra nasceu, então só o job de
+   * liquidação liga isto. Alterações pedidas por usuários nunca ligam.
+   */
+  scheduledSettlement?: boolean;
+};
+
+export type DueCardTransactions = {
+  transactions: Transaction[];
+  totalDue: number;
 };
 
 export interface ListTransactionsParams {
@@ -105,6 +116,11 @@ export abstract class TransactionRepository {
     params: UpdateTransactionStatusParams,
     context: BalanceMovementContext,
   ): Promise<Either<Error, Transaction>>;
+
+  abstract findDueCardTransactions(
+    now: Date,
+    limit: number,
+  ): Promise<DueCardTransactions>;
 
   abstract findCreditCardLedger(
     accountId: string,

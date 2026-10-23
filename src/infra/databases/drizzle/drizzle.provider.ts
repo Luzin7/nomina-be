@@ -22,6 +22,7 @@ export class DrizzleProvider implements OnModuleDestroy {
       max: 10,
       idle_timeout: 25,
       connect_timeout: 10,
+      connection: { TimeZone: 'UTC' },
       ssl: env.NODE_ENV === 'production' ? 'require' : false,
       debug: (_, query, params) => this.onQuery(String(query), params),
     });

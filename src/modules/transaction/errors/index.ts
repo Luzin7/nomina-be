@@ -152,6 +152,14 @@ export class RecurringGenerationFailedError extends DomainError {
   }
 }
 
+export class CardInstallmentSettlementFailedError extends DomainError {
+  constructor(failedCount: number, processedCount: number) {
+    super(
+      `Falha ao liquidar parcelas de cartão: ${failedCount} de ${processedCount} falharam.`,
+    );
+  }
+}
+
 export class UnknownRecurrenceFrequencyError extends DomainError {
   constructor(frequency: string) {
     super(`Frequência de recorrência desconhecida: ${frequency}`);
