@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiKey } from '@providers/auth/decorators/ApiKey.decorator';
+import { SkipAllRateLimits } from '@infra/http/throttling/decorators';
 import { Public } from '@providers/auth/decorators/IsPublic.decorator';
 import { statusCode } from '@shared/core/types/statusCode';
 import { isAuthorizedCronCall } from '../is-authorized-cron-call';
@@ -60,6 +61,7 @@ export class GenerateRecurringTransactionsJobController {
   ) {}
 
   @Public()
+  @SkipAllRateLimits()
   @Post('generate-recurring-transactions')
   @HttpCode(statusCode.OK)
   async handle(@ApiKey() apiKey: string) {

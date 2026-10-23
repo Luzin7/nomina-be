@@ -1,11 +1,12 @@
+import { RATE_LIMITS } from '@constants/rateLimits';
 import {
   clearRefreshTokenCookie,
   setRefreshTokenCookie,
 } from '@infra/http/cookies/authCookie';
+import { LimitByRefreshToken } from '@infra/http/throttling/decorators';
 import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
 import { Controller, Post, HttpCode, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { Public } from '@providers/auth/decorators/IsPublic.decorator';
 import { RefreshToken } from '@providers/auth/decorators/refreshToken.decorator';
 import { statusCode } from '@shared/core/types/statusCode';
@@ -18,7 +19,7 @@ export class RefreshTokenController {
   constructor(private readonly service: RefreshTokenService) {}
 
   @Public()
-  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
+  @LimitByRefreshToken(RATE_LIMITS.refreshToken)
   @Post('/session/refresh')
   @HttpCode(statusCode.OK)
   async handle(
