@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { normalizePemNewlines } from '@utils/normalizePemNewlines';
 import { JwtAuthGuard } from './guards/jwtAuth.guard';
 import { RolesGuard } from './guards/Roles.guard';
 import { JwtStrategy } from './strategys/jwtStrategy';
@@ -17,8 +18,8 @@ import { JwtStrategy } from './strategys/jwtStrategy';
           signOptions: {
             algorithm: 'RS256',
           },
-          privateKey: env.JWT_PRIVATE_KEY.replaceAll(String.raw`\n`, '\n'),
-          publicKey: env.JWT_PUBLIC_KEY.replaceAll(String.raw`\n`, '\n'),
+          privateKey: normalizePemNewlines(env.JWT_PRIVATE_KEY),
+          publicKey: normalizePemNewlines(env.JWT_PUBLIC_KEY),
         };
       },
     }),

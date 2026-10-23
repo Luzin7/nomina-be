@@ -5,6 +5,7 @@ import { MissingRefreshTokenHashError } from '@modules/user/errors';
 import { AuthSessionsRepository } from '@modules/user/repositories/contracts/auth-session.repository';
 import { RefreshTokensRepository } from '@modules/user/repositories/contracts/refresh-token.repository';
 import { AuthTokenPairFactory } from '@modules/user/services/auth-token-pair.factory';
+import { RefreshTokenGenerator } from '@providers/cryptography/contracts/RefreshTokenGenerator';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { left, right } from '@shared/core/errors/Either';
 import {
@@ -59,11 +60,12 @@ describe('IssueAuthSessionService', () => {
   let refreshTokensRepository: jest.Mocked<RefreshTokensRepository>;
   let authTokenPairFactory: jest.Mocked<AuthTokenPairFactory>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let refreshTokenGenerator: jest.Mocked<RefreshTokenGenerator>;
 
   beforeEach(() => {
     authSessionsRepository = {
       create: jest.fn(),
-      save: jest.fn(),
+      renew: jest.fn(),
       findUniqueById: jest.fn(),
       revoke: jest.fn(),
       delete: jest.fn(),
@@ -85,11 +87,17 @@ describe('IssueAuthSessionService', () => {
       addDaysInCurrentDate: jest.fn().mockReturnValue(FUTURE),
     } as unknown as jest.Mocked<DateProvider>;
 
+    refreshTokenGenerator = {
+      generate: jest.fn().mockReturnValue('generated-token'),
+      successorOf: jest.fn(),
+    } as jest.Mocked<RefreshTokenGenerator>;
+
     service = new IssueAuthSessionService(
       authSessionsRepository,
       refreshTokensRepository,
       authTokenPairFactory,
       dateProvider,
+      refreshTokenGenerator,
     );
   });
 
@@ -127,6 +135,23 @@ describe('IssueAuthSessionService', () => {
 
     expect(authTokenPairFactory.build).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: 'session-42', expiresAt: FUTURE }),
+    );
+  });
+
+  it('should issue a generated refresh token', async () => {
+    authSessionsRepository.create.mockResolvedValue(makeSession());
+    authTokenPairFactory.build.mockResolvedValue(
+      right({
+        accessToken: 'access',
+        rawRefreshToken: 'generated-token',
+        refreshToken: makeRefreshToken(),
+      }),
+    );
+
+    await service.execute(makeRequest());
+
+    expect(authTokenPairFactory.build).toHaveBeenCalledWith(
+      expect.objectContaining({ rawRefreshToken: 'generated-token' }),
     );
   });
 

@@ -25,6 +25,7 @@ function makeInput(
     role: UserRole.OWNER,
     sessionId: 'session-1',
     expiresAt: FUTURE,
+    rawRefreshToken: 'raw-refresh',
     ...overrides,
   };
 }
@@ -36,7 +37,7 @@ describe('AuthTokenPairFactory', () => {
 
   beforeEach(() => {
     encrypter = {
-      encrypt: jest.fn().mockResolvedValue('raw-token'),
+      encrypt: jest.fn().mockResolvedValue('signed-access'),
     } as jest.Mocked<Encrypter>;
     tokenHasher = {
       hash: jest.fn((token: string) => `hashed-${token}`),
@@ -77,8 +78,17 @@ describe('AuthTokenPairFactory', () => {
 
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
-      expect(result.value.accessToken).toBe('raw-token');
-      expect(result.value.rawRefreshToken).toBe('raw-token');
+      expect(result.value.accessToken).toBe('signed-access');
+      expect(result.value.rawRefreshToken).toBe('raw-refresh');
+    }
+  });
+
+  it('should hash the given raw refresh token', async () => {
+    const result = await factory.build(makeInput());
+
+    expect(tokenHasher.hash).toHaveBeenCalledWith('raw-refresh');
+    if (result.isRight()) {
+      expect(result.value.refreshToken.tokenHash).toBe('hashed-raw-refresh');
     }
   });
 

@@ -34,7 +34,7 @@ describe('LogoutUserService', () => {
 
     authSessionsRepository = {
       create: jest.fn(),
-      save: jest.fn(),
+      renew: jest.fn(),
       findUniqueById: jest.fn(),
       revoke: jest.fn(),
       delete: jest.fn(),

@@ -14,6 +14,7 @@ export class RefreshTokenMapper {
         status: raw.status as RefreshTokenStatus,
         expiresAt: raw.expiresAt,
         createdAt: raw.createdAt,
+        rotatedAt: raw.rotatedAt,
       },
       raw.id,
     );
@@ -27,6 +28,7 @@ export class RefreshTokenMapper {
       status: entity.status,
       expiresAt: entity.expiresAt,
       createdAt: entity.createdAt,
+      rotatedAt: entity.rotatedAt,
     };
   }
 }

@@ -2,7 +2,7 @@ import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { AuthSession } from '@modules/user/entities/AuthSession';
 import { AuthSessionsRepository } from '@modules/user/repositories/contracts/auth-session.repository';
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { AuthSessionMapper } from '../mappers/auth-session.mapper';
 import * as schema from '../schema';
 
@@ -19,11 +19,19 @@ export class AuthSessionRepositoryImplementation implements AuthSessionsReposito
     return AuthSessionMapper.toDomain(createdSession);
   }
 
-  async save(authSession: AuthSession): Promise<void> {
+  async renew(authSession: AuthSession): Promise<void> {
     await this.drizzle.db
       .update(schema.authSessions)
-      .set(AuthSessionMapper.toDatabase(authSession))
-      .where(eq(schema.authSessions.id, authSession.id));
+      .set({
+        expiresAt: authSession.expiresAt,
+        lastUsedAt: authSession.lastUsedAt,
+      })
+      .where(
+        and(
+          eq(schema.authSessions.id, authSession.id),
+          isNull(schema.authSessions.revokedAt),
+        ),
+      );
   }
 
   async findUniqueById(id: string): Promise<AuthSession | null> {
@@ -42,7 +50,12 @@ export class AuthSessionRepositoryImplementation implements AuthSessionsReposito
     await this.drizzle.db
       .update(schema.authSessions)
       .set({ revokedAt: new Date() })
-      .where(eq(schema.authSessions.id, id));
+      .where(
+        and(
+          eq(schema.authSessions.id, id),
+          isNull(schema.authSessions.revokedAt),
+        ),
+      );
   }
 
   async delete(id: string): Promise<void> {

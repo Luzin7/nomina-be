@@ -16,7 +16,7 @@ export const envSchema = z.object({
   DEV_URL: z.string().url(),
   DEPLOY_URL: z.string().url(),
   NODE_ENV: z.enum(['dev', 'production']),
-  JWT_PRIVATE_KEY: z.string(),
+  JWT_PRIVATE_KEY: z.string().min(1),
   JWT_PUBLIC_KEY: z.string(),
   JWT_USER_ACCESS_EXPIRES_IN: z.coerce.number(),
   JWT_USER_REFRESH_EXPIRES_IN: z.coerce.number(),

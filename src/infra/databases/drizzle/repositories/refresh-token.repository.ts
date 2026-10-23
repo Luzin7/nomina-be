@@ -33,7 +33,10 @@ export class RefreshTokenRepositoryImplementation implements RefreshTokensReposi
     return this.drizzle.db.transaction(async (tx) => {
       const updated = await tx
         .update(schema.refreshTokens)
-        .set({ status: RefreshTokenStatus.ROTATED })
+        .set({
+          status: RefreshTokenStatus.ROTATED,
+          rotatedAt: current.rotatedAt,
+        })
         .where(
           and(
             eq(schema.refreshTokens.id, current.id),
