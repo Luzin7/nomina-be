@@ -15,6 +15,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { captureException } from '@sentry/nestjs';
 import { Either, left, right } from '@shared/core/errors/Either';
+import { getErrorDetails } from '@shared/utils/error-details';
 
 const BATCH_SIZE = 50;
 const LOCK_TTL_SECONDS = 300;
@@ -35,8 +36,49 @@ function getMaxGenerations(frequency: RecurrenceFrequency): number {
   }
 }
 
-interface Response {
+export type RecurringGenerationOutcome =
+  | 'skipped-already-processed'
+  | 'skipped-lock-held'
+  | 'nothing-due'
+  | 'success'
+  | 'partial-failure'
+  | 'total-failure';
+
+export interface GenerateRecurringTransactionsSummary {
+  outcome: RecurringGenerationOutcome;
   generatedCount: number;
+  failedCount: number;
+  processedCount: number;
+}
+
+interface GenerationCounters {
+  generatedCount: number;
+  failedCount: number;
+  processedCount: number;
+}
+
+interface RecurrenceOutcome {
+  generatedCount: number;
+  failed: boolean;
+}
+
+function skippedSummary(
+  outcome: Extract<
+    RecurringGenerationOutcome,
+    'skipped-already-processed' | 'skipped-lock-held'
+  >,
+): GenerateRecurringTransactionsSummary {
+  return { outcome, generatedCount: 0, failedCount: 0, processedCount: 0 };
+}
+
+function classifyOutcome(
+  counters: GenerationCounters,
+): RecurringGenerationOutcome {
+  if (counters.processedCount === 0) return 'nothing-due';
+  if (counters.failedCount === 0) return 'success';
+  if (counters.failedCount === counters.processedCount) return 'total-failure';
+
+  return 'partial-failure';
 }
 
 @Injectable()
@@ -52,7 +94,9 @@ export class GenerateRecurringTransactionsJobService {
     private readonly dateProvider: DateProvider,
   ) {}
 
-  async execute(): Promise<Either<Error, Response>> {
+  async execute(): Promise<
+    Either<Error, GenerateRecurringTransactionsSummary>
+  > {
     let lock: LockHandle | null = null;
 
     try {
@@ -72,7 +116,7 @@ export class GenerateRecurringTransactionsJobService {
         this.logger.log(
           'Recurring generation skipped: the day is already marked as processed in redis.',
         );
-        return right({ generatedCount: 0 });
+        return right(skippedSummary('skipped-already-processed'));
       }
 
       lock = await this.redis.acquireLock(lockKey, LOCK_TTL_SECONDS);
@@ -80,7 +124,7 @@ export class GenerateRecurringTransactionsJobService {
         this.logger.warn(
           'Recurring generation skipped: another run holds the lock.',
         );
-        return right({ generatedCount: 0 });
+        return right(skippedSummary('skipped-lock-held'));
       }
 
       const lookAheadDate = this.dateProvider.add(
@@ -90,11 +134,11 @@ export class GenerateRecurringTransactionsJobService {
         TIMEZONE,
       );
 
-      const generatedCount = await this.generateAll(lookAheadDate);
+      const counters = await this.generateAll(lookAheadDate);
 
       await this.redis.set(cacheKey, '1', CACHE_TTL_SECONDS);
 
-      return right({ generatedCount });
+      return right({ ...counters, outcome: classifyOutcome(counters) });
     } catch (error: unknown) {
       const err =
         error instanceof Error
@@ -111,8 +155,12 @@ export class GenerateRecurringTransactionsJobService {
     }
   }
 
-  private async generateAll(lookAheadDate: Date): Promise<number> {
-    let generatedCount = 0;
+  private async generateAll(lookAheadDate: Date): Promise<GenerationCounters> {
+    const counters: GenerationCounters = {
+      generatedCount: 0,
+      failedCount: 0,
+      processedCount: 0,
+    };
     let afterId: string | null = null;
     let batch: RecurringTransaction[];
 
@@ -124,28 +172,54 @@ export class GenerateRecurringTransactionsJobService {
       );
 
       for (const recurring of batch) {
-        try {
-          const generated = await this.generateTransactionsForRecurring(
-            recurring,
-            lookAheadDate,
-          );
-          generatedCount += generated;
-        } catch (err: unknown) {
-          captureException(err);
-        }
+        counters.processedCount++;
+
+        const outcome = await this.generateForRecurring(
+          recurring,
+          lookAheadDate,
+        );
+        counters.generatedCount += outcome.generatedCount;
+
+        if (outcome.failed) counters.failedCount++;
       }
 
       afterId = batch.at(-1)?.id ?? null;
     } while (batch.length === BATCH_SIZE);
 
-    return generatedCount;
+    return counters;
+  }
+
+  private async generateForRecurring(
+    recurring: RecurringTransaction,
+    thresholdDate: Date,
+  ): Promise<RecurrenceOutcome> {
+    try {
+      return await this.generateTransactionsForRecurring(
+        recurring,
+        thresholdDate,
+      );
+    } catch (error: unknown) {
+      this.reportRecurringFailure(recurring.id, error);
+      return { generatedCount: 0, failed: true };
+    }
+  }
+
+  private reportRecurringFailure(recurringId: string, error: unknown): void {
+    captureException(error);
+
+    const { sqlState, messageChain } = getErrorDetails(error);
+
+    this.logger.error(
+      `Failed to generate recurring transactions for ${recurringId} (sqlState=${sqlState ?? 'none'}): ${messageChain}`,
+    );
   }
 
   private async generateTransactionsForRecurring(
     recurring: RecurringTransaction,
     thresholdDate: Date,
-  ): Promise<number> {
+  ): Promise<RecurrenceOutcome> {
     const transactionsToCreate: Array<Transaction> = [];
+    let failed = false;
 
     let targetDate = recurring.lastGenerated
       ? this.calculateNextDateService.execute({
@@ -186,7 +260,8 @@ export class GenerateRecurringTransactionsJobService {
       });
 
       if (transactionOrError.isLeft()) {
-        captureException(transactionOrError.value);
+        this.reportRecurringFailure(recurring.id, transactionOrError.value);
+        failed = true;
         break;
       }
 
@@ -205,11 +280,14 @@ export class GenerateRecurringTransactionsJobService {
 
     const shouldPersist = transactionsToCreate.length > 0 || !recurring.active;
 
-    if (!shouldPersist) return 0;
+    if (!shouldPersist) return { generatedCount: 0, failed };
 
-    return this.recurringRepository.createGeneratedTransactions(
-      transactionsToCreate,
-      recurring,
-    );
+    const generatedCount =
+      await this.recurringRepository.createGeneratedTransactions(
+        transactionsToCreate,
+        recurring,
+      );
+
+    return { generatedCount, failed };
   }
 }

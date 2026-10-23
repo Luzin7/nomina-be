@@ -12,7 +12,41 @@ import { ApiKey } from '@providers/auth/decorators/ApiKey.decorator';
 import { Public } from '@providers/auth/decorators/IsPublic.decorator';
 import { statusCode } from '@shared/core/types/statusCode';
 import { isAuthorizedCronCall } from '../is-authorized-cron-call';
-import { GenerateRecurringTransactionsJobService } from './generate-recurring-transactions.service';
+import {
+  GenerateRecurringTransactionsJobService,
+  GenerateRecurringTransactionsSummary,
+  RecurringGenerationOutcome,
+} from './generate-recurring-transactions.service';
+
+const JOB_NAME = GenerateRecurringTransactionsJobService.name;
+
+type OutcomeMessage = (summary: GenerateRecurringTransactionsSummary) => string;
+
+const OUTCOME_MESSAGES: Record<RecurringGenerationOutcome, OutcomeMessage> = {
+  'skipped-already-processed': () =>
+    `${JOB_NAME} skipped: the day is already marked as processed.`,
+  'skipped-lock-held': () => `${JOB_NAME} skipped: another run holds the lock.`,
+  'nothing-due': () =>
+    `${JOB_NAME} completed: no recurring transactions were due.`,
+  success: ({ generatedCount, processedCount }) =>
+    `${JOB_NAME} completed: generated ${generatedCount} transactions from ${processedCount} recurring transactions, no failures.`,
+  'partial-failure': ({ generatedCount, failedCount, processedCount }) =>
+    `${JOB_NAME} completed with failures: generated ${generatedCount} transactions from ${processedCount} recurring transactions, ${failedCount} of ${processedCount} failed.`,
+  'total-failure': ({ generatedCount, failedCount, processedCount }) =>
+    `${JOB_NAME} failed: generated ${generatedCount} transactions from ${processedCount} recurring transactions, all ${failedCount} failed.`,
+};
+
+const OUTCOME_LOG_LEVEL: Record<
+  RecurringGenerationOutcome,
+  'log' | 'warn' | 'error'
+> = {
+  'skipped-already-processed': 'log',
+  'skipped-lock-held': 'log',
+  'nothing-due': 'log',
+  success: 'log',
+  'partial-failure': 'warn',
+  'total-failure': 'error',
+};
 
 @ApiTags('Recurring Transaction')
 @Controller('internal')
@@ -39,10 +73,12 @@ export class GenerateRecurringTransactionsJobController {
       throw new InternalServerErrorException(data.value.message);
     }
 
-    const { generatedCount } = data.value;
+    this.logOutcome(data.value);
+  }
 
-    this.logger.log(
-      `GenerateRecurringTransactionsJobService completed. Generated ${generatedCount} transactions.`,
+  private logOutcome(summary: GenerateRecurringTransactionsSummary): void {
+    this.logger[OUTCOME_LOG_LEVEL[summary.outcome]](
+      OUTCOME_MESSAGES[summary.outcome](summary),
     );
   }
 }
