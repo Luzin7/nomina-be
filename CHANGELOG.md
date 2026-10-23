@@ -3,6 +3,64 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.0.0](https://github.com/Luzin7/nomina-be/compare/v1.5.1...v2.0.0) (2026-10-23)
+
+### ⚠ BREAKING CHANGES
+
+* **transaction:** nomina-fe sends startDate on this route (nomina-fe#71) and
+must confirm the payload carries no extra keys, expect lastGenerated to be
+null after a start-date edit, and handle 422 for a credit-card destination.
+* **transaction:** nomina-fe must send the desired status and treat 409 as
+"nothing changed"; adapting that client is a separate task in its repo.
+
+### Features
+
+* **account:** liquida parcela agendada sem reconferir limite ([a7c69bc](https://github.com/Luzin7/nomina-be/commit/a7c69bc23238db48afa244210041b338df7c62f0))
+* **account:** record every balance change as a movement ([558b04e](https://github.com/Luzin7/nomina-be/commit/558b04eb47150d5f506e064ed44d051ea7d6fbd7)), closes [#30](https://github.com/Luzin7/nomina-be/issues/30)
+* **auth:** sessões de autenticação e rotação de refresh token ([d204a86](https://github.com/Luzin7/nomina-be/commit/d204a863a2aa518d2055dba77d00bb5b78dea089))
+* **category:** unifica categorias legadas repetidas ([cfbe3ae](https://github.com/Luzin7/nomina-be/commit/cfbe3ae3ca824a7e947f1562d4fa8d3c6dee5875))
+* **db:** block drizzle-kit on non-local hosts ([b3a5a69](https://github.com/Luzin7/nomina-be/commit/b3a5a691b288ce53f3430f2f61aec3fbf937db8e))
+* **reconciliation:** report balance drift from the ledger ([550347e](https://github.com/Luzin7/nomina-be/commit/550347e41f6660cce13287f5d07a51669ce7159c)), closes [#30](https://github.com/Luzin7/nomina-be/issues/30) [#41](https://github.com/Luzin7/nomina-be/issues/41)
+* **recurring:** backfill de parcelas e pré-checks ([d3f46cb](https://github.com/Luzin7/nomina-be/commit/d3f46cb0085574aba99a85e920833fd609c45217))
+* **recurring:** persiste número de parcelas ([1549956](https://github.com/Luzin7/nomina-be/commit/1549956c30291684807401422cf82b22a2108fbd))
+* **report:** resumo do mês compara com o mesmo período do mês anterior ([e46007d](https://github.com/Luzin7/nomina-be/commit/e46007db3b288c5f476567bf130c6202e677fdd0))
+* **transaction:** endpoint de compra parcelada ([08c9dc8](https://github.com/Luzin7/nomina-be/commit/08c9dc8ff9c414e5f41cc352f4d3bc39482a39ba))
+* **transaction:** job diário conclui parcelas vencidas do cartão ([b2c87e5](https://github.com/Luzin7/nomina-be/commit/b2c87e565f92560350178f26e48b154574e163ce))
+* **transaction:** lista retorna conta de origem e destino ([383519a](https://github.com/Luzin7/nomina-be/commit/383519af02147f22b472bff3d691739b7a2088ac))
+* **transaction:** set the desired status instead of toggling ([b79a54a](https://github.com/Luzin7/nomina-be/commit/b79a54a5ce93d4839d4556febfe819d9b4e57d9d))
+
+### Bug Fixes
+
+* **account:** gera id antes do insert da conta ([e8a73be](https://github.com/Luzin7/nomina-be/commit/e8a73be3320a0cdba8126a8ac68bc614983975bb))
+* **account:** preserve balance on account edit ([498798d](https://github.com/Luzin7/nomina-be/commit/498798db162babe9cf6370a4572a87e95767fed9)), closes [#40](https://github.com/Luzin7/nomina-be/issues/40)
+* **account:** require the movement actor and alert on backfill failures ([3149358](https://github.com/Luzin7/nomina-be/commit/3149358f032673f0a772219b4a1090cc93992e77))
+* **account:** write balance as a relative delta ([436d3ae](https://github.com/Luzin7/nomina-be/commit/436d3ae735377f87d001495830cb7cfdef778a6a))
+* **auth:** mapeia erros de autorização para 401 e 403 ([6474804](https://github.com/Luzin7/nomina-be/commit/6474804aaae463e4b1ae0cd1515b11bee8b9a720))
+* **auth:** reuso de refresh token dentro de 60s ([a423d38](https://github.com/Luzin7/nomina-be/commit/a423d38dc005c1e504b30191e0dee6620b4a3177))
+* **cache:** fail closed when the Redis lock is unavailable and bound redis command timeouts ([fa74fd8](https://github.com/Luzin7/nomina-be/commit/fa74fd8678b8798cec7f2acb41b724fce4330bf3)), closes [#28](https://github.com/Luzin7/nomina-be/issues/28)
+* **cache:** only release locks owned by the caller ([5588809](https://github.com/Luzin7/nomina-be/commit/558880946ac6b3b9f2aa570a460d48c516d7c958)), closes [#52](https://github.com/Luzin7/nomina-be/issues/52)
+* **categories:** drop real production index names in 0018 migration ([dee5ed8](https://github.com/Luzin7/nomina-be/commit/dee5ed86910f1ef085c802b0bc026a249ea1ccbc))
+* **categories:** remap all legacy global categories in 0018 migration ([e6764bf](https://github.com/Luzin7/nomina-be/commit/e6764bfc0ef916fac7a366c74c7b5f3316d58c26))
+* **categories:** seed default categories as per-workspace UUIDs ([ccd79b8](https://github.com/Luzin7/nomina-be/commit/ccd79b80c4253be994e13b2977966d5d6ca7f48f))
+* **database:** fixa TimeZone=UTC na sessão do drizzle ([fb65adc](https://github.com/Luzin7/nomina-be/commit/fb65adc877eb5534317f2255c591f7d687448047))
+* **db:** allow null category on recurring rows ([2d20eaf](https://github.com/Luzin7/nomina-be/commit/2d20eaf0803aac39e7b9e945e10e1a9091786109))
+* **db:** corrige baseline do drizzle e preserva 0016/0017 ([a8ff530](https://github.com/Luzin7/nomina-be/commit/a8ff53091957bc4dcc6112a686fb0d6fdcdfc909))
+* **db:** renumber generated drizzle migrations ([eabcb15](https://github.com/Luzin7/nomina-be/commit/eabcb15d414bb93fc3afcfb5ee6468b98913116e)), closes [#53](https://github.com/Luzin7/nomina-be/issues/53)
+* **db:** unique index on transactions (recurring_transaction_id, date) ([3b2f852](https://github.com/Luzin7/nomina-be/commit/3b2f852f668c414b00ed0962aadb112b7f10cf94))
+* **http:** answer 503 on postgres lock and statement timeouts ([cac9f18](https://github.com/Luzin7/nomina-be/commit/cac9f18551cedaef41794476227651e6eba78cc8)), closes [#30](https://github.com/Luzin7/nomina-be/issues/30)
+* **http:** limite de requisições por usuário em vez de IP compartilhado ([c88dec8](https://github.com/Luzin7/nomina-be/commit/c88dec8a8283ad93aa7496ff8a5facdbdf4433f6))
+* **jobs:** disambiguate recurring job outcomes ([3cdf1ac](https://github.com/Luzin7/nomina-be/commit/3cdf1ac3948a744cf5d822db4d7832a208f6c9e5)), closes [#54](https://github.com/Luzin7/nomina-be/issues/54)
+* **ledger:** abre saldo na conta Carteira padrão ([a7c2555](https://github.com/Luzin7/nomina-be/commit/a7c2555883747e324110ec9a42dbd171e889e8df))
+* **ledger:** conciliação usa só movimentações ([b7869dc](https://github.com/Luzin7/nomina-be/commit/b7869dc54154ddfdd4d03ab5ba0e7326006e0b76))
+* **migrations:** make 0016 and 0017 safe to re-run ([4eceb1f](https://github.com/Luzin7/nomina-be/commit/4eceb1f20a72e7f82d18682eeaaa781a45926be7))
+* pula rate limit no job de liquidação de parcelas de cartão ([8576701](https://github.com/Luzin7/nomina-be/commit/8576701353fd345b215a23780cbb73f75abcc39d))
+* **transaction:** apply account and start edits ([d3dca27](https://github.com/Luzin7/nomina-be/commit/d3dca27387c1d7e87210089daf9db35a612dc121)), closes [#43](https://github.com/Luzin7/nomina-be/issues/43) [#43](https://github.com/Luzin7/nomina-be/issues/43)
+* **transaction:** enforce idempotency on transaction and invoice payment routes ([cb400b0](https://github.com/Luzin7/nomina-be/commit/cb400b0c1b2c5fcc194dfe02f17e56afc70ea3a2)), closes [#27](https://github.com/Luzin7/nomina-be/issues/27)
+* **transaction:** filtro por conta inclui transferências recebidas ([3fcaa48](https://github.com/Luzin7/nomina-be/commit/3fcaa48d56482800faf71850228032ab7668456c))
+* **transactions:** keyset na geração de recorrências e falha visível do job ([346ee3d](https://github.com/Luzin7/nomina-be/commit/346ee3d038a77c51015b7e6d919c859a269bb099))
+* **transactions:** skip already-generated rows and report the real count ([c283046](https://github.com/Luzin7/nomina-be/commit/c2830466933c02df58bd70eeac585fddb634ce8f))
+* **workspace:** aceite de convite normaliza código e mostra o motivo ([0ffe340](https://github.com/Luzin7/nomina-be/commit/0ffe340cd5520670a9457f782fedea062d6ae6f3))
+
 ## [1.5.1](https://github.com/Luzin7/nomina-be/compare/v1.5.0...v1.5.1) (2026-10-10)
 
 ### Bug Fixes
