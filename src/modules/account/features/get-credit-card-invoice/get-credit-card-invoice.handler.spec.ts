@@ -72,6 +72,7 @@ describe('GetCreditCardInvoiceService', () => {
       deleteWithBalanceEffect: jest.fn(),
       updateStatusWithBalanceEffect: jest.fn(),
       findCreditCardLedger: jest.fn().mockResolvedValue([]),
+      findDueCardTransactions: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
     dateProvider = new DayJsDateProvider();
