@@ -11,3 +11,8 @@ coverage
 .docker
 CHANGELOG.md
 *.md
+
+**/*.spec.ts
+scripts
+drizzle
+test
