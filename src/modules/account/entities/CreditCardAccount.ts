@@ -122,6 +122,32 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     return right(undefined);
   }
 
+  public settleScheduledCharge(amount: bigint): Either<Error, void> {
+    if (amount <= 0n) {
+      return left(
+        new ValidationAccountError(
+          'O valor da cobrança deve ser maior que zero.',
+        ),
+      );
+    }
+
+    this.props.balance += amount;
+    return right(undefined);
+  }
+
+  public settleScheduledCredit(amount: bigint): Either<Error, void> {
+    if (amount <= 0n) {
+      return left(
+        new ValidationAccountError(
+          'O valor do pagamento deve ser maior que zero.',
+        ),
+      );
+    }
+
+    this.props.balance -= amount;
+    return right(undefined);
+  }
+
   public applyExpenseEffect(amount: bigint): Either<Error, void> {
     return this.registerCharge(amount);
   }
