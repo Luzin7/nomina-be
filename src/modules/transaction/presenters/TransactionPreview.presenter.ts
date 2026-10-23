@@ -6,6 +6,8 @@ export class TransactionPreviewPresenter {
       id: transaction.id,
       type: transaction.type,
       title: transaction.title,
+      accountId: transaction.accountId,
+      destinationAccountId: transaction.destinationAccountId,
       categoryId: transaction.categoryId,
       amount: transaction.amountDecimal,
       date: transaction.date,
