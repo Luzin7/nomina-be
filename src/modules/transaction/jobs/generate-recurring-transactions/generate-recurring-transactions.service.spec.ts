@@ -9,6 +9,7 @@ import { RecurringTransactionRepository } from '@modules/transaction/repositorie
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { makeRecurring } from '@modules/transaction/test-helpers/mock-factories';
 import { Logger } from '@nestjs/common';
+import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { GenerateRecurringTransactionsJobService } from './generate-recurring-transactions.service';
 
 jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
@@ -22,6 +23,9 @@ const loggerWarn = jest
   .mockImplementation(() => undefined);
 const loggerLog = jest
   .spyOn(Logger.prototype, 'log')
+  .mockImplementation(() => undefined);
+const loggerError = jest
+  .spyOn(Logger.prototype, 'error')
   .mockImplementation(() => undefined);
 
 function loggedRedisDegradation(): boolean {
@@ -125,7 +129,13 @@ describe('GenerateRecurringTransactionsJobService', () => {
     const result = await service.execute();
 
     expect(result.isRight()).toBe(true);
-    if (result.isRight()) expect(result.value.generatedCount).toBe(0);
+    if (result.isRight())
+      expect(result.value).toEqual({
+        outcome: 'skipped-already-processed',
+        generatedCount: 0,
+        failedCount: 0,
+        processedCount: 0,
+      });
     expect(redis.acquireLock).not.toHaveBeenCalled();
     expect(recurringRepository.listNeedingGeneration).not.toHaveBeenCalled();
     expect(loggedAlreadyProcessed()).toBe(true);
@@ -137,7 +147,13 @@ describe('GenerateRecurringTransactionsJobService', () => {
     const result = await service.execute();
 
     expect(result.isRight()).toBe(true);
-    if (result.isRight()) expect(result.value.generatedCount).toBe(0);
+    if (result.isRight())
+      expect(result.value).toEqual({
+        outcome: 'skipped-lock-held',
+        generatedCount: 0,
+        failedCount: 0,
+        processedCount: 0,
+      });
     expect(recurringRepository.listNeedingGeneration).not.toHaveBeenCalled();
     expect(loggedLockOverlap()).toBe(true);
   });
@@ -403,5 +419,80 @@ describe('GenerateRecurringTransactionsJobService', () => {
     const [, updatedRecurring] =
       recurringRepository.createGeneratedTransactions.mock.calls[0];
     expect(updatedRecurring.active).toBe(true);
+  });
+
+  it('reports an empty range as nothing due', async () => {
+    recurringRepository.listNeedingGeneration.mockResolvedValue([]);
+
+    const result = await service.execute();
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight())
+      expect(result.value).toEqual({
+        outcome: 'nothing-due',
+        generatedCount: 0,
+        failedCount: 0,
+        processedCount: 0,
+      });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    expect(loggerError).not.toHaveBeenCalled();
+  });
+
+  it('reports total failure when every recurrence throws', async () => {
+    const recurrings = ['r-1', 'r-2', 'r-3'].map((id) =>
+      makeRecurring({ id, startDate: new Date('2024-01-10') }),
+    );
+    recurringRepository.listNeedingGeneration.mockResolvedValue(recurrings);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-02-10'),
+    );
+    const driverError = Object.assign(
+      new Error(
+        'there is no unique or exclusion constraint matching the ON CONFLICT specification',
+      ),
+      { code: '42P10' },
+    );
+    recurringRepository.createGeneratedTransactions.mockRejectedValue(
+      new DrizzleQueryError('insert into "transactions" ...', [], driverError),
+    );
+
+    const result = await service.execute();
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight())
+      expect(result.value).toEqual({
+        outcome: 'total-failure',
+        generatedCount: 0,
+        failedCount: 3,
+        processedCount: 3,
+      });
+    expect(mockCaptureException).toHaveBeenCalledTimes(3);
+    expect(String(loggerError.mock.calls[0][0])).toContain('r-1');
+    expect(String(loggerError.mock.calls[0][0])).toContain('sqlState=42P10');
+  });
+
+  it('reports partial failure when only some recurrences throw', async () => {
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      makeRecurring({ id: 'r-good', startDate: new Date('2024-01-10') }),
+      makeRecurring({ id: 'r-bad', startDate: new Date('2024-01-10') }),
+    ]);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-02-10'),
+    );
+    recurringRepository.createGeneratedTransactions
+      .mockResolvedValueOnce(1)
+      .mockRejectedValueOnce(new Error('db down'));
+
+    const result = await service.execute();
+
+    if (result.isRight())
+      expect(result.value).toEqual({
+        outcome: 'partial-failure',
+        generatedCount: 1,
+        failedCount: 1,
+        processedCount: 2,
+      });
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    expect(String(loggerError.mock.calls[0][0])).toContain('sqlState=none');
   });
 });
