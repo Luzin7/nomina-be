@@ -8,7 +8,7 @@ import { Either, left, right } from '@shared/core/errors/Either';
 import { SetTransactionStatusRequest } from './set-transaction-status.dto';
 
 type Request = SetTransactionStatusRequest &
-  Pick<TokenPayloadBase, 'workspaceId'> & {
+  Pick<TokenPayloadBase, 'workspaceId' | 'sub'> & {
     transactionId: string;
   };
 
@@ -25,11 +25,14 @@ export class SetTransactionStatusService implements Service<
 
   async execute(request: Request): Promise<Either<Error, Transaction>> {
     const updated =
-      await this.transactionRepository.updateStatusWithBalanceEffect({
-        transactionId: request.transactionId,
-        workspaceId: request.workspaceId,
-        status: request.status,
-      });
+      await this.transactionRepository.updateStatusWithBalanceEffect(
+        {
+          transactionId: request.transactionId,
+          workspaceId: request.workspaceId,
+          status: request.status,
+        },
+        { actorId: request.sub },
+      );
     if (updated.isLeft()) return left(updated.value);
 
     await this.redisService.delByPattern(`report:*:${request.workspaceId}:*`);

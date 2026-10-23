@@ -1,15 +1,16 @@
 import { config } from 'dotenv';
+import * as Sentry from '@sentry/nestjs';
 import postgres from 'postgres';
+import { BALANCE_BACKFILL_ACTOR } from '../src/constants/actors';
 import { BalanceMovementCause } from '../src/constants/enums';
 
 config({ path: '.env' });
 
-const BACKFILL_ACTOR_ID = 'system:backfill';
 const TOP_DIVERGED_ACCOUNTS = 10;
 
 type RunMode = 'dry-run' | 'apply';
 
-type AccountSnapshot = {
+export type AccountSnapshot = {
   id: string;
   workspaceId: string;
   name: string;
@@ -48,6 +49,11 @@ type BackfillSummary = {
   distribution: OpeningDistribution;
 };
 
+type FailedAccount = {
+  id: string;
+  reason: string;
+};
+
 class MissingDatabaseUrlError extends Error {
   constructor() {
     super('DATABASE_URL não está definida nas variáveis de ambiente');
@@ -83,6 +89,63 @@ class LedgerMismatchError extends Error {
     );
     this.name = 'LedgerMismatchError';
   }
+}
+
+export class BackfillAccountsFailedError extends Error {
+  constructor(readonly failures: FailedAccount[]) {
+    super(
+      `Balance movements backfill failed for ${failures.length} account(s)`,
+    );
+    this.name = 'BackfillAccountsFailedError';
+  }
+}
+
+function initAlerting(): void {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    enabled: Boolean(process.env.SENTRY_DSN),
+  });
+}
+
+export async function alertBackfillFailure(
+  error: Error,
+  extra?: Record<string, unknown>,
+): Promise<void> {
+  if (!process.env.SENTRY_DSN) {
+    console.error(
+      'SENTRY_DSN is not set: the backfill failure was not delivered to Sentry.',
+    );
+    return;
+  }
+
+  Sentry.captureException(error, extra ? { extra } : undefined);
+  const flushed = await Sentry.flush(2_000);
+  if (!flushed) {
+    console.error('Sentry flush timed out: the backfill failure may be lost.');
+  }
+}
+
+export async function reportFailedAccounts(
+  failedAccounts: FailedAccount[],
+): Promise<void> {
+  console.error(
+    'Contas com falha (transação revertida, re-execute o backfill):',
+  );
+  for (const failure of failedAccounts) {
+    console.error(`${failure.id}\t${failure.reason}`);
+  }
+  process.exitCode = 1;
+  await alertBackfillFailure(new BackfillAccountsFailedError(failedAccounts), {
+    failedAccounts,
+  });
+}
+
+export async function reportFatalFailure(error: unknown): Promise<void> {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+  await alertBackfillFailure(
+    error instanceof Error ? error : new Error(String(error)),
+  );
 }
 
 function parseMode(argv: string[]): RunMode {
@@ -211,7 +274,7 @@ async function assertLedgerMatchesBalance(
   }
 }
 
-async function insertOpening(
+export async function insertOpening(
   sql: postgres.ISql,
   account: AccountSnapshot,
 ): Promise<void> {
@@ -221,7 +284,7 @@ async function insertOpening(
     VALUES
       (${account.workspaceId}, ${account.id}, NULL,
        ${BalanceMovementCause.OPENING}, ${account.opening.toString()},
-       ${account.balance.toString()}, ${BACKFILL_ACTOR_ID})
+       ${account.balance.toString()}, ${BALANCE_BACKFILL_ACTOR})
   `;
 }
 
@@ -372,13 +435,13 @@ function serializeSummary(summary: BackfillSummary): Record<string, unknown> {
 
 async function runApply(sql: postgres.Sql): Promise<{
   summary: BackfillSummary;
-  failedAccounts: { id: string; reason: string }[];
+  failedAccounts: FailedAccount[];
 }> {
   const accountIds = (await readAccountSnapshots(sql)).map(
     (account) => account.id,
   );
 
-  const failedAccounts: { id: string; reason: string }[] = [];
+  const failedAccounts: FailedAccount[] = [];
   const summary: BackfillSummary = {
     covered: 0,
     alreadyCovered: 0,
@@ -413,6 +476,8 @@ async function runApply(sql: postgres.Sql): Promise<{
 }
 
 async function main(): Promise<void> {
+  initAlerting();
+
   const mode = parseMode(process.argv.slice(2));
   const sql = postgres(resolveDatabaseUrl(), {
     max: 1,
@@ -433,19 +498,12 @@ async function main(): Promise<void> {
 
     if (failedAccounts.length === 0) return;
 
-    console.error(
-      'Contas com falha (transação revertida, re-execute o backfill):',
-    );
-    for (const failure of failedAccounts) {
-      console.error(`${failure.id}\t${failure.reason}`);
-    }
-    process.exitCode = 1;
+    await reportFailedAccounts(failedAccounts);
   } finally {
     await sql.end({ timeout: 5 });
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch(reportFatalFailure);
+}

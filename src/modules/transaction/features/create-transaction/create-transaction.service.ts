@@ -75,6 +75,7 @@ export class CreateTransactionService implements Service<
     const persisted = await this.transactionRepository.createWithBalanceUpdate(
       transaction,
       (lockedAccounts) => this.applyBalanceEffects(lockedAccounts, transaction),
+      { actorId: request.sub },
     );
     if (persisted.isLeft()) return left(persisted.value);
 

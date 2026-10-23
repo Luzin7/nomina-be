@@ -49,7 +49,7 @@ type DrizzleTransaction = Parameters<
 type BalanceMovementEntry = {
   transactionId: string | null;
   cause: BalanceMovementCause;
-  actorId?: string;
+  actorId: string;
 };
 
 @Injectable()
@@ -216,7 +216,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   async createWithBalanceUpdate(
     transaction: Transaction,
     applyEffects: CreateBalanceMutation,
-    context?: BalanceMovementContext,
+    context: BalanceMovementContext,
   ): Promise<Either<Error, void>> {
     try {
       await this.drizzle.db.transaction(async (tx) => {
@@ -238,8 +238,8 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
         await this.writeBalanceDeltas(tx, applied.value, {
           transactionId: created.id,
-          cause: context?.cause ?? BalanceMovementCause.TRANSACTION_CREATED,
-          actorId: context?.actorId,
+          cause: context.cause ?? BalanceMovementCause.TRANSACTION_CREATED,
+          actorId: context.actorId,
         });
       });
 
@@ -253,7 +253,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   async updateWithBalanceEffect(
     transactionId: string,
     mutate: UpdateTransactionMutation,
-    context?: BalanceMovementContext,
+    context: BalanceMovementContext,
   ): Promise<Either<Error, Transaction>> {
     try {
       const updated = await this.drizzle.db.transaction(async (tx) => {
@@ -281,8 +281,8 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
         await this.writeBalanceDeltas(tx, deltas, {
           transactionId: next.id,
-          cause: context?.cause ?? BalanceMovementCause.TRANSACTION_UPDATED,
-          actorId: context?.actorId,
+          cause: context.cause ?? BalanceMovementCause.TRANSACTION_UPDATED,
+          actorId: context.actorId,
         });
         await tx
           .update(schema.transactions)
@@ -301,7 +301,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
   async deleteWithBalanceEffect(
     transactionId: string,
-    context?: BalanceMovementContext,
+    context: BalanceMovementContext,
   ): Promise<Either<Error, boolean>> {
     try {
       const deleted = await this.drizzle.db.transaction(async (tx) => {
@@ -329,8 +329,8 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
         await this.writeBalanceDeltas(tx, deltas, {
           transactionId: current.id,
-          cause: context?.cause ?? BalanceMovementCause.TRANSACTION_DELETED,
-          actorId: context?.actorId,
+          cause: context.cause ?? BalanceMovementCause.TRANSACTION_DELETED,
+          actorId: context.actorId,
         });
 
         return true;
@@ -345,7 +345,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
   async updateStatusWithBalanceEffect(
     params: UpdateTransactionStatusParams,
-    context?: BalanceMovementContext,
+    context: BalanceMovementContext,
   ): Promise<Either<Error, Transaction>> {
     try {
       const confirmed = await this.drizzle.db.transaction(async (tx) => {
@@ -380,8 +380,8 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
         await this.writeBalanceDeltas(tx, deltas, {
           transactionId: updated.id,
-          cause: context?.cause ?? BalanceMovementCause.STATUS_CHANGED,
-          actorId: context?.actorId,
+          cause: context.cause ?? BalanceMovementCause.STATUS_CHANGED,
+          actorId: context.actorId,
         });
 
         return updated;
@@ -538,7 +538,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
         cause: movement.cause,
         delta: Number(delta),
         balanceAfter: account.balance,
-        actorId: movement.actorId ?? null,
+        actorId: movement.actorId,
       });
     }
   }

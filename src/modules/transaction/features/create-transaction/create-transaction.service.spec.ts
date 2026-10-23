@@ -194,6 +194,7 @@ describe('CreateTransactionService', () => {
     expect(transactionRepository.createWithBalanceUpdate).toHaveBeenCalledWith(
       expect.any(Transaction),
       expect.any(Function),
+      { actorId: 'user-1' },
     );
   });
 

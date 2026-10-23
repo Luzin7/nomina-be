@@ -4,7 +4,7 @@ export abstract class AccountRepository {
   abstract create(account: AnyAccount): Promise<AnyAccount>;
   abstract createWithOpeningMovement(
     account: AnyAccount,
-    actorId?: string,
+    actorId: string,
   ): Promise<void>;
 
   abstract findByNameAndWorkspaceId(

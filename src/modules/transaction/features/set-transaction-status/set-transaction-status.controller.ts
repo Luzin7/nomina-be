@@ -33,11 +33,12 @@ export class SetTransactionStatusController {
   async handle(
     @Param('id') transactionId: string,
     @Body(SetTransactionStatusPipe) body: SetTransactionStatusRequest,
-    @CurrentLoggedUser() { workspaceId }: TokenPayloadSchema,
+    @CurrentLoggedUser() { sub, workspaceId }: TokenPayloadSchema,
   ) {
     const data = await this.service.execute({
       ...body,
       transactionId,
+      sub,
       workspaceId,
     });
 

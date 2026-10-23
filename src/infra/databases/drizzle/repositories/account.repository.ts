@@ -22,7 +22,7 @@ export class AccountRepositoryImplementation implements AccountRepository {
 
   async createWithOpeningMovement(
     account: AnyAccount,
-    actorId?: string,
+    actorId: string,
   ): Promise<void> {
     await this.drizzle.db.transaction(async (tx) => {
       await tx
@@ -36,7 +36,7 @@ export class AccountRepositoryImplementation implements AccountRepository {
         cause: BalanceMovementCause.OPENING,
         delta: Number(account.balance),
         balanceAfter: Number(account.balance),
-        actorId: actorId ?? null,
+        actorId,
       });
     });
   }

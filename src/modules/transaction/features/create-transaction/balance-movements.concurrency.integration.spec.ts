@@ -1,3 +1,4 @@
+import { BALANCE_BACKFILL_ACTOR } from '@constants/actors';
 import {
   BalanceMovementCause,
   TransactionStatus,
@@ -12,7 +13,10 @@ import { CategoryRepositoryImplementation } from '@infra/databases/drizzle/repos
 import { TransactionRepositoryImplementation } from '@infra/databases/drizzle/repositories/transaction.repository';
 import { WorkspaceRepositoryImplementation } from '@infra/databases/drizzle/repositories/workspace.repository';
 import * as schema from '@infra/databases/drizzle/schema';
-import { makeCheckingAccount } from '@modules/account/test-helpers/mock-factories';
+import {
+  makeCheckingAccount,
+  makeCreditCard,
+} from '@modules/account/test-helpers/mock-factories';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
@@ -34,7 +38,9 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { DeleteTransactionService } from '../delete-transaction/delete-transaction.service';
+import { PayCreditCardInvoiceService } from '../pay-credit-card-invoice/pay-credit-card-invoice.service';
 import { SetTransactionStatusService } from '../set-transaction-status/set-transaction-status.service';
+import { UpdateTransactionService } from '../update-transaction/update-transaction.service';
 import { CreateTransactionService } from './create-transaction.service';
 
 type CreateRequest = Parameters<
@@ -45,6 +51,12 @@ type DeleteRequest = Parameters<
 >[0];
 type SetStatusRequest = Parameters<
   typeof SetTransactionStatusService.prototype.execute
+>[0];
+type UpdateRequest = Parameters<
+  typeof UpdateTransactionService.prototype.execute
+>[0];
+type PayInvoiceRequest = Parameters<
+  typeof PayCreditCardInvoiceService.prototype.execute
 >[0];
 
 const OPENING_BALANCE = 50_000n;
@@ -66,6 +78,8 @@ describe('balance movements written with the balance update', () => {
   let createTransactionService: CreateTransactionService;
   let deleteTransactionService: DeleteTransactionService;
   let setTransactionStatusService: SetTransactionStatusService;
+  let updateTransactionService: UpdateTransactionService;
+  let payCreditCardInvoiceService: PayCreditCardInvoiceService;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer('postgres:16-alpine')
@@ -105,6 +119,8 @@ describe('balance movements written with the balance update', () => {
         CreateTransactionService,
         DeleteTransactionService,
         SetTransactionStatusService,
+        UpdateTransactionService,
+        PayCreditCardInvoiceService,
       ],
     }).compile();
 
@@ -115,6 +131,8 @@ describe('balance movements written with the balance update', () => {
     createTransactionService = moduleRef.get(CreateTransactionService);
     deleteTransactionService = moduleRef.get(DeleteTransactionService);
     setTransactionStatusService = moduleRef.get(SetTransactionStatusService);
+    updateTransactionService = moduleRef.get(UpdateTransactionService);
+    payCreditCardInvoiceService = moduleRef.get(PayCreditCardInvoiceService);
   });
 
   afterAll(async () => {
@@ -191,11 +209,12 @@ describe('balance movements written with the balance update', () => {
     accountId: string,
     categoryId: string,
     amount: bigint,
+    sub: string = randomUUID(),
   ): Promise<string> {
     const title = `Ledger expense ${randomUUID()}`;
     const result = await createTransactionService.execute({
       workspaceId,
-      sub: randomUUID(),
+      sub,
       accountId,
       categoryId,
       title,
@@ -215,11 +234,12 @@ describe('balance movements written with the balance update', () => {
     destinationAccountId: string,
     categoryId: string,
     amount: bigint,
+    sub: string = randomUUID(),
   ): Promise<string> {
     const title = `Ledger transfer ${randomUUID()}`;
     const result = await createTransactionService.execute({
       workspaceId,
-      sub: randomUUID(),
+      sub,
       accountId,
       destinationAccountId,
       categoryId,
@@ -323,6 +343,7 @@ describe('balance movements written with the balance update', () => {
       const updated = await setTransactionStatusService.execute({
         transactionId,
         workspaceId,
+        sub: randomUUID(),
         status,
       } as SetStatusRequest);
       if (updated.isLeft()) throw updated.value;
@@ -414,6 +435,211 @@ describe('balance movements written with the balance update', () => {
     );
     expect(byAccount.get(destinationAccountId)?.balanceAfter).toBe(
       Number(OPENING_BALANCE) + 700,
+    );
+  });
+
+  describe('movement actor', () => {
+    type ActorCase = {
+      label: string;
+      cause: BalanceMovementCause;
+      actorId: string;
+      arrange: (
+        seed: Awaited<ReturnType<typeof seedWorkspace>>,
+        actorId: string,
+      ) => Promise<
+        Array<{ cause: BalanceMovementCause; actorId: string | null }>
+      >;
+    };
+
+    const cases: ActorCase[] = [
+      {
+        label: 'TRANSACTION_CREATED',
+        cause: BalanceMovementCause.TRANSACTION_CREATED,
+        actorId: randomUUID(),
+        arrange: async ({ workspaceId, accountId, categoryId }, actorId) => {
+          const transactionId = await createExpense(
+            workspaceId,
+            accountId,
+            categoryId,
+            AMOUNT,
+            actorId,
+          );
+
+          return movementsOfTransaction(transactionId);
+        },
+      },
+      {
+        label: 'TRANSACTION_UPDATED',
+        cause: BalanceMovementCause.TRANSACTION_UPDATED,
+        actorId: randomUUID(),
+        arrange: async ({ workspaceId, accountId, categoryId }, actorId) => {
+          const transactionId = await createExpense(
+            workspaceId,
+            accountId,
+            categoryId,
+            AMOUNT,
+          );
+
+          const updated = await updateTransactionService.execute({
+            workspaceId,
+            sub: actorId,
+            transactionId,
+            accountId,
+            categoryId,
+            title: 'Updated expense',
+            description: null,
+            amount: AMOUNT * 2n,
+            date: TRANSACTION_DATE,
+            type: TransactionType.EXPENSE,
+            status: TransactionStatus.COMPLETED,
+            destinationAccountId: null,
+          } as UpdateRequest);
+          if (updated.isLeft()) throw updated.value;
+
+          return movementsOfTransaction(transactionId);
+        },
+      },
+      {
+        label: 'TRANSACTION_DELETED',
+        cause: BalanceMovementCause.TRANSACTION_DELETED,
+        actorId: randomUUID(),
+        arrange: async ({ workspaceId, accountId, categoryId }, actorId) => {
+          const transactionId = await createExpense(
+            workspaceId,
+            accountId,
+            categoryId,
+            AMOUNT,
+          );
+
+          const deleted = await deleteTransactionService.execute({
+            transactionId,
+            workspaceId,
+            sub: actorId,
+          } as DeleteRequest);
+          if (deleted.isLeft()) throw deleted.value;
+
+          return movementsOfTransaction(transactionId);
+        },
+      },
+      {
+        label: 'STATUS_CHANGED',
+        cause: BalanceMovementCause.STATUS_CHANGED,
+        actorId: randomUUID(),
+        arrange: async ({ workspaceId, accountId, categoryId }, actorId) => {
+          const transactionId = await createExpense(
+            workspaceId,
+            accountId,
+            categoryId,
+            AMOUNT,
+          );
+
+          const updated = await setTransactionStatusService.execute({
+            transactionId,
+            workspaceId,
+            sub: actorId,
+            status: TransactionStatus.PENDING,
+          } as SetStatusRequest);
+          if (updated.isLeft()) throw updated.value;
+
+          return movementsOfTransaction(transactionId);
+        },
+      },
+      {
+        label: 'INVOICE_PAID',
+        cause: BalanceMovementCause.INVOICE_PAID,
+        actorId: randomUUID(),
+        arrange: async ({ workspaceId, accountId }, actorId) => {
+          const creditCardAccountId = randomUUID();
+          await accountRepository.createWithOpeningMovement(
+            makeCreditCard({
+              id: creditCardAccountId,
+              workspaceId,
+              timezone: WORKSPACE_TIMEZONE,
+              balance: 50_000n,
+            }),
+            BALANCE_BACKFILL_ACTOR,
+          );
+
+          const payment = await payCreditCardInvoiceService.execute({
+            workspaceId,
+            sub: actorId,
+            creditCardAccountId,
+            sourceAccountId: accountId,
+            amount: Number(AMOUNT),
+          } as PayInvoiceRequest);
+          if (payment.isLeft()) throw payment.value;
+
+          const [row] = await drizzleService.db
+            .select({ id: schema.transactions.id })
+            .from(schema.transactions)
+            .where(
+              and(
+                eq(schema.transactions.workspaceId, workspaceId),
+                eq(
+                  schema.transactions.destinationAccountId,
+                  creditCardAccountId,
+                ),
+                eq(schema.transactions.type, TransactionType.TRANSFER),
+              ),
+            )
+            .limit(1);
+          if (!row) throw new Error('invoice payment not found');
+
+          return movementsOfTransaction(row.id);
+        },
+      },
+      {
+        label: 'OPENING of a user-created account',
+        cause: BalanceMovementCause.OPENING,
+        actorId: randomUUID(),
+        arrange: async ({ workspaceId }, actorId) => {
+          const accountId = randomUUID();
+          await accountRepository.createWithOpeningMovement(
+            makeCheckingAccount({
+              id: accountId,
+              workspaceId,
+              balance: OPENING_BALANCE,
+              timezone: WORKSPACE_TIMEZONE,
+            }),
+            actorId,
+          );
+
+          return movementsOfAccount(accountId);
+        },
+      },
+      {
+        label: 'OPENING from the backfill job',
+        cause: BalanceMovementCause.OPENING,
+        actorId: BALANCE_BACKFILL_ACTOR,
+        arrange: async ({ workspaceId }, actorId) => {
+          const accountId = randomUUID();
+          await accountRepository.createWithOpeningMovement(
+            makeCheckingAccount({
+              id: accountId,
+              workspaceId,
+              balance: OPENING_BALANCE,
+              timezone: WORKSPACE_TIMEZONE,
+            }),
+            actorId,
+          );
+
+          return movementsOfAccount(accountId);
+        },
+      },
+    ];
+
+    it.each(cases)(
+      'writes the $label actor and never null',
+      async ({ cause, actorId, arrange }) => {
+        const seed = await seedWorkspace();
+
+        const movements = await arrange(seed, actorId);
+        const movement = movements.find((row) => row.cause === cause);
+
+        expect(movement).toBeDefined();
+        expect(movement?.actorId).toBe(actorId);
+        expect(movement?.actorId).not.toBeNull();
+      },
     );
   });
 });

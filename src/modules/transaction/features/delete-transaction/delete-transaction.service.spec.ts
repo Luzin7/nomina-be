@@ -143,6 +143,7 @@ describe('DeleteTransactionService', () => {
     expect(result.isRight()).toBe(true);
     expect(transactionRepository.deleteWithBalanceEffect).toHaveBeenCalledWith(
       'tx-1',
+      { actorId: 'user-1' },
     );
   });
 
@@ -158,6 +159,7 @@ describe('DeleteTransactionService', () => {
     expect(result.isRight()).toBe(true);
     expect(transactionRepository.deleteWithBalanceEffect).toHaveBeenCalledWith(
       'tx-1',
+      { actorId: 'user-1' },
     );
   });
 });

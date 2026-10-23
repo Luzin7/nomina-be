@@ -69,6 +69,7 @@ export class UpdateTransactionService implements Service<
         request.transactionId,
         (current) =>
           this.buildUpdatedTransaction(current, request, resolvedEdit),
+        { actorId: request.sub },
       );
     if (updateResult.isLeft()) return left(updateResult.value);
 

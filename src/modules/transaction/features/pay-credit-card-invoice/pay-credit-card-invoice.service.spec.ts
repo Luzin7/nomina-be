@@ -1,4 +1,4 @@
-import { TransactionStatus } from '@constants/enums';
+import { BalanceMovementCause, TransactionStatus } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import {
@@ -200,6 +200,11 @@ describe('PayCreditCardInvoiceService', () => {
     expect(deltas?.get('acc-cc')).toBe(-1000n);
     expect(transactionRepository.createWithBalanceUpdate).toHaveBeenCalledTimes(
       1,
+    );
+    expect(transactionRepository.createWithBalanceUpdate).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(Function),
+      { cause: BalanceMovementCause.INVOICE_PAID, actorId: 'user-1' },
     );
   });
 
