@@ -40,6 +40,14 @@ describe('RecurringTransaction entity', () => {
       expect(tx.lastGenerated).toBeNull();
     });
 
+    it('should default installmentCount to null', () => {
+      expect(makeTx().installmentCount).toBeNull();
+    });
+
+    it('should keep the given installmentCount', () => {
+      expect(makeTx({ installmentCount: 12 }).installmentCount).toBe(12);
+    });
+
     it('should reject zero amount', () => {
       expect(
         RecurringTransaction.create(makeProps({ amount: 0n })).isLeft(),

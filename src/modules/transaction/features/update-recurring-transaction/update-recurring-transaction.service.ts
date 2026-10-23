@@ -19,6 +19,7 @@ import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
+import { inferInstallmentCount } from '@utils/installmentSchedule';
 import { UpdateRecurringTransactionRequest } from './update-recurring-transaction.dto';
 
 type Request = UpdateRecurringTransactionRequest & {
@@ -240,17 +241,51 @@ export class UpdateRecurringTransactionService implements Service<
       }
     }
 
+    const newFrequency = request.frequency ?? recurring.frequency;
+    const newInterval = request.interval ?? recurring.interval;
+    const scheduleChanged =
+      newStartDate.getTime() !== recurring.startDate.getTime() ||
+      newEndDate?.getTime() !== recurring.endDate?.getTime() ||
+      newFrequency !== recurring.frequency ||
+      newInterval !== recurring.interval;
+
     const scheduleResult = recurring.updateSchedule(
       newStartDate,
       newEndDate,
-      request.frequency ?? recurring.frequency,
-      request.interval ?? recurring.interval,
+      newFrequency,
+      newInterval,
     );
     if (scheduleResult.isLeft()) return scheduleResult;
+
+    if (scheduleChanged) this.reconcileInstallmentCount(recurring, tz);
 
     if (startDateChanged) recurring.clearLastGenerated();
 
     return right(undefined);
+  }
+
+  private reconcileInstallmentCount(
+    recurring: RecurringTransaction,
+    timezone: string,
+  ): void {
+    if (recurring.installmentCount === null) return;
+    if (recurring.endDate === null) {
+      recurring.changeInstallmentCount(null);
+      return;
+    }
+
+    recurring.changeInstallmentCount(
+      inferInstallmentCount(
+        {
+          startDate: recurring.startDate,
+          endDate: recurring.endDate,
+          frequency: recurring.frequency,
+          interval: recurring.interval,
+          timezone,
+        },
+        this.dateProvider,
+      ),
+    );
   }
 
   private updateDestination(

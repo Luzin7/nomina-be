@@ -69,6 +69,11 @@ export enum RecurrenceFrequency {
   YEARLY = 'YEARLY',
 }
 
+export enum RecurringKind {
+  INSTALLMENT = 'installment',
+  RECURRING = 'recurring',
+}
+
 export enum SubscriptionStatus {
   ACTIVE = 'ACTIVE',
   CANCELED = 'CANCELED',

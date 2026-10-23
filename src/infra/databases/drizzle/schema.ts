@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { BalanceMovementCause } from '@constants/enums';
+import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import {
   AnyPgColumn,
   bigint,
@@ -11,6 +12,8 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+
+const OPENING_CAUSE_LITERAL = `'${BalanceMovementCause.OPENING}'`;
 
 // --------------------------------------------------------
 // INFRAESTRUTURA & AUTH
@@ -104,7 +107,7 @@ export const workspaces = pgTable('workspaces', {
     .$default(() => crypto.randomUUID()),
   name: text('name').notNull(),
   currency: text('currency').default('BRL').notNull(),
-  timezone: text('time_zone').default('America/Sao_Paulo').notNull(),
+  timezone: text('time_zone').default(DEFAULT_TIMEZONE).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .defaultNow()
     .notNull(),
@@ -122,7 +125,7 @@ export const workspaceUsers = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    timezone: text('time_zone').notNull().default('America/Sao_Paulo'),
+    timezone: text('time_zone').notNull().default(DEFAULT_TIMEZONE),
     isDefault: boolean('is_default').default(false).notNull(),
     role: text('role').notNull(),
     joinedAt: timestamp('joined_at', { withTimezone: true, mode: 'date' })
@@ -178,7 +181,7 @@ export const accounts = pgTable(
     name: text('name').notNull(),
     type: text('type').notNull(),
     balance: bigint('balance', { mode: 'number' }).default(0).notNull(),
-    timezone: text('time_zone').notNull().default('America/Sao_Paulo'),
+    timezone: text('time_zone').notNull().default(DEFAULT_TIMEZONE),
     closingDaysBeforeDue: integer('closing_days_before_due')
       .default(7)
       .notNull(),
@@ -249,6 +252,7 @@ export const recurringTransactions = pgTable(
 
     frequency: text('frequency').notNull(),
     interval: integer('interval').default(1).notNull(),
+    installmentCount: integer('installment_count'),
 
     startDate: timestamp('start_date', {
       withTimezone: true,
@@ -360,9 +364,7 @@ export const balanceMovements = pgTable(
     index('idx_balance_movements_account_seq').on(table.accountId, table.seq),
     uniqueIndex('ux_balance_movements_opening')
       .on(table.accountId)
-      .where(
-        sql`${table.cause} = ${sql.raw(`'${BalanceMovementCause.OPENING}'`)}`,
-      ),
+      .where(sql`${table.cause} = ${sql.raw(OPENING_CAUSE_LITERAL)}`),
   ],
 );
 
