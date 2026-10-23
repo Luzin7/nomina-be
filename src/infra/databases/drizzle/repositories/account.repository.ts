@@ -5,6 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { and, count, eq } from 'drizzle-orm';
 import { AccountMapper } from '../mappers/account.mapper';
 import * as schema from '../schema';
+import { ensureEntityId } from './ensure-entity-id';
 import { insertOpeningMovement } from './opening-movement';
 
 @Injectable()
@@ -24,6 +25,8 @@ export class AccountRepositoryImplementation implements AccountRepository {
     account: AnyAccount,
     actorId: string,
   ): Promise<void> {
+    const accountId = ensureEntityId(account);
+
     await this.drizzle.db.transaction(async (tx) => {
       await tx
         .insert(schema.accounts)
@@ -31,7 +34,7 @@ export class AccountRepositoryImplementation implements AccountRepository {
 
       await insertOpeningMovement(tx, {
         workspaceId: account.workspaceId,
-        accountId: account.id,
+        accountId,
         balance: Number(account.balance),
         actorId,
       });

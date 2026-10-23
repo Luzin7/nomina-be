@@ -277,6 +277,28 @@ describe('balance movements written with the balance update', () => {
     return Number(account.balance);
   }
 
+  it('returns the created transaction with the stored id', async () => {
+    const { workspaceId, accountId, categoryId } = await seedWorkspace();
+    const title = `Returned id ${randomUUID()}`;
+
+    const result = await createTransactionService.execute({
+      workspaceId,
+      sub: randomUUID(),
+      accountId,
+      categoryId,
+      title,
+      amount: AMOUNT,
+      date: TRANSACTION_DATE,
+      type: TransactionType.EXPENSE,
+      status: TransactionStatus.COMPLETED,
+    } as CreateRequest);
+    if (result.isLeft()) throw result.value;
+
+    expect(result.value.id).toBe(
+      await findTransactionIdByTitle(workspaceId, title),
+    );
+  });
+
   it('records a TRANSACTION_CREATED movement for a completed expense', async () => {
     const { workspaceId, accountId, categoryId } = await seedWorkspace();
     const transactionId = await createExpense(

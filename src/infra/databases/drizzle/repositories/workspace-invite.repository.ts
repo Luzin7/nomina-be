@@ -9,6 +9,7 @@ import {
 import { Injectable } from '@nestjs/common';
 import { and, eq, isNull, TransactionRollbackError } from 'drizzle-orm';
 import { WorkspaceInviteMapper } from '../mappers/workspace-invite.mapper';
+import { ensureEntityId } from './ensure-entity-id';
 
 @Injectable()
 export class WorkspaceInviteRepositoryImplementation implements WorkspaceInviteRepository {
@@ -67,7 +68,7 @@ export class WorkspaceInviteRepositoryImplementation implements WorkspaceInviteR
       const inserted = await tx
         .insert(schema.workspaceUsers)
         .values({
-          id: workspaceUser.id,
+          id: ensureEntityId(workspaceUser),
           userId: workspaceUser.userId,
           workspaceId: workspaceUser.workspaceId,
           role: workspaceUser.role,

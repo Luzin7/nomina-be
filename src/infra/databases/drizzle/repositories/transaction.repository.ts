@@ -53,6 +53,7 @@ import { AccountMapper } from '../mappers/account.mapper';
 import { RecurringTransactionMapper } from '../mappers/recurring-transaction.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
+import { ensureEntityId } from './ensure-entity-id';
 
 const compareIds = (left: string, right: string): number => {
   if (left < right) return -1;
@@ -321,13 +322,14 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     const applied = applyEffects(accounts);
     if (applied.isLeft()) throw applied.value;
 
-    const [created] = await tx
+    const transactionId = ensureEntityId(transaction);
+
+    await tx
       .insert(schema.transactions)
-      .values(TransactionMapper.toDatabase(transaction))
-      .returning({ id: schema.transactions.id });
+      .values(TransactionMapper.toDatabase(transaction));
 
     await this.writeBalanceDeltas(tx, applied.value, {
-      transactionId: created.id,
+      transactionId,
       cause: context.cause ?? BalanceMovementCause.TRANSACTION_CREATED,
       actorId: context.actorId,
     });
