@@ -88,7 +88,10 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
         ? eq(schema.transactions.categoryId, params.categoryId)
         : undefined,
       params.accountId
-        ? eq(schema.transactions.accountId, params.accountId)
+        ? or(
+            eq(schema.transactions.accountId, params.accountId),
+            eq(schema.transactions.destinationAccountId, params.accountId),
+          )
         : undefined,
       params.title
         ? ilike(schema.transactions.title, `%${params.title}%`)
