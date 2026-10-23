@@ -1,4 +1,5 @@
 import { env } from '@infra/env';
+import { SkipAllRateLimits } from '@infra/http/throttling/decorators';
 import {
   Controller,
   HttpCode,
@@ -56,6 +57,7 @@ export class SettleCardInstallmentsJobController {
   ) {}
 
   @Public()
+  @SkipAllRateLimits()
   @Post('settle-card-installments')
   @HttpCode(statusCode.OK)
   async handle(@ApiKey() apiKey: string) {
