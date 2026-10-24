@@ -47,7 +47,7 @@ describe('DeleteWorkspaceService', () => {
       createWithOwnerAndAccount: jest.fn(),
       update: jest.fn(),
       findTimezoneById: jest.fn(),
-      findOwnedByUserId: jest.fn(),
+      findByMemberUserId: jest.fn(),
       countOwnedByUserId: jest.fn(),
     } as jest.Mocked<WorkspaceRepository>;
 

@@ -16,7 +16,7 @@ export abstract class WorkspaceRepository {
   abstract findById(id: string): Promise<Workspace | null>;
   abstract findTimezoneById(id: string): Promise<string | null>;
 
-  abstract findOwnedByUserId(
+  abstract findByMemberUserId(
     userId: string,
     page: number,
     limit: number,
