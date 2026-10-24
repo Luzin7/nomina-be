@@ -83,14 +83,14 @@ describe('account creation opening movement', () => {
       .values({ id: WORKSPACE_ID, name: 'Opening' });
   });
 
-  function makeChecking(balance: bigint): AnyAccount {
+  function makeChecking(balance: bigint, timezone = TIMEZONE): AnyAccount {
     return unwrap(
       CheckingAccount.create({
         workspaceId: WORKSPACE_ID,
         name: 'Checking',
         type: AccountType.CHECKING,
         balance,
-        timezone: TIMEZONE,
+        timezone,
       }),
     );
   }
@@ -139,6 +139,18 @@ describe('account creation opening movement', () => {
         balanceAfter: balance,
         actorId: ACTOR_ID,
       });
+    },
+  );
+
+  it.each(['UTC', 'America/New_York'])(
+    'should persist the account timezone: %s',
+    async (timezone) => {
+      const account = makeChecking(0n, timezone);
+
+      await repository.createWithOpeningMovement(account, ACTOR_ID);
+
+      const found = await repository.findById(account.id);
+      expect(found?.timezone).toBe(timezone);
     },
   );
 

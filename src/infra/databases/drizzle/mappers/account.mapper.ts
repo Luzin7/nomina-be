@@ -103,13 +103,13 @@ export class AccountMapper {
       id: entity.id,
       workspaceId: entity.workspaceId,
       name: entity.name,
+      timezone: entity.timezone,
       type: entity.type,
       balance: Number(entity.balance),
-      creditLimit: isCreditCard
-        ? entity.creditLimit === null
-          ? null
-          : Number(entity.creditLimit)
-        : null,
+      creditLimit:
+        isCreditCard && entity.creditLimit !== null
+          ? Number(entity.creditLimit)
+          : null,
       closingDaysBeforeDue: isCreditCard ? entity.closingDaysBeforeDue : 7,
       dueDay: isCreditCard ? entity.dueDay : null,
     };
