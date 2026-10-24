@@ -1,4 +1,5 @@
 import { RecurrenceFrequency } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
@@ -33,6 +34,7 @@ export class CreateRecurringTransactionService implements Service<
     private readonly accountRepository: AccountRepository,
     private readonly categoryRepository: CategoryRepository,
     private readonly dateProvider: DateProvider,
+    private readonly redisService: CacheProvider,
   ) {}
 
   async execute(
@@ -107,6 +109,9 @@ export class CreateRecurringTransactionService implements Service<
     const created = await this.recurringRepository.create(
       recurringOrError.value,
     );
+
+    await this.redisService.delByPattern(`report:*:${workspaceId}:*`);
+
     return right(created);
   }
 

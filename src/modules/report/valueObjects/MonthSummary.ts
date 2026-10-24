@@ -1,3 +1,4 @@
+import { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { ValueObject } from '@shared/core/Entities/ValueObject';
 
 export type PeriodTotals = {
@@ -17,6 +18,7 @@ export type MonthSummaryType = {
     previousMonthCompareSaving: number;
   };
   previousMonthToDate: PeriodTotals;
+  projection: MonthProjection;
 };
 
 export class MonthSummary extends ValueObject<MonthSummaryType> {
@@ -58,5 +60,9 @@ export class MonthSummary extends ValueObject<MonthSummaryType> {
 
   get previousMonthToDate() {
     return this.props.previousMonthToDate;
+  }
+
+  get projection() {
+    return this.props.projection;
   }
 }

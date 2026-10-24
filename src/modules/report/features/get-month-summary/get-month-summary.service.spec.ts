@@ -4,9 +4,14 @@ import { AccountRepository } from '@modules/account/repositories/contracts/Accou
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
+import {
+  MonthProjectionRepository,
+  ProjectionTotals,
+} from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { FindMonthSummaryService } from './get-month-summary.service';
 
 const NOW = new Date('2026-09-15T12:00:00.000Z');
+const NOVEMBER_START_ISO = '2026-11-01T03:00:00.000Z';
 const CURRENT_START = new Date('2026-09-01T03:00:00.000Z');
 
 type FakeTransaction = {
@@ -33,6 +38,22 @@ function sumByRange(transactions: FakeTransaction[]) {
   };
 }
 
+function makeProjectionTotals(
+  overrides: Partial<ProjectionTotals> = {},
+): ProjectionTotals {
+  return {
+    scheduled: { totalIncome: 0, totalExpense: 0 },
+    variableExpenseToday: 0,
+    basisMonths: [
+      { totalExpense: 0, variableExpense: 0 },
+      { totalExpense: 0, variableExpense: 0 },
+      { totalExpense: 0, variableExpense: 0 },
+    ],
+    firstActivityAt: null,
+    ...overrides,
+  };
+}
+
 function makeAccounts() {
   return [
     { type: AccountType.CHECKING, balance: 1000 },
@@ -46,6 +67,7 @@ describe('FindMonthSummaryService', () => {
   let service: FindMonthSummaryService;
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let accountRepository: jest.Mocked<AccountRepository>;
+  let projectionRepository: jest.Mocked<MonthProjectionRepository>;
   let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
   let dateProvider: DayJsDateProvider;
   let nowSpy: jest.SpyInstance<Date, []>;
@@ -59,6 +81,11 @@ describe('FindMonthSummaryService', () => {
     accountRepository = {
       findAllByWorkspaceId: jest.fn().mockResolvedValue(makeAccounts()),
     } as unknown as jest.Mocked<AccountRepository>;
+
+    projectionRepository = {
+      sumProjectionTotals: jest.fn().mockResolvedValue(makeProjectionTotals()),
+      findActiveRecurringRules: jest.fn().mockResolvedValue([]),
+    } as unknown as jest.Mocked<MonthProjectionRepository>;
 
     workspaceTimezone = {
       execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
@@ -75,6 +102,7 @@ describe('FindMonthSummaryService', () => {
     service = new FindMonthSummaryService(
       transactionRepository,
       accountRepository,
+      projectionRepository,
       workspaceTimezone,
       dateProvider,
       cache,
@@ -201,6 +229,140 @@ describe('FindMonthSummaryService', () => {
         totalIncome: 0,
         totalExpense: 400,
       });
+    });
+  });
+
+  describe('projection', () => {
+    const iso = (date: Date) => date.toISOString();
+
+    async function executeAt(
+      now: Date,
+      totals = { totalIncome: 0, totalExpense: 0, balance: 0 },
+    ) {
+      nowSpy.mockReturnValue(now);
+      transactionRepository.sumTransactionsByDateRange.mockResolvedValue(
+        totals,
+      );
+      const result = await service.execute({
+        sub: 'user-1',
+        workspaceId: 'ws-1',
+      });
+      if (!result.isRight()) throw new Error('expected right');
+
+      return result.value;
+    }
+
+    function lastQuery() {
+      return projectionRepository.sumProjectionTotals.mock.calls[0][0];
+    }
+
+    it('should expose the current month totals as realized', async () => {
+      const summary = await executeAt(NOW, {
+        totalIncome: 10000,
+        totalExpense: 4000,
+        balance: 6000,
+      });
+
+      expect(summary.projection.realized).toEqual({
+        totalIncome: 10000,
+        totalExpense: 4000,
+      });
+    });
+
+    it('should use the local day before the workspace midnight', async () => {
+      await executeAt(new Date('2026-10-31T02:59:59.999Z'));
+
+      expect(iso(lastQuery().today.start)).toBe('2026-10-30T03:00:00.000Z');
+      expect(iso(lastQuery().today.end)).toBe('2026-10-31T02:59:59.999Z');
+    });
+
+    it('should use the new local day at the workspace midnight', async () => {
+      await executeAt(new Date('2026-10-31T03:00:00.000Z'));
+
+      expect(iso(lastQuery().today.start)).toBe('2026-10-31T03:00:00.000Z');
+      expect(iso(lastQuery().today.end)).toBe('2026-11-01T02:59:59.999Z');
+    });
+
+    it('should keep October and key the cache by local day after UTC midnight', async () => {
+      await executeAt(new Date('2026-11-01T02:30:00.000Z'));
+
+      expect(iso(lastQuery().currentMonth.start)).toBe(
+        '2026-10-01T03:00:00.000Z',
+      );
+      expect(cache.get).toHaveBeenCalledWith(
+        'report:month-summary:v3:ws-1:2026-10-31',
+      );
+    });
+
+    it('should roll to November with October, September and August as basis', async () => {
+      await executeAt(new Date(NOVEMBER_START_ISO));
+
+      const query = lastQuery();
+      expect(iso(query.currentMonth.start)).toBe(NOVEMBER_START_ISO);
+      expect(iso(query.today.start)).toBe(NOVEMBER_START_ISO);
+      expect(query.basisMonths.map((m) => iso(m.start))).toEqual([
+        '2026-10-01T03:00:00.000Z',
+        '2026-09-01T03:00:00.000Z',
+        '2026-08-01T03:00:00.000Z',
+      ]);
+      expect(query.basisMonths.map((m) => iso(m.end))).toEqual([
+        '2026-11-01T02:59:59.999Z',
+        '2026-10-01T02:59:59.999Z',
+        '2026-09-01T02:59:59.999Z',
+      ]);
+    });
+
+    it('should use 28 days in February', async () => {
+      projectionRepository.sumProjectionTotals.mockResolvedValue(
+        makeProjectionTotals({
+          basisMonths: [
+            { totalExpense: 3100, variableExpense: 3100 },
+            { totalExpense: 3100, variableExpense: 3100 },
+            { totalExpense: 3000, variableExpense: 3000 },
+          ],
+          firstActivityAt: new Date('2025-01-01T00:00:00.000Z'),
+        }),
+      );
+
+      const summary = await executeAt(new Date('2026-02-28T12:00:00.000Z'));
+
+      expect(iso(lastQuery().currentMonth.end)).toBe(
+        '2026-03-01T02:59:59.999Z',
+      );
+      expect(summary.projection.variableEstimate).toBe(100);
+    });
+
+    it('should key the cache by version and local day', async () => {
+      await executeAt(NOW);
+
+      expect(cache.set).toHaveBeenCalledWith(
+        'report:month-summary:v3:ws-1:2026-09-15',
+        expect.any(String),
+        300,
+      );
+    });
+
+    it('should not call the projection repository on a cache hit', async () => {
+      cache.get.mockResolvedValue(
+        JSON.stringify({
+          month: CURRENT_START,
+          totalIncome: 1,
+          totalExpense: 2,
+          totalCheckingBalance: 3,
+          totalInvestmentBalance: 4,
+          totalCreditCardBalance: 5,
+          rate: { currentMonthSaving: 6, previousMonthCompareSaving: 7 },
+          previousMonthToDate: { totalIncome: 8, totalExpense: 9 },
+          projection: { expectedIncome: 1, usualExpense: null },
+        }),
+      );
+
+      await service.execute({ sub: 'user-1', workspaceId: 'ws-1' });
+
+      expect(projectionRepository.sumProjectionTotals).not.toHaveBeenCalled();
+      expect(
+        projectionRepository.findActiveRecurringRules,
+      ).not.toHaveBeenCalled();
     });
   });
 

@@ -3,6 +3,7 @@ import {
   RecurrenceFrequency,
   TransactionType,
 } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
@@ -64,6 +65,7 @@ describe('CreateRecurringTransactionService', () => {
   let accountRepository: jest.Mocked<AccountRepository>;
   let categoryRepository: jest.Mocked<CategoryRepository>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let cacheProvider: jest.Mocked<CacheProvider>;
 
   beforeEach(() => {
     recurringRepository = {
@@ -123,11 +125,16 @@ describe('CreateRecurringTransactionService', () => {
       endOfMonth: jest.fn(),
     } as unknown as jest.Mocked<DateProvider>;
 
+    cacheProvider = {
+      delByPattern: jest.fn().mockResolvedValue(0),
+    } as unknown as jest.Mocked<CacheProvider>;
+
     service = new CreateRecurringTransactionService(
       recurringRepository,
       accountRepository,
       categoryRepository,
       dateProvider,
+      cacheProvider,
     );
   });
 
@@ -210,6 +217,23 @@ describe('CreateRecurringTransactionService', () => {
     expect(result.isRight()).toBe(true);
     expect(recurringRepository.create).toHaveBeenCalledTimes(1);
     if (result.isRight()) expect(result.value.amount).toBe(150000n);
+  });
+
+  it('should clear the report cache once after creating', async () => {
+    arrangeSuccessMocks();
+
+    await service.execute(makeRequest());
+
+    expect(cacheProvider.delByPattern).toHaveBeenCalledTimes(1);
+    expect(cacheProvider.delByPattern).toHaveBeenCalledWith('report:*:ws-1:*');
+  });
+
+  it('should not clear the report cache when the create is rejected', async () => {
+    accountRepository.findById.mockResolvedValue(null);
+
+    await service.execute(makeRequest());
+
+    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should split totalAmount across installments and compute the endDate', async () => {

@@ -112,6 +112,23 @@ describe('CreateAccountService', () => {
     expect(result.value).toBeInstanceOf(ConflictAccountError);
   });
 
+  it('should clear the report cache once after creating', async () => {
+    arrangeSuccessMocks();
+
+    await service.execute(makeRequest());
+
+    expect(redisService.delByPattern).toHaveBeenCalledTimes(1);
+    expect(redisService.delByPattern).toHaveBeenCalledWith('report:*:ws-1:*');
+  });
+
+  it('should not clear the report cache when the user is not found', async () => {
+    userRepository.findUniqueById.mockResolvedValue(null);
+
+    await service.execute(makeRequest());
+
+    expect(redisService.delByPattern).not.toHaveBeenCalled();
+  });
+
   it('should create a CHECKING account successfully', async () => {
     arrangeSuccessMocks();
 

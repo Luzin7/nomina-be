@@ -1,4 +1,5 @@
 import { RecurrenceFrequency, TransactionStatus } from '@constants/enums';
+import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import {
   CacheProvider,
   LockHandle,
@@ -20,7 +21,6 @@ import { getErrorDetails } from '@shared/utils/error-details';
 const BATCH_SIZE = 50;
 const LOCK_TTL_SECONDS = 300;
 const CACHE_TTL_SECONDS = 86400;
-const TIMEZONE = 'America/Sao_Paulo';
 const LOOK_AHEAD_DAYS = 7;
 
 function getMaxGenerations(frequency: RecurrenceFrequency): number {
@@ -101,7 +101,11 @@ export class GenerateRecurringTransactionsJobService {
 
     try {
       const now = this.dateProvider.now();
-      const day = this.dateProvider.format(now, 'YYYY-MM-DD', TIMEZONE);
+      const day = this.dateProvider.format(
+        now,
+        'YYYY-MM-DD',
+        RECURRING_GENERATION_TIMEZONE,
+      );
 
       const cacheKey = `processed:recurring:${day}`;
       const lockKey = `lock:recurring:${day}`;
@@ -131,7 +135,7 @@ export class GenerateRecurringTransactionsJobService {
         now,
         LOOK_AHEAD_DAYS,
         'day',
-        TIMEZONE,
+        RECURRING_GENERATION_TIMEZONE,
       );
 
       const counters = await this.generateAll(lookAheadDate);
@@ -226,7 +230,7 @@ export class GenerateRecurringTransactionsJobService {
           baseDate: recurring.lastGenerated,
           frequency: recurring.frequency,
           interval: recurring.interval,
-          timezone: TIMEZONE,
+          timezone: RECURRING_GENERATION_TIMEZONE,
         })
       : recurring.startDate;
 
@@ -273,7 +277,7 @@ export class GenerateRecurringTransactionsJobService {
         baseDate: targetDate,
         frequency: recurring.frequency,
         interval: recurring.interval,
-        timezone: TIMEZONE,
+        timezone: RECURRING_GENERATION_TIMEZONE,
       });
       generationCount++;
     }
