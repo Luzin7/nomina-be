@@ -14,6 +14,9 @@ concurrency:
   group: release-main
   cancel-in-progress: false
 
+env:
+  PRODUCTION_HEALTH_URL: https://nomina-be-qico.onrender.com/api/v1/health/ready
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -45,14 +48,17 @@ jobs:
           fi
           echo "Build successful - dist directory created"
 
-  migrate:
+  release:
     needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -72,38 +78,16 @@ jobs:
             exit 1
           fi
 
-      - name: Run database migrations
-        run: npx drizzle-kit migrate
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ALLOW_PROD_MIGRATE: '1'
-
-  release:
-    needs: [verify, migrate]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-
       - name: Semantic Release
         id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./node_modules/.bin/semantic-release
+
+      - name: Notify when there is no release
+        if: steps.release.outputs.version == ''
+        run: |
+          echo "::notice::Sem release: nada migrado, nada publicado"
 
       - name: Compute lowercase image name
         id: image
@@ -130,6 +114,17 @@ jobs:
             ${{ steps.image.outputs.name }}:v${{ steps.release.outputs.version }}
             ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
             ${{ steps.image.outputs.name }}:latest
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            APP_VERSION=${{ steps.release.outputs.version }}
+
+      - name: Run database migrations
+        if: steps.release.outputs.version != ''
+        timeout-minutes: 10
+        run: npx drizzle-kit migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ALLOW_PROD_MIGRATE: '1'
 
       - name: Deploy image to Render
         if: steps.release.outputs.version != ''
@@ -145,6 +140,32 @@ jobs:
           image_url=$(jq -rn --arg image "$IMAGE" '$image | @uri')
           curl -fsS --max-time 30 --retry 2 -X POST "${RENDER_DEPLOY_HOOK_URL}&imgURL=${image_url}" > /dev/null
           echo "Deploy disparado no Render: $IMAGE"
+
+      - name: Verify new image is live
+        if: steps.release.outputs.version != ''
+        timeout-minutes: 12
+        env:
+          HEALTH_URL: ${{ env.PRODUCTION_HEALTH_URL }}
+          EXPECTED_SHA: ${{ github.sha }}
+          POLL_TIMEOUT_SECONDS: '600'
+          POLL_INTERVAL_SECONDS: '10'
+        run: |
+          set -uo pipefail
+          deadline=$((SECONDS + POLL_TIMEOUT_SECONDS))
+          body=''
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if response=$(curl -sS --max-time 10 -w '\n%{http_code}' "$HEALTH_URL"); then
+              status=${response##*$'\n'}
+              body=${response%$'\n'*}
+              if [ "$status" = "200" ] && [ "$(echo "$body" | jq -r '.commit // empty')" = "$EXPECTED_SHA" ]; then
+                echo "Imagem nova no ar: $body"
+                exit 0
+              fi
+            fi
+            sleep "$POLL_INTERVAL_SECONDS"
+          done
+          echo "::error::O commit $EXPECTED_SHA não ficou no ar em ${POLL_TIMEOUT_SECONDS}s em $HEALTH_URL. Último ready: ${body:-sem resposta}"
+          exit 1
 
       - name: Label release pull request
         if: steps.release.outputs.version != ''
