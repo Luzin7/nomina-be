@@ -3,6 +3,16 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.0](https://github.com/Luzin7/nomina-be/compare/v2.1.0...v2.2.0) (2026-10-24)
+
+### Features
+
+* **report:** projeção do fim do mês pela mesma janela do histórico e contas fixas ([bbe173d](https://github.com/Luzin7/nomina-be/commit/bbe173dfdce38c68092d4afb2f477c72311b2a07))
+
+### Bug Fixes
+
+* **workspace:** lista todos os workspaces em que o usuário é membro ([018a6aa](https://github.com/Luzin7/nomina-be/commit/018a6aa02b3346a85d3d9a2049b9ef425a6ec85e))
+
 ## [2.1.0](https://github.com/Luzin7/nomina-be/compare/v2.0.0...v2.1.0) (2026-10-24)
 
 ### Features
