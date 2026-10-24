@@ -1,6 +1,7 @@
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
   buildDailySummary,
+  buildNetWorthEvolution,
   calculateNetPeriodEffect,
   resolveGeneralType,
   resolveInvestmentType,
@@ -172,5 +173,55 @@ describe('buildDailySummary', () => {
     });
 
     expect(result.at(-1)?.balance).toBe(29.99);
+  });
+});
+
+describe('buildNetWorthEvolution', () => {
+  const baseParams = {
+    dateProvider,
+    timezone: 'UTC',
+    startDate: START,
+    endDate: END,
+  };
+
+  it('anchors the last day on the current net worth', () => {
+    const result = buildNetWorthEvolution({
+      ...baseParams,
+      period: [
+        {
+          type: 'INCOME',
+          sourceType: 'CHECKING',
+          destType: null,
+          amount: 5000,
+          date: new Date('2026-09-01T12:00:00.000Z'),
+        },
+        {
+          type: 'EXPENSE',
+          sourceType: 'CREDIT_CARD',
+          destType: null,
+          amount: 2000,
+          date: new Date('2026-09-02T12:00:00.000Z'),
+        },
+      ],
+      currentNetWorth: 10000,
+    });
+
+    expect(result).toEqual([
+      { date: '2026-09-01', income: 50, expense: 0, balance: 120 },
+      { date: '2026-09-02', income: 0, expense: 20, balance: 100 },
+    ]);
+  });
+
+  it('keeps a flat line at the current net worth when nothing happened', () => {
+    const result = buildNetWorthEvolution({
+      ...baseParams,
+      period: [],
+      currentNetWorth: -2500,
+    });
+
+    expect(result).toEqual([
+      { date: '2026-09-01', income: 0, expense: 0, balance: -25 },
+      { date: '2026-09-02', income: 0, expense: 0, balance: -25 },
+    ]);
   });
 });
