@@ -208,21 +208,30 @@ puxa a imagem.
 A cada push na `main`, o `release.yml`:
 
 1. roda testes, `tsc` e build;
-2. aplica as migrations pendentes no banco de produção;
-3. gera a versão com semantic-release e publica a imagem com as tags
-   `vX.Y.Z`, `sha-<commit>` e `latest`;
-4. chama o deploy hook do Render com o digest da imagem publicada.
+2. confere os secrets (`DATABASE_URL` e `RENDER_DEPLOY_HOOK_URL`); se faltar um, para antes de gerar tag ou migrar;
+3. gera a versão com semantic-release;
+4. builda e publica a imagem com as tags `vX.Y.Z` e `sha-<commit>`;
+5. aplica as migrations pendentes no banco de produção;
+6. chama o deploy hook do Render com o digest da imagem publicada;
+7. espera o `/health/ready` devolver o commit novo;
+8. só então promove a imagem para `latest`;
+9. etiqueta o PR com `released`.
 
-Commit que não gera versão (sem `feat`/`fix`) roda as migrations, mas não
-publica imagem nem faz deploy. Como as migrations entram antes da imagem nova,
-elas precisam funcionar com o código da versão anterior (adicionar antes,
-remover depois).
+Commit sem versão (`chore`/`ci`/`build`/`docs`) não migra nem publica. Como as
+migrations entram antes da imagem nova, elas precisam funcionar com o código da
+versão anterior (adicionar antes, remover depois).
+
+Se o migrate falhar depois da tag, re-run não resolve (o workflow falha de
+propósito para não mascarar o erro): corrija a migration (ou faça um commit
+`fix:` vazio, se a falha foi transitória) e mergeie na main; isso gera vX+1 e
+roda tudo de novo.
 
 ### Serviço no Render
 
 - Source: imagem `ghcr.io/luzin7/nomina-be` (pública, sem credencial). O
   workflow sempre manda o digest; a tag configurada no painel só vale para
-  "Manual Deploy", então um deploy manual volta para ela
+  "Manual Deploy" e mudança de env. Com o painel apontando para `latest`, esses
+  deploys sobem a última release VERIFICADA
 - Health check path: `/api/v1/health` (o Render injeta `PORT=10000`)
 - Variáveis: as do schema em `src/infra/env/index.ts`, com `NODE_ENV=production`
   e `NOMINA_INTERNAL_KEYS` obrigatória (uma ou mais chaves de 32+ caracteres,

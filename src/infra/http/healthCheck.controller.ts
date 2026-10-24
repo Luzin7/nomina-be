@@ -24,10 +24,16 @@ export class HealthController {
   @Get()
   @HttpCode(statusCode.OK)
   checkLiveness() {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      version: env.APP_VERSION || null,
+      commit: env.GIT_SHA || null,
+    };
   }
 
   @Public()
+  @SkipAllRateLimits()
   @Get('ready')
   @HttpCode(statusCode.OK)
   async checkReadiness() {
@@ -41,7 +47,12 @@ export class HealthController {
         }
       }
 
-      return { status: 'ok', timestamp: new Date().toISOString() };
+      return {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        version: env.APP_VERSION || null,
+        commit: env.GIT_SHA || null,
+      };
     } catch (error) {
       throw new ServiceUnavailableException({
         status: 'error',

@@ -45,6 +45,8 @@ export const envSchema = z.object({
   USER_REFRESH_EXPIRES_IN: z.coerce.number(),
   CRON_API_KEY: z.string().optional(),
   NOMINA_INTERNAL_KEYS: internalKeyList,
+  GIT_SHA: z.string().optional(),
+  APP_VERSION: z.string().optional(),
 
   REDIS_ENABLED: booleanFlag,
   REDIS_URL: z.string().url().optional(),
