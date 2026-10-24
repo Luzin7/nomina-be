@@ -5,7 +5,7 @@ import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { Injectable } from '@nestjs/common';
-import { and, count, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq } from 'drizzle-orm';
 import { CategoryMapper } from '../mappers/category.mapper';
 import { WorkspaceMapper } from '../mappers/workspace.mapper';
 import * as schema from '../schema';
@@ -127,7 +127,7 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
     return workspace?.timezone ?? null;
   }
 
-  async findOwnedByUserId(
+  async findByMemberUserId(
     userId: string,
     page: number,
     limit: number,
@@ -140,8 +140,9 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
     total: number;
   }> {
     const skip = (page - 1) * limit;
+    const isMember = eq(schema.workspaceUsers.userId, userId);
 
-    const [workspaceUsersQuery, [{ totalCount }]] = await Promise.all([
+    const [rows, [{ totalCount }]] = await Promise.all([
       this.drizzle.db
         .select({
           workspaceUser: schema.workspaceUsers,
@@ -152,11 +153,11 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
           schema.workspaces,
           eq(schema.workspaceUsers.workspaceId, schema.workspaces.id),
         )
-        .where(
-          and(
-            eq(schema.workspaceUsers.userId, userId),
-            eq(schema.workspaceUsers.role, UserRole.OWNER),
-          ),
+        .where(isMember)
+        .orderBy(
+          desc(schema.workspaceUsers.isDefault),
+          asc(schema.workspaceUsers.joinedAt),
+          asc(schema.workspaceUsers.id),
         )
         .limit(limit)
         .offset(skip),
@@ -164,16 +165,11 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
       this.drizzle.db
         .select({ totalCount: count() })
         .from(schema.workspaceUsers)
-        .where(
-          and(
-            eq(schema.workspaceUsers.userId, userId),
-            eq(schema.workspaceUsers.role, UserRole.OWNER),
-          ),
-        ),
+        .where(isMember),
     ]);
 
     return {
-      workspaces: workspaceUsersQuery.map((row) => ({
+      workspaces: rows.map((row) => ({
         workspace: WorkspaceMapper.toDomain(row.workspace),
         role: row.workspaceUser.role as UserRole,
         isDefault: row.workspaceUser.isDefault,

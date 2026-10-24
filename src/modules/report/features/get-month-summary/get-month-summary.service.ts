@@ -9,6 +9,7 @@ import {
   MonthProjectionRepository,
 } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { projectMonthEnd } from '@modules/report/valueObjects/MonthProjection';
+import { LOOKBACK_MONTHS } from '@modules/report/valueObjects/ProjectionRules';
 import { MonthSummary } from '@modules/report/valueObjects/MonthSummary';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { HttpException, Injectable } from '@nestjs/common';
@@ -26,17 +27,13 @@ type Response = MonthSummary;
 
 const CACHE_TTL = 5 * 60;
 
-type BasisMonthWindow = DateRange & { days: number };
-
 type ProjectionWindows = {
   currentMonth: DateRange;
-  today: DateRange;
+  ledgerRange: DateRange;
+  monthKey: string;
   dayOfMonth: number;
   days: number;
-  basisMonths: BasisMonthWindow[];
 };
-
-const BASIS_MONTHS_COUNT = 3;
 
 type AccountBalances = {
   totalCheckingBalance: number;
@@ -106,7 +103,7 @@ export class FindMonthSummaryService implements Service<
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 
     const currentMonthStart = this.dateProvider.startOfMonth(now, timezone);
-    const cacheKey = `report:month-summary:v3:${workspaceId}:${this.dateProvider.format(now, 'YYYY-MM-DD', timezone)}`;
+    const cacheKey = `report:month-summary:v4:${workspaceId}:${this.dateProvider.format(now, 'YYYY-MM-DD', timezone)}`;
     const cached = await this.cache.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
@@ -156,7 +153,7 @@ export class FindMonthSummaryService implements Service<
       previousMonthData,
       previousMonthToDateData,
       accounts,
-      projectionTotals,
+      ledger,
       recurringRules,
     ] = await Promise.all([
       this.transactionRepository.sumTransactionsByDateRange(
@@ -175,14 +172,11 @@ export class FindMonthSummaryService implements Service<
         previousMonthToDateEnd,
       ),
       this.accountRepository.findAllByWorkspaceId(workspaceId),
-      this.monthProjectionRepository.sumProjectionTotals({
+      this.monthProjectionRepository.findMonthLedger({
         workspaceId,
-        currentMonth: windows.currentMonth,
-        today: windows.today,
-        basisMonths: windows.basisMonths.map(({ start, end }) => ({
-          start,
-          end,
-        })),
+        timezone,
+        range: windows.ledgerRange,
+        currentMonthStart,
       }),
       this.monthProjectionRepository.findActiveRecurringRules(
         workspaceId,
@@ -191,20 +185,17 @@ export class FindMonthSummaryService implements Service<
     ]);
 
     const projection = projectMonthEnd({
-      month: { ...windows.currentMonth, days: windows.days },
+      month: {
+        ...windows.currentMonth,
+        key: windows.monthKey,
+        days: windows.days,
+      },
       dayOfMonth: windows.dayOfMonth,
       realized: {
         totalIncome: currentMonthData.totalIncome,
         totalExpense: currentMonthData.totalExpense,
       },
-      scheduled: projectionTotals.scheduled,
-      variableExpenseToday: projectionTotals.variableExpenseToday,
-      basis: windows.basisMonths.map(({ start, days }, index) => ({
-        start,
-        days,
-        ...projectionTotals.basisMonths[index],
-      })),
-      firstActivityAt: projectionTotals.firstActivityAt,
+      ledger,
       recurringRules,
       nextOccurrence: (date, rule) =>
         nextOccurrence(
@@ -282,31 +273,26 @@ export class FindMonthSummaryService implements Service<
     currentMonth: DateRange,
     timezone: string,
   ): ProjectionWindows {
-    const basisMonths: BasisMonthWindow[] = [];
-    for (let k = 1; k <= BASIS_MONTHS_COUNT; k++) {
-      const reference = this.dateProvider.add(
-        currentMonth.start,
-        -k,
-        'month',
-        timezone,
-      );
-      const end = this.dateProvider.endOfMonth(reference, timezone);
-      basisMonths.push({
-        start: this.dateProvider.startOfMonth(reference, timezone),
-        end,
-        days: Number(this.dateProvider.format(end, 'D', timezone)),
-      });
-    }
+    const lookbackReference = this.dateProvider.add(
+      currentMonth.start,
+      -LOOKBACK_MONTHS,
+      'month',
+      timezone,
+    );
 
     return {
       currentMonth,
-      today: {
-        start: this.dateProvider.startOfDay(now, timezone),
-        end: this.dateProvider.endOfDay(now, timezone),
+      ledgerRange: {
+        start: this.dateProvider.startOfMonth(lookbackReference, timezone),
+        end: currentMonth.end,
       },
+      monthKey: this.dateProvider.format(
+        currentMonth.start,
+        'YYYY-MM',
+        timezone,
+      ),
       dayOfMonth: Number(this.dateProvider.format(now, 'D', timezone)),
       days: Number(this.dateProvider.format(currentMonth.end, 'D', timezone)),
-      basisMonths,
     };
   }
 }

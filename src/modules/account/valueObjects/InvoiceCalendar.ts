@@ -1,5 +1,6 @@
 import { isValidClosingDaysBeforeDue, isValidDueDay } from '@constants/enums';
 import { ValidationAccountError } from '@modules/account/errors';
+import { daysInMonth } from '@utils/calendarMonth';
 
 export type PlainDate = string;
 export type InvoiceKey = string;
@@ -33,9 +34,6 @@ const parseKey = (key: InvoiceKey): { year: number; month: number } => {
   const [year, month] = key.split('-').map(Number);
   return { year, month };
 };
-
-const daysInMonth = (year: number, month: number): number =>
-  new Date(Date.UTC(year, month, 0)).getUTCDate();
 
 const shiftMonth = (
   year: number,

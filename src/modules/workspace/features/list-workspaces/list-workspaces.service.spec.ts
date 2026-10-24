@@ -28,7 +28,7 @@ describe('ListWorkspacesService', () => {
       delete: jest.fn(),
       findById: jest.fn(),
       findTimezoneById: jest.fn(),
-      findOwnedByUserId: jest.fn(),
+      findByMemberUserId: jest.fn(),
       countOwnedByUserId: jest.fn(),
     } as jest.Mocked<WorkspaceRepository>;
 
@@ -38,7 +38,7 @@ describe('ListWorkspacesService', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('should return workspaces and total from repository', async () => {
-    workspaceRepository.findOwnedByUserId.mockResolvedValue({
+    workspaceRepository.findByMemberUserId.mockResolvedValue({
       workspaces: [],
       total: 0,
     });
@@ -50,7 +50,7 @@ describe('ListWorkspacesService', () => {
       expect(result.value.workspaces).toEqual([]);
       expect(result.value.total).toBe(0);
     }
-    expect(workspaceRepository.findOwnedByUserId).toHaveBeenCalledWith(
+    expect(workspaceRepository.findByMemberUserId).toHaveBeenCalledWith(
       'user-1',
       1,
       20,
@@ -58,14 +58,14 @@ describe('ListWorkspacesService', () => {
   });
 
   it('should pass pagination params to repository', async () => {
-    workspaceRepository.findOwnedByUserId.mockResolvedValue({
+    workspaceRepository.findByMemberUserId.mockResolvedValue({
       workspaces: [],
       total: 5,
     });
 
     await service.execute(makeRequest({ page: 2, pageSize: 10 }));
 
-    expect(workspaceRepository.findOwnedByUserId).toHaveBeenCalledWith(
+    expect(workspaceRepository.findByMemberUserId).toHaveBeenCalledWith(
       'user-1',
       2,
       10,
