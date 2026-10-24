@@ -72,9 +72,14 @@ jobs:
       - name: Check required secrets
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::O secret DATABASE_URL não está configurado neste repositório."
+            exit 1
+          fi
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::O secret RENDER_DEPLOY_HOOK_URL não está configurado neste repositório."
             exit 1
           fi
 
@@ -87,6 +92,17 @@ jobs:
       - name: Notify when there is no release
         if: steps.release.outputs.version == ''
         run: |
+          released_in=""
+          for t in $(git tag --list 'v*' --contains "$GITHUB_SHA"); do
+            c=$(git rev-list -n1 "$t")
+            if [ "$c" = "$GITHUB_SHA" ] || [ "$(git rev-parse "$c^1" 2>/dev/null)" = "$GITHUB_SHA" ]; then
+              released_in="$t"; break
+            fi
+          done
+          if [ -n "$released_in" ]; then
+            echo "::error::$GITHUB_SHA já saiu em $released_in; re-run não migra nem publica. Corrija com um commit fix: na main."
+            exit 1
+          fi
           echo "::notice::Sem release: nada migrado, nada publicado"
 
       - name: Compute lowercase image name
@@ -113,7 +129,6 @@ jobs:
           tags: |
             ${{ steps.image.outputs.name }}:v${{ steps.release.outputs.version }}
             ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
-            ${{ steps.image.outputs.name }}:latest
           build-args: |
             GIT_SHA=${{ github.sha }}
             APP_VERSION=${{ steps.release.outputs.version }}
@@ -133,10 +148,6 @@ jobs:
           IMAGE: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "::error::O secret RENDER_DEPLOY_HOOK_URL não está configurado neste repositório."
-            exit 1
-          fi
           image_url=$(jq -rn --arg image "$IMAGE" '$image | @uri')
           curl -fsS --max-time 30 --retry 2 -X POST "${RENDER_DEPLOY_HOOK_URL}&imgURL=${image_url}" > /dev/null
           echo "Deploy disparado no Render: $IMAGE"
@@ -166,6 +177,10 @@ jobs:
           done
           echo "::error::O commit $EXPECTED_SHA não ficou no ar em ${POLL_TIMEOUT_SECONDS}s em $HEALTH_URL. Último ready: ${body:-sem resposta}"
           exit 1
+
+      - name: Promote image to latest
+        if: steps.release.outputs.version != ''
+        run: docker buildx imagetools create --tag "${{ steps.image.outputs.name }}:latest" "${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}"
 
       - name: Label release pull request
         if: steps.release.outputs.version != ''
