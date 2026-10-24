@@ -1,4 +1,5 @@
 import { AccountType } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountNotFoundError } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -38,6 +39,7 @@ export class UpdateRecurringTransactionService implements Service<
     private readonly categoryRepository: CategoryRepository,
     private readonly accountRepository: AccountRepository,
     private readonly dateProvider: DateProvider,
+    private readonly redisService: CacheProvider,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Response>> {
@@ -60,6 +62,9 @@ export class UpdateRecurringTransactionService implements Service<
     if (mutationResult.isLeft()) return left(mutationResult.value);
 
     const updated = await this.recurringRepository.update(recurring);
+
+    await this.redisService.delByPattern(`report:*:${request.workspaceId}:*`);
+
     return right(updated);
   }
 

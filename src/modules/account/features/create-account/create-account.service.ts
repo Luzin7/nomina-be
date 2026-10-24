@@ -107,9 +107,7 @@ export class CreateAccountService implements Service<
 
     await this.accountRepository.createWithOpeningMovement(account, sub);
 
-    await this.redisService.delByPattern(
-      `report:month-summary:v2:${workspaceId}:*`,
-    );
+    await this.redisService.delByPattern(`report:*:${workspaceId}:*`);
 
     return right(account);
   }

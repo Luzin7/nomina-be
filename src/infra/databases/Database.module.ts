@@ -1,6 +1,7 @@
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { SubscriptionRepository } from '@modules/subscription/repositories/contracts/SubscriptionRepository';
+import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { AuthSessionsRepository } from '@modules/user/repositories/contracts/auth-session.repository';
@@ -18,6 +19,7 @@ import { DrizzleService } from './drizzle/drizzle.service';
 import { AccountRepositoryImplementation } from './drizzle/repositories/account.repository';
 import { AuthSessionRepositoryImplementation } from './drizzle/repositories/auth-session.repository';
 import { CategoryRepositoryImplementation } from './drizzle/repositories/category.repository';
+import { MonthProjectionRepositoryImplementation } from './drizzle/repositories/month-projection.repository';
 import { RecurringTransactionRepositoryImplementation } from './drizzle/repositories/recurring-transaction.repository';
 import { RefreshTokenRepositoryImplementation } from './drizzle/repositories/refresh-token.repository';
 import { SubscriptionRepositoryImplementation } from './drizzle/repositories/subscription.repository';
@@ -61,6 +63,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: TransactionRepositoryImplementation,
     },
     {
+      provide: MonthProjectionRepository,
+      useClass: MonthProjectionRepositoryImplementation,
+    },
+    {
       provide: RecurringTransactionRepository,
       useClass: RecurringTransactionRepositoryImplementation,
     },
@@ -86,6 +92,7 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     RefreshTokensRepository,
     AuthSessionsRepository,
     TransactionRepository,
+    MonthProjectionRepository,
     RecurringTransactionRepository,
     AccountRepository,
     CategoryRepository,

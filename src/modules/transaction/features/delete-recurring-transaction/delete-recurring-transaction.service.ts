@@ -1,3 +1,4 @@
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { RecurringTransactionNotFoundError } from '@modules/transaction/errors';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { Injectable } from '@nestjs/common';
@@ -18,6 +19,7 @@ export class DeleteRecurringTransactionService implements Service<
 > {
   constructor(
     private readonly recurringRepository: RecurringTransactionRepository,
+    private readonly redisService: CacheProvider,
   ) {}
 
   async execute({
@@ -37,6 +39,8 @@ export class DeleteRecurringTransactionService implements Service<
     }
 
     await this.recurringRepository.delete(recurringTransactionId);
+
+    await this.redisService.delByPattern(`report:*:${workspaceId}:*`);
 
     return right(undefined);
   }

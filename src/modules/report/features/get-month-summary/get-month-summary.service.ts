@@ -1,15 +1,22 @@
 import { AccountType } from '@constants/enums';
+import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
-import { MonthSummary } from '@modules/transaction/valueObjects/MonthSumarryWithPercentage';
+import {
+  DateRange,
+  MonthProjectionRepository,
+} from '@modules/report/repositories/contracts/MonthProjectionRepository';
+import { projectMonthEnd } from '@modules/report/valueObjects/MonthProjection';
+import { MonthSummary } from '@modules/report/valueObjects/MonthSummary';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { HttpException, Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, right } from '@shared/core/errors/Either';
+import { nextOccurrence } from '@utils/installmentSchedule';
 
 type Request = TokenPayloadBase;
 
@@ -18,6 +25,18 @@ type Errors = HttpException;
 type Response = MonthSummary;
 
 const CACHE_TTL = 5 * 60;
+
+type BasisMonthWindow = DateRange & { days: number };
+
+type ProjectionWindows = {
+  currentMonth: DateRange;
+  today: DateRange;
+  dayOfMonth: number;
+  days: number;
+  basisMonths: BasisMonthWindow[];
+};
+
+const BASIS_MONTHS_COUNT = 3;
 
 type AccountBalances = {
   totalCheckingBalance: number;
@@ -76,6 +95,7 @@ export class FindMonthSummaryService implements Service<
   constructor(
     private readonly transactionRepository: TransactionRepository,
     private readonly accountRepository: AccountRepository,
+    private readonly monthProjectionRepository: MonthProjectionRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
     private readonly cache: CacheProvider,
@@ -86,7 +106,7 @@ export class FindMonthSummaryService implements Service<
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 
     const currentMonthStart = this.dateProvider.startOfMonth(now, timezone);
-    const cacheKey = `report:month-summary:v2:${workspaceId}:${this.dateProvider.format(currentMonthStart, 'YYYY-MM', timezone)}`;
+    const cacheKey = `report:month-summary:v3:${workspaceId}:${this.dateProvider.format(now, 'YYYY-MM-DD', timezone)}`;
     const cached = await this.cache.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
@@ -97,6 +117,7 @@ export class FindMonthSummaryService implements Service<
           totalCheckingBalance: parsed.totalCheckingBalance ?? 0,
           totalInvestmentBalance: parsed.totalInvestmentBalance ?? 0,
           totalCreditCardBalance: parsed.totalCreditCardBalance ?? 0,
+          projection: parsed.projection,
         }),
       );
     }
@@ -124,11 +145,19 @@ export class FindMonthSummaryService implements Service<
       timezone,
     );
 
+    const windows = this.projectionWindows(
+      now,
+      { start: currentMonthStart, end: currentMonthEnd },
+      timezone,
+    );
+
     const [
       currentMonthData,
       previousMonthData,
       previousMonthToDateData,
       accounts,
+      projectionTotals,
+      recurringRules,
     ] = await Promise.all([
       this.transactionRepository.sumTransactionsByDateRange(
         workspaceId,
@@ -146,7 +175,48 @@ export class FindMonthSummaryService implements Service<
         previousMonthToDateEnd,
       ),
       this.accountRepository.findAllByWorkspaceId(workspaceId),
+      this.monthProjectionRepository.sumProjectionTotals({
+        workspaceId,
+        currentMonth: windows.currentMonth,
+        today: windows.today,
+        basisMonths: windows.basisMonths.map(({ start, end }) => ({
+          start,
+          end,
+        })),
+      }),
+      this.monthProjectionRepository.findActiveRecurringRules(
+        workspaceId,
+        windows.currentMonth,
+      ),
     ]);
+
+    const projection = projectMonthEnd({
+      month: { ...windows.currentMonth, days: windows.days },
+      dayOfMonth: windows.dayOfMonth,
+      realized: {
+        totalIncome: currentMonthData.totalIncome,
+        totalExpense: currentMonthData.totalExpense,
+      },
+      scheduled: projectionTotals.scheduled,
+      variableExpenseToday: projectionTotals.variableExpenseToday,
+      basis: windows.basisMonths.map(({ start, days }, index) => ({
+        start,
+        days,
+        ...projectionTotals.basisMonths[index],
+      })),
+      firstActivityAt: projectionTotals.firstActivityAt,
+      recurringRules,
+      nextOccurrence: (date, rule) =>
+        nextOccurrence(
+          {
+            startDate: date,
+            frequency: rule.frequency,
+            interval: rule.interval,
+            timezone: RECURRING_GENERATION_TIMEZONE,
+          },
+          this.dateProvider,
+        ),
+    });
 
     const monthSummary = MonthSummary.create({
       month: currentMonthStart,
@@ -167,6 +237,7 @@ export class FindMonthSummaryService implements Service<
         totalIncome: previousMonthToDateData.totalIncome,
         totalExpense: previousMonthToDateData.totalExpense,
       },
+      projection,
     });
 
     await this.cache.set(
@@ -180,6 +251,7 @@ export class FindMonthSummaryService implements Service<
         totalCreditCardBalance: monthSummary.totalCreditCardBalance,
         rate: monthSummary.rate,
         previousMonthToDate: monthSummary.previousMonthToDate,
+        projection: monthSummary.projection,
       }),
       CACHE_TTL,
     );
@@ -203,5 +275,38 @@ export class FindMonthSummaryService implements Service<
     const sameDayEnd = this.dateProvider.endOfDay(sameDay, timezone);
 
     return sameDayEnd > previousMonthEnd ? previousMonthEnd : sameDayEnd;
+  }
+
+  private projectionWindows(
+    now: Date,
+    currentMonth: DateRange,
+    timezone: string,
+  ): ProjectionWindows {
+    const basisMonths: BasisMonthWindow[] = [];
+    for (let k = 1; k <= BASIS_MONTHS_COUNT; k++) {
+      const reference = this.dateProvider.add(
+        currentMonth.start,
+        -k,
+        'month',
+        timezone,
+      );
+      const end = this.dateProvider.endOfMonth(reference, timezone);
+      basisMonths.push({
+        start: this.dateProvider.startOfMonth(reference, timezone),
+        end,
+        days: Number(this.dateProvider.format(end, 'D', timezone)),
+      });
+    }
+
+    return {
+      currentMonth,
+      today: {
+        start: this.dateProvider.startOfDay(now, timezone),
+        end: this.dateProvider.endOfDay(now, timezone),
+      },
+      dayOfMonth: Number(this.dateProvider.format(now, 'D', timezone)),
+      days: Number(this.dateProvider.format(currentMonth.end, 'D', timezone)),
+      basisMonths,
+    };
   }
 }
