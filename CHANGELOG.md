@@ -3,6 +3,19 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.1.0](https://github.com/Luzin7/nomina-be/compare/v2.0.0...v2.1.0) (2026-10-24)
+
+### Features
+
+* **report:** adiciona netWorth ao balance-evolution ([b419147](https://github.com/Luzin7/nomina-be/commit/b419147a054dd82a1327a3e7fce24a2df5b6debe))
+* **report:** adiciona projeção de fim do mês ([114cc0d](https://github.com/Luzin7/nomina-be/commit/114cc0d801b1c2b443f33c6a59ae9760c4a5be02))
+* **transaction:** expõe descrição e parcelas ([aed63df](https://github.com/Luzin7/nomina-be/commit/aed63df621094ba0f434512ef7d032e2dc73545b))
+
+### Bug Fixes
+
+* **account:** persiste timezone da conta ([caf3f4b](https://github.com/Luzin7/nomina-be/commit/caf3f4b727cfc407f2cc6ab5cfa7e9bcd5c43df4))
+* **transaction:** calcula parcela na listagem ([4fecaa3](https://github.com/Luzin7/nomina-be/commit/4fecaa307c5faf40ba806851bdbb9ce00acecab8))
+
 ## [2.0.0](https://github.com/Luzin7/nomina-be/compare/v1.5.1...v2.0.0) (2026-10-23)
 
 ### ⚠ BREAKING CHANGES
