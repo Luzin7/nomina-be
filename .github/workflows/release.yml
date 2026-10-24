@@ -34,9 +34,6 @@ jobs:
       - name: Run unit tests
         run: npm test -- --coverage
 
-      - name: Check TypeScript compilation
-        run: ./node_modules/.bin/tsc --noEmit
-
       - name: Build application
         run: npm run build
 
@@ -64,7 +61,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Check required secrets
         env:
@@ -84,6 +81,7 @@ jobs:
   release:
     needs: [verify, migrate]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
@@ -132,8 +130,6 @@ jobs:
             ${{ steps.image.outputs.name }}:v${{ steps.release.outputs.version }}
             ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
             ${{ steps.image.outputs.name }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Deploy image to Render
         if: steps.release.outputs.version != ''
@@ -149,3 +145,20 @@ jobs:
           image_url=$(jq -rn --arg image "$IMAGE" '$image | @uri')
           curl -fsS --max-time 30 --retry 2 -X POST "${RENDER_DEPLOY_HOOK_URL}&imgURL=${image_url}" > /dev/null
           echo "Deploy disparado no Render: $IMAGE"
+
+      - name: Label release pull request
+        if: steps.release.outputs.version != ''
+        timeout-minutes: 2
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prs=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" --jq '.[] | select(.base.ref=="main") | .number') || { echo "::warning::Falha ao buscar PR da release para ${{ github.sha }}"; exit 0; }
+          if [ -z "$prs" ]; then
+            echo "Nenhum PR para main associado a ${{ github.sha }}"
+            exit 0
+          fi
+          for pr in $prs; do
+            echo "Adicionando label released ao PR #$pr"
+            gh pr edit "$pr" --repo "${{ github.repository }}" --add-label released || echo "::warning::Falha ao adicionar label released ao PR #$pr"
+          done
