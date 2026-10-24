@@ -1,9 +1,12 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
+import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
   calculateInstallmentEndDate,
   inferInstallmentCount,
+  nextOccurrence,
 } from './installmentSchedule';
 
 const dateProvider = {
@@ -238,5 +241,59 @@ describe('inferInstallmentCount across a DST change', () => {
         realDateProvider,
       ),
     ).toBeNull();
+  });
+});
+
+describe('nextOccurrence parity with CalculateNextGenerationDateService', () => {
+  const realDateProvider = new DayJsDateProvider();
+  const calculator = new CalculateNextGenerationDateService(realDateProvider);
+
+  function nextByCalculator(startDate: Date, overrides = {}) {
+    const input = schedule({
+      timezone: RECURRING_GENERATION_TIMEZONE,
+      ...overrides,
+    });
+    return calculator.execute({ baseDate: startDate, ...input });
+  }
+
+  function nextByHelper(startDate: Date, overrides = {}) {
+    return nextOccurrence(
+      schedule({
+        startDate,
+        timezone: RECURRING_GENERATION_TIMEZONE,
+        ...overrides,
+      }),
+      realDateProvider,
+    );
+  }
+
+  it.each([1, 2])('should match for weekly interval %i', (interval) => {
+    const startDate = new Date('2099-01-15T03:00:00Z');
+    const overrides = { frequency: RecurrenceFrequency.WEEKLY, interval };
+
+    expect(nextByHelper(startDate, overrides)).toEqual(
+      nextByCalculator(startDate, overrides),
+    );
+  });
+
+  it('should match for monthly steps chained from Jan 31', () => {
+    const overrides = { frequency: RecurrenceFrequency.MONTHLY };
+    let helperDate = new Date('2099-01-31T03:00:00Z');
+    let calculatorDate = helperDate;
+
+    for (let step = 0; step < 3; step++) {
+      helperDate = nextByHelper(helperDate, overrides);
+      calculatorDate = nextByCalculator(calculatorDate, overrides);
+      expect(helperDate).toEqual(calculatorDate);
+    }
+  });
+
+  it('should match for yearly from Feb 29 2028', () => {
+    const startDate = new Date('2028-02-29T03:00:00Z');
+    const overrides = { frequency: RecurrenceFrequency.YEARLY };
+
+    expect(nextByHelper(startDate, overrides)).toEqual(
+      nextByCalculator(startDate, overrides),
+    );
   });
 });

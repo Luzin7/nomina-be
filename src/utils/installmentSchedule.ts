@@ -57,6 +57,13 @@ function addOccurrences(
   }
 }
 
+export function nextOccurrence(
+  schedule: ScheduleBase,
+  dateProvider: DateAdder,
+): Date {
+  return addOccurrences(schedule, 1, dateProvider);
+}
+
 export function calculateInstallmentEndDate(
   input: InstallmentEndDateInput,
   dateProvider: DateAdder,

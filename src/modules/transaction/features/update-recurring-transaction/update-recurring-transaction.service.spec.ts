@@ -54,6 +54,7 @@ describe('UpdateRecurringTransactionService', () => {
   let accountRepository: jest.Mocked<AccountRepository>;
   let categoryRepository: jest.Mocked<CategoryRepository>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let cacheProvider: jest.Mocked<CacheProvider>;
 
   const NOW = new Date('2024-01-15T00:00:00.000Z');
 
@@ -114,11 +115,16 @@ describe('UpdateRecurringTransactionService', () => {
       endOfMonth: jest.fn(),
     } as unknown as jest.Mocked<DateProvider>;
 
+    cacheProvider = {
+      delByPattern: jest.fn().mockResolvedValue(0),
+    } as unknown as jest.Mocked<CacheProvider>;
+
     service = new UpdateRecurringTransactionService(
       recurringRepository,
       categoryRepository,
       accountRepository,
       dateProvider,
+      cacheProvider,
     );
   });
 
@@ -179,6 +185,23 @@ describe('UpdateRecurringTransactionService', () => {
       jobDateProvider,
     );
   }
+
+  it('should clear the report cache once after updating', async () => {
+    arrangeExistingRecurring();
+
+    await service.execute(makeRequest({ title: 'Novo título' }));
+
+    expect(cacheProvider.delByPattern).toHaveBeenCalledTimes(1);
+    expect(cacheProvider.delByPattern).toHaveBeenCalledWith('report:*:ws-1:*');
+  });
+
+  it('should not clear the report cache when the update is rejected', async () => {
+    arrangeExistingRecurring({ workspaceId: 'ws-2' });
+
+    await service.execute(makeRequest({ title: 'Novo título' }));
+
+    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
+  });
 
   it('should recompute the installment count when the end date changes', async () => {
     arrangeExistingRecurring({
@@ -259,6 +282,7 @@ describe('UpdateRecurringTransactionService', () => {
       categoryRepository,
       accountRepository,
       new DayJsDateProvider(),
+      cacheProvider,
     );
     const recurring = makeRecurring({
       id: 'rec-1',

@@ -24,6 +24,7 @@ export type DaySummary = {
 type Response = {
   evolution: DaySummary[];
   investments: DaySummary[];
+  netWorth: DaySummary[];
   totalInvested: number;
 };
 
@@ -60,6 +61,7 @@ type BuildDailySummaryParams = {
 };
 
 const CACHE_TTL = 5 * 60;
+const CACHE_VERSION = 'v2';
 
 const destAccount = alias(schema.accounts, 'dest_account');
 const sumAmount = sql<number>`SUM(${schema.transactions.amount})`
@@ -120,6 +122,12 @@ const investmentTransferFilter = and(
 );
 
 const investmentFilter = or(investmentBaseFilter, investmentTransferFilter);
+
+const netWorthFilter = sql`${schema.transactions.type} IN ('INCOME', 'EXPENSE')`;
+
+export function resolveNetWorthType(type: string): string {
+  return type;
+}
 
 export function resolveGeneralType(
   type: string,
@@ -276,6 +284,25 @@ export function buildDailySummary({
   return toDaySummaries(dailyMap, startBalance);
 }
 
+type BuildNetWorthEvolutionParams = Omit<
+  BuildDailySummaryParams,
+  'opening' | 'resolve' | 'explicitStartBalance'
+> & { currentNetWorth: number };
+
+export function buildNetWorthEvolution({
+  currentNetWorth,
+  ...params
+}: BuildNetWorthEvolutionParams): DaySummary[] {
+  return buildDailySummary({
+    ...params,
+    opening: [],
+    resolve: resolveNetWorthType,
+    explicitStartBalance:
+      currentNetWorth -
+      calculateNetPeriodEffect(params.period, resolveNetWorthType),
+  });
+}
+
 @Injectable()
 export class BalanceEvolutionService {
   constructor(
@@ -289,7 +316,7 @@ export class BalanceEvolutionService {
     workspaceId,
     period,
   }: Request): Promise<Either<Error, Response>> {
-    const cacheKey = `report:balance-evolution:${workspaceId}:${period}`;
+    const cacheKey = `report:balance-evolution:${CACHE_VERSION}:${workspaceId}:${period}`;
     const cached = await this.cache.get(cacheKey);
     if (cached) return right(JSON.parse(cached) as Response);
 
@@ -310,12 +337,16 @@ export class BalanceEvolutionService {
       investmentPeriod,
       totalInvestedResult,
       totalGeneralBalance,
+      netWorthPeriod,
+      currentNetWorth,
     ] = await Promise.all([
       this.queryPeriod(context, generalFilter),
       this.queryOpening(context, investmentFilter),
       this.queryPeriod(context, investmentFilter),
       this.queryTotalInvested(workspaceId),
       this.queryTotalGeneralBalance(workspaceId),
+      this.queryPeriod(context, netWorthFilter),
+      this.queryCurrentNetWorth(workspaceId),
     ]);
 
     const evolution = buildDailySummary({
@@ -344,9 +375,23 @@ export class BalanceEvolutionService {
         calculateNetPeriodEffect(investmentPeriod, resolveInvestmentType),
     });
 
+    const netWorth = buildNetWorthEvolution({
+      period: netWorthPeriod,
+      currentNetWorth,
+      dateProvider: this.dateProvider,
+      timezone,
+      startDate,
+      endDate,
+    });
+
     const totalInvested = MoneyUtils.centsToDecimal(totalInvestedResult);
 
-    const response: Response = { evolution, investments, totalInvested };
+    const response: Response = {
+      evolution,
+      investments,
+      netWorth,
+      totalInvested,
+    };
 
     await this.cache.set(cacheKey, JSON.stringify(response), CACHE_TTL);
 
@@ -423,6 +468,20 @@ export class BalanceEvolutionService {
           eq(schema.accounts.type, AccountType.INVESTMENT),
         ),
       );
+
+    return result[0]?.total ?? 0;
+  }
+
+  private async queryCurrentNetWorth(workspaceId: string): Promise<number> {
+    const result = await this.drizzle.db
+      .select({
+        total:
+          sql<number>`COALESCE(SUM(CASE WHEN ${schema.accounts.type} = ${AccountType.CREDIT_CARD} THEN -${schema.accounts.balance} ELSE ${schema.accounts.balance} END), 0)`
+            .mapWith(Number)
+            .as('total_net_worth'),
+      })
+      .from(schema.accounts)
+      .where(eq(schema.accounts.workspaceId, workspaceId));
 
     return result[0]?.total ?? 0;
   }

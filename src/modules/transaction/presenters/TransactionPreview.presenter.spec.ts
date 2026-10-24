@@ -27,4 +27,42 @@ describe('TransactionPreviewPresenter', () => {
     expect(result.accountId).toBe('acc-1');
     expect(result.destinationAccountId).toBeNull();
   });
+
+  it('should include the description', () => {
+    const transaction = makeTransaction({ description: 'Mercado do mês' });
+
+    const result = TransactionPreviewPresenter.toHTTP(transaction);
+
+    expect(result.description).toBe('Mercado do mês');
+  });
+
+  it('should return null description, recurring id and installment info for a plain transaction', () => {
+    const result = TransactionPreviewPresenter.toHTTP(makeTransaction());
+
+    expect(result.description).toBeNull();
+    expect(result.recurringId).toBeNull();
+    expect(result.installmentNumber).toBeNull();
+    expect(result.installmentCount).toBeNull();
+  });
+
+  it('should include the installment position', () => {
+    const transaction = makeTransaction({
+      installmentGroupId: 'group-1',
+      installmentNumber: 3,
+      installmentCount: 10,
+    });
+
+    const result = TransactionPreviewPresenter.toHTTP(transaction);
+
+    expect(result.installmentNumber).toBe(3);
+    expect(result.installmentCount).toBe(10);
+  });
+
+  it('should include the recurring id', () => {
+    const transaction = makeTransaction({ recurringId: 'rec-1' });
+
+    const result = TransactionPreviewPresenter.toHTTP(transaction);
+
+    expect(result.recurringId).toBe('rec-1');
+  });
 });

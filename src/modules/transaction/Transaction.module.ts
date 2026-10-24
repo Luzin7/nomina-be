@@ -1,6 +1,4 @@
 import { DatabaseModule } from '@infra/databases/Database.module';
-import { FindMonthSummaryController } from '@modules/report/features/get-month-summary/get-month-summary.controller';
-import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import { UserModule } from '@modules/user/User.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
@@ -44,7 +42,6 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
   controllers: [
     CreateTransactionController,
     DeleteTransactionController,
-    FindMonthSummaryController,
     ListTransactionController,
     ListRecurringTransactionsController,
     FindTransactionController,
@@ -64,7 +61,6 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
   providers: [
     CreateTransactionService,
     DeleteTransactionService,
-    FindMonthSummaryService,
     FindTransactionByIdService,
     ListTransactionsService,
     UpdateTransactionService,

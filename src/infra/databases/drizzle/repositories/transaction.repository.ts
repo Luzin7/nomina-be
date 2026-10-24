@@ -54,6 +54,10 @@ import { RecurringTransactionMapper } from '../mappers/recurring-transaction.map
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
 import { ensureEntityId } from './ensure-entity-id';
+import {
+  installmentCountSql,
+  installmentNumberSql,
+} from './installment-position';
 
 const compareIds = (left: string, right: string): number => {
   if (left < right) return -1;
@@ -123,8 +127,16 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
     const [transactionsRaw, [{ totalCount }]] = await Promise.all([
       this.drizzle.db
-        .select()
+        .select({
+          transaction: schema.transactions,
+          installmentNumber: installmentNumberSql(),
+          installmentCount: installmentCountSql(),
+        })
         .from(schema.transactions)
+        .leftJoin(
+          schema.recurringTransactions,
+          eq(schema.recurringTransactions.id, schema.transactions.recurringId),
+        )
         .where(whereConditions)
         .limit(params.pageSize)
         .offset((params.page - 1) * params.pageSize)
@@ -140,7 +152,14 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     ]);
 
     return {
-      transactions: transactionsRaw.map(TransactionMapper.toDomain),
+      transactions: transactionsRaw.map(
+        ({ transaction, installmentNumber, installmentCount }) =>
+          TransactionMapper.toDomain({
+            ...transaction,
+            installmentNumber,
+            installmentCount,
+          }),
+      ),
       total: totalCount,
     };
   }

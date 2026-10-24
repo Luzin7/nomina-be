@@ -1,3 +1,4 @@
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { RecurringTransactionNotFoundError } from '@modules/transaction/errors';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
@@ -19,6 +20,7 @@ export class ToggleActiveRecurringTransactionService implements Service<
 > {
   constructor(
     private readonly recurringRepository: RecurringTransactionRepository,
+    private readonly redisService: CacheProvider,
   ) {}
 
   async execute({
@@ -44,6 +46,8 @@ export class ToggleActiveRecurringTransactionService implements Service<
     }
 
     const updated = await this.recurringRepository.update(recurring);
+
+    await this.redisService.delByPattern(`report:*:${workspaceId}:*`);
 
     return right(updated);
   }

@@ -99,8 +99,14 @@ class InMemoryCache implements Partial<CacheProvider> {
   }
 }
 
-function todayInUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+const UTC_TIMEZONE = 'UTC';
+const SAO_PAULO_TIMEZONE = 'America/Sao_Paulo';
+const PINNED_NOW = new Date('2026-10-24T02:30:00.000Z');
+
+function dateInTimezone(instant: Date, timezone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(
+    instant,
+  );
 }
 
 describe('create installment purchase against a real database', () => {
@@ -184,7 +190,7 @@ describe('create installment purchase against a real database', () => {
     await container.stop();
   });
 
-  async function seedWorkspace() {
+  async function seedWorkspace(accountTimezone = UTC_TIMEZONE) {
     const workspaceId = randomUUID();
     const accountId = randomUUID();
     const categoryId = randomUUID();
@@ -201,7 +207,7 @@ describe('create installment purchase against a real database', () => {
         id: accountId,
         workspaceId,
         balance: OPENING_BALANCE,
-        timezone: 'UTC',
+        timezone: accountTimezone,
       }),
     );
 
@@ -277,8 +283,9 @@ describe('create installment purchase against a real database', () => {
   }
 
   it('completes the first installment today and moves the balance once', async () => {
+    dateProvider.fixedNow = PINNED_NOW;
     const seed = await seedWorkspace();
-    const today = todayInUtc();
+    const today = dateInTimezone(PINNED_NOW, UTC_TIMEZONE);
 
     const result = await purchaseService.execute(purchaseRequest(seed, today));
     if (result.isLeft()) throw result.value;
@@ -297,6 +304,25 @@ describe('create installment purchase against a real database', () => {
       OPENING_BALANCE - BigInt(first.amount),
     );
   });
+
+  it.each([
+    ['2026-10-23', TransactionStatus.COMPLETED],
+    ['2026-10-24', TransactionStatus.PENDING],
+  ])(
+    'uses the account timezone to decide the first installment status: purchase on %s',
+    async (purchaseDate, expectedStatus) => {
+      dateProvider.fixedNow = PINNED_NOW;
+      const seed = await seedWorkspace(SAO_PAULO_TIMEZONE);
+
+      const result = await purchaseService.execute(
+        purchaseRequest(seed, purchaseDate),
+      );
+      if (result.isLeft()) throw result.value;
+
+      const [first] = await transactionsOf(seed.workspaceId);
+      expect(first.status).toBe(expectedStatus);
+    },
+  );
 
   it('sums exactly 10000 cents after the job generates the remaining installments', async () => {
     const seed = await seedWorkspace();
