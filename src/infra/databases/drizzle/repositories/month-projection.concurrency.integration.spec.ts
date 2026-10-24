@@ -33,20 +33,24 @@ const monthRange = (reference: string): DateRange => ({
   end: dateProvider.endOfMonth(reference, DEFAULT_TIMEZONE),
 });
 
-const dayRange = (reference: string): DateRange => ({
-  start: dateProvider.startOfDay(reference, DEFAULT_TIMEZONE),
-  end: dateProvider.endOfDay(reference, DEFAULT_TIMEZONE),
-});
-
 const MARCH = monthRange('2026-03-15');
-const FEBRUARY = monthRange('2026-02-15');
-const JANUARY = monthRange('2026-01-15');
-const TODAY = dayRange('2026-03-10');
 const IN_MARCH = new Date('2026-03-05T15:00:00Z');
-const IN_FEBRUARY = new Date('2026-02-05T15:00:00Z');
-const TODAY_NOON = new Date('2026-03-10T15:00:00Z');
+const LEDGER_RANGE: DateRange = {
+  start: monthRange('2025-10-15').start,
+  end: monthRange('2026-10-15').end,
+};
+const CURRENT_MONTH_START = monthRange('2026-10-15').start;
+const IN_SEPTEMBER = new Date('2026-09-10T15:00:00Z');
+const IN_OCTOBER = new Date('2026-10-10T15:00:00Z');
 
 jest.setTimeout(180_000);
+
+async function matchProductionDateColumn(client: postgres.Sql) {
+  await client`
+    ALTER TABLE transactions
+    ALTER COLUMN date TYPE timestamp without time zone
+    USING date AT TIME ZONE 'UTC'`;
+}
 
 describe('month projection repository against a real postgres', () => {
   let container: StartedPostgreSqlContainer;
@@ -64,6 +68,7 @@ describe('month projection repository against a real postgres', () => {
     });
     db = drizzle(queryClient, { schema });
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    await matchProductionDateColumn(queryClient);
     repository = new MonthProjectionRepositoryImplementation({
       db,
     } as unknown as DrizzleService);
@@ -137,269 +142,242 @@ describe('month projection repository against a real postgres', () => {
     };
   }
 
-  function sumTotals(workspaceId: string) {
-    return repository.sumProjectionTotals({
+  function findLedger(workspaceId: string) {
+    return repository.findMonthLedger({
       workspaceId,
-      currentMonth: MARCH,
-      today: TODAY,
-      basisMonths: [FEBRUARY, JANUARY],
+      timezone: DEFAULT_TIMEZONE,
+      range: LEDGER_RANGE,
+      currentMonthStart: CURRENT_MONTH_START,
     });
   }
 
-  describe('sumProjectionTotals', () => {
-    it('should exclude transfers and invoice payments from every total', async () => {
+  describe('findMonthLedger', () => {
+    it('should return an empty ledger for a workspace without rows', async () => {
       const ws = await seedWorkspace();
-      await db.insert(schema.transactions).values([
-        makeRow({
-          ...ws,
-          categoryId: SYSTEM_CATEGORY.TRANSFER.id,
-          type: TransactionType.TRANSFER,
-          date: TODAY_NOON,
-        }),
-        makeRow({
-          ...ws,
-          categoryId: SYSTEM_CATEGORY.TRANSFER.id,
-          type: TransactionType.TRANSFER,
-          status: TransactionStatus.PENDING,
-        }),
-        makeRow({
-          ...ws,
-          categoryId: SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
-          type: TransactionType.TRANSFER,
-          date: IN_FEBRUARY,
-        }),
-      ]);
 
-      const totals = await sumTotals(ws.workspaceId);
+      const ledger = await findLedger(ws.workspaceId);
 
-      expect(totals).toEqual({
-        scheduled: { totalIncome: 0, totalExpense: 0 },
-        variableExpenseToday: 0,
-        basisMonths: [
-          { totalExpense: 0, variableExpense: 0 },
-          { totalExpense: 0, variableExpense: 0 },
-        ],
-        firstActivityAt: null,
-      });
+      expect(ledger).toEqual([]);
     });
 
-    it('should split pending by type across the whole month', async () => {
-      const ws = await seedWorkspace();
-      await db.insert(schema.transactions).values([
-        makeRow({
-          ...ws,
-          status: TransactionStatus.PENDING,
-          type: TransactionType.INCOME,
-          amount: 7_000,
-          date: new Date('2026-03-01T04:00:00Z'),
-        }),
-        makeRow({
-          ...ws,
-          status: TransactionStatus.PENDING,
-          amount: 2_000,
-          date: new Date('2026-03-31T02:00:00Z'),
-        }),
-        makeRow({ ...ws, status: TransactionStatus.PENDING, amount: 300 }),
-        makeRow({ ...ws, amount: 9_999 }),
-      ]);
+    it('should run against a date column without time zone storing UTC instants', async () => {
+      const [column] = await queryClient`
+        SELECT data_type FROM information_schema.columns
+        WHERE table_name = 'transactions' AND column_name = 'date'`;
 
-      const { scheduled } = await sumTotals(ws.workspaceId);
-
-      expect(scheduled).toEqual({
-        totalIncome: 7_000,
-        totalExpense: 2_300,
-      });
+      expect(column.data_type).toBe('timestamp without time zone');
     });
 
-    it('should count a boundary instant inside its local month and leave the neighbours out', async () => {
+    it('should put boundary instants in their local month and day', async () => {
       const ws = await seedWorkspace();
       await db.insert(schema.transactions).values([
-        makeRow({ ...ws, date: MARCH.start, amount: 1 }),
-        makeRow({ ...ws, date: MARCH.end, amount: 10 }),
         makeRow({
           ...ws,
-          date: new Date(MARCH.start.getTime() - 1),
+          date: new Date('2026-10-01T02:30:00Z'),
           amount: 100,
         }),
         makeRow({
           ...ws,
-          date: new Date(MARCH.end.getTime() + 1),
-          amount: 1_000,
+          date: new Date('2026-10-01T03:00:00Z'),
+          amount: 200,
         }),
       ]);
 
-      const totals = await sumTotals(ws.workspaceId);
+      const ledger = await findLedger(ws.workspaceId);
 
-      expect(totals.basisMonths).toEqual([
-        { totalExpense: 100, variableExpense: 100 },
-        { totalExpense: 0, variableExpense: 0 },
-      ]);
+      expect(ledger).toHaveLength(2);
+      expect(ledger).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            key: '2026-09',
+            plainExpenses: [
+              {
+                day: 30,
+                categoryId: ws.categoryId,
+                amount: 100,
+                pending: false,
+              },
+            ],
+          }),
+          expect.objectContaining({
+            key: '2026-10',
+            plainExpenses: [
+              {
+                day: 1,
+                categoryId: ws.categoryId,
+                amount: 200,
+                pending: false,
+              },
+            ],
+          }),
+        ]),
+      );
     });
 
-    it('should count a completed variable expense of today only', async () => {
-      const ws = await seedWorkspace();
-      await db.insert(schema.transactions).values([
-        makeRow({ ...ws, date: TODAY_NOON, amount: 400 }),
-        makeRow({ ...ws, date: IN_MARCH, amount: 50 }),
-        makeRow({
-          ...ws,
-          date: TODAY_NOON,
-          status: TransactionStatus.PENDING,
-          amount: 60,
-        }),
-        makeRow({
-          ...ws,
-          date: TODAY_NOON,
-          type: TransactionType.INCOME,
-          amount: 70,
-        }),
-      ]);
-
-      const totals = await sumTotals(ws.workspaceId);
-
-      expect(totals.variableExpenseToday).toBe(400);
-    });
-
-    it('should leave recurring and installment rows out of variable', async () => {
+    it('should leave recurring, installment and system rows out of plain expenses but in the total', async () => {
       const ws = await seedWorkspace();
       const rule = makeRule(ws);
       await db.insert(schema.recurringTransactions).values(rule);
       await db.insert(schema.transactions).values([
+        makeRow({ ...ws, date: IN_SEPTEMBER, amount: 1_000 }),
         makeRow({
           ...ws,
+          date: IN_SEPTEMBER,
+          amount: 2_000,
           recurringId: rule.id,
-          date: TODAY_NOON,
-          amount: 100,
         }),
         makeRow({
           ...ws,
+          date: IN_SEPTEMBER,
+          amount: 3_000,
           installmentGroupId: randomUUID(),
-          date: TODAY_NOON,
-          amount: 200,
         }),
         makeRow({
           ...ws,
-          recurringId: rule.id,
-          date: IN_FEBRUARY,
-          amount: 300,
-        }),
-        makeRow({
-          ...ws,
-          installmentGroupId: randomUUID(),
-          date: new Date('2026-02-06T15:00:00Z'),
-          amount: 400,
-        }),
-        makeRow({
-          ...ws,
-          date: new Date('2026-02-07T15:00:00Z'),
-          amount: 500,
-        }),
-      ]);
-
-      const totals = await sumTotals(ws.workspaceId);
-
-      expect(totals.variableExpenseToday).toBe(0);
-      expect(totals.basisMonths[0]).toEqual({
-        totalExpense: 1_200,
-        variableExpense: 500,
-      });
-    });
-
-    it('should count a card payment expense in the total but not in variable', async () => {
-      const ws = await seedWorkspace();
-      await db.insert(schema.transactions).values([
-        makeRow({
-          ...ws,
+          date: IN_SEPTEMBER,
+          amount: 4_000,
           categoryId: SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
-          date: IN_FEBRUARY,
-          amount: 800,
         }),
         makeRow({
           ...ws,
-          categoryId: SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
-          date: TODAY_NOON,
-          amount: 900,
+          date: IN_SEPTEMBER,
+          amount: 5_000,
+          categoryId: ws.legacyOthersCategoryId,
         }),
       ]);
 
-      const totals = await sumTotals(ws.workspaceId);
+      const [september] = await findLedger(ws.workspaceId);
 
-      expect(totals.basisMonths[0]).toEqual({
-        totalExpense: 800,
-        variableExpense: 0,
-      });
-      expect(totals.variableExpenseToday).toBe(0);
+      expect(september.totalExpense).toBe(15_000);
+      expect(september.plainExpenses).toHaveLength(2);
+      expect(september.plainExpenses).toEqual(
+        expect.arrayContaining([
+          { day: 10, categoryId: ws.categoryId, amount: 1_000, pending: false },
+          {
+            day: 10,
+            categoryId: ws.legacyOthersCategoryId,
+            amount: 5_000,
+            pending: false,
+          },
+        ]),
+      );
     });
 
-    it('should count a legacy system-flagged Outros Gastos expense as variable', async () => {
+    it('should keep pending plain rows only for the current month', async () => {
       const ws = await seedWorkspace();
       await db.insert(schema.transactions).values([
+        makeRow({ ...ws, date: IN_SEPTEMBER, amount: 1_000 }),
         makeRow({
           ...ws,
-          categoryId: ws.legacyOthersCategoryId,
-          date: IN_FEBRUARY,
-          amount: 600,
-        }),
-        makeRow({
-          ...ws,
-          categoryId: ws.legacyOthersCategoryId,
-          date: TODAY_NOON,
-          amount: 650,
-        }),
-      ]);
-
-      const totals = await sumTotals(ws.workspaceId);
-
-      expect(totals.basisMonths[0]).toEqual({
-        totalExpense: 600,
-        variableExpense: 600,
-      });
-      expect(totals.variableExpenseToday).toBe(650);
-    });
-
-    it('should report the first completed income or expense as firstActivityAt', async () => {
-      const ws = await seedWorkspace();
-      const first = new Date('2025-11-03T15:00:00Z');
-      await db.insert(schema.transactions).values([
-        makeRow({ ...ws, date: first }),
-        makeRow({ ...ws, date: IN_MARCH }),
-        makeRow({
-          ...ws,
-          date: new Date('2025-09-01T15:00:00Z'),
+          date: IN_SEPTEMBER,
+          amount: 2_000,
           status: TransactionStatus.PENDING,
         }),
         makeRow({
           ...ws,
-          date: new Date('2025-08-01T15:00:00Z'),
-          categoryId: SYSTEM_CATEGORY.TRANSFER.id,
-          type: TransactionType.TRANSFER,
+          date: IN_OCTOBER,
+          amount: 3_000,
+          status: TransactionStatus.PENDING,
         }),
       ]);
 
-      const totals = await sumTotals(ws.workspaceId);
+      const ledger = await findLedger(ws.workspaceId);
 
-      expect(totals.firstActivityAt?.getTime()).toBe(first.getTime());
+      expect(ledger).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            key: '2026-09',
+            plainExpenses: [
+              {
+                day: 10,
+                categoryId: ws.categoryId,
+                amount: 1_000,
+                pending: false,
+              },
+            ],
+          }),
+          expect.objectContaining({
+            key: '2026-10',
+            plainExpenses: [
+              {
+                day: 10,
+                categoryId: ws.categoryId,
+                amount: 3_000,
+                pending: true,
+              },
+            ],
+          }),
+        ]),
+      );
+    });
+
+    it('should total completed expense and pending by type per month', async () => {
+      const ws = await seedWorkspace();
+      await db.insert(schema.transactions).values([
+        makeRow({ ...ws, date: IN_OCTOBER, amount: 1_000 }),
+        makeRow({ ...ws, date: IN_OCTOBER, amount: 500 }),
+        makeRow({
+          ...ws,
+          date: IN_OCTOBER,
+          amount: 9_000,
+          type: TransactionType.INCOME,
+        }),
+        makeRow({
+          ...ws,
+          date: IN_OCTOBER,
+          amount: 2_000,
+          status: TransactionStatus.PENDING,
+        }),
+        makeRow({
+          ...ws,
+          date: IN_OCTOBER,
+          amount: 7_000,
+          type: TransactionType.INCOME,
+          status: TransactionStatus.PENDING,
+        }),
+      ]);
+
+      const [october] = await findLedger(ws.workspaceId);
+
+      expect(october.key).toBe('2026-10');
+      expect(october.totalExpense).toBe(1_500);
+      expect(october.pending).toEqual({
+        totalIncome: 7_000,
+        totalExpense: 2_000,
+      });
+    });
+
+    it('should omit months without rows', async () => {
+      const ws = await seedWorkspace();
+      await db
+        .insert(schema.transactions)
+        .values([
+          makeRow({ ...ws, date: IN_SEPTEMBER }),
+          makeRow({ ...ws, date: new Date('2026-07-10T15:00:00Z') }),
+        ]);
+
+      const ledger = await findLedger(ws.workspaceId);
+
+      expect(
+        ledger.map((month) => month.key).sort((a, b) => a.localeCompare(b)),
+      ).toEqual(['2026-07', '2026-09']);
     });
 
     it('should isolate another workspace', async () => {
       const ws = await seedWorkspace();
       const foreign = await seedWorkspace();
-      await db.insert(schema.transactions).values([
-        makeRow({ ...foreign, date: TODAY_NOON, amount: 111 }),
-        makeRow({ ...foreign, date: IN_FEBRUARY, amount: 222 }),
-        makeRow({
-          ...foreign,
-          status: TransactionStatus.PENDING,
-          amount: 333,
-        }),
-      ]);
+      await db
+        .insert(schema.transactions)
+        .values([
+          makeRow({ ...ws, date: IN_SEPTEMBER, amount: 100 }),
+          makeRow({ ...foreign, date: IN_SEPTEMBER, amount: 222 }),
+          makeRow({ ...foreign, date: IN_OCTOBER, amount: 333 }),
+        ]);
 
-      const totals = await sumTotals(ws.workspaceId);
+      const ledger = await findLedger(ws.workspaceId);
 
-      expect(totals.variableExpenseToday).toBe(0);
-      expect(totals.scheduled.totalExpense).toBe(0);
-      expect(totals.basisMonths[0].totalExpense).toBe(0);
-      expect(totals.firstActivityAt).toBeNull();
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0].totalExpense).toBe(100);
     });
   });
 
