@@ -32,7 +32,6 @@ import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpe
 import { Injectable } from '@nestjs/common';
 import {
   and,
-  AnyColumn,
   count,
   desc,
   eq,
@@ -43,7 +42,6 @@ import {
   lte,
   ne,
   or,
-  SQL,
   sql,
   sum,
 } from 'drizzle-orm';
@@ -52,6 +50,7 @@ import { Either, left, right } from '@shared/core/errors/Either';
 import { AccountMapper } from '../mappers/account.mapper';
 import { RecurringTransactionMapper } from '../mappers/recurring-transaction.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
+import { localDayIn } from '@infra/databases/drizzle/sql-helpers';
 import * as schema from '../schema';
 import { ensureEntityId } from './ensure-entity-id';
 import {
@@ -64,9 +63,6 @@ const compareIds = (left: string, right: string): number => {
   if (left > right) return 1;
   return 0;
 };
-
-const localDayIn = (instant: SQL, timezone: SQL.Aliased | AnyColumn): SQL =>
-  sql`(${instant} AT TIME ZONE ${timezone})::date`;
 
 type DrizzleTransaction = Parameters<
   Parameters<DrizzleService['db']['transaction']>[0]

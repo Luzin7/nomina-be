@@ -4,10 +4,7 @@ import { AccountRepository } from '@modules/account/repositories/contracts/Accou
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
-import {
-  MonthProjectionRepository,
-  ProjectionTotals,
-} from '@modules/report/repositories/contracts/MonthProjectionRepository';
+import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { FindMonthSummaryService } from './get-month-summary.service';
 
 const NOW = new Date('2026-09-15T12:00:00.000Z');
@@ -35,22 +32,6 @@ function sumByRange(transactions: FakeTransaction[]) {
       totalExpense: sum('EXPENSE'),
       balance: sum('INCOME') - sum('EXPENSE'),
     };
-  };
-}
-
-function makeProjectionTotals(
-  overrides: Partial<ProjectionTotals> = {},
-): ProjectionTotals {
-  return {
-    scheduled: { totalIncome: 0, totalExpense: 0 },
-    variableExpenseToday: 0,
-    basisMonths: [
-      { totalExpense: 0, variableExpense: 0 },
-      { totalExpense: 0, variableExpense: 0 },
-      { totalExpense: 0, variableExpense: 0 },
-    ],
-    firstActivityAt: null,
-    ...overrides,
   };
 }
 
@@ -83,7 +64,7 @@ describe('FindMonthSummaryService', () => {
     } as unknown as jest.Mocked<AccountRepository>;
 
     projectionRepository = {
-      sumProjectionTotals: jest.fn().mockResolvedValue(makeProjectionTotals()),
+      findMonthLedger: jest.fn().mockResolvedValue([]),
       findActiveRecurringRules: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<MonthProjectionRepository>;
 
@@ -253,7 +234,7 @@ describe('FindMonthSummaryService', () => {
     }
 
     function lastQuery() {
-      return projectionRepository.sumProjectionTotals.mock.calls[0][0];
+      return projectionRepository.findMonthLedger.mock.calls[0][0];
     }
 
     it('should expose the current month totals as realized', async () => {
@@ -269,66 +250,53 @@ describe('FindMonthSummaryService', () => {
       });
     });
 
-    it('should use the local day before the workspace midnight', async () => {
-      await executeAt(new Date('2026-10-31T02:59:59.999Z'));
-
-      expect(iso(lastQuery().today.start)).toBe('2026-10-30T03:00:00.000Z');
-      expect(iso(lastQuery().today.end)).toBe('2026-10-31T02:59:59.999Z');
-    });
-
-    it('should use the new local day at the workspace midnight', async () => {
-      await executeAt(new Date('2026-10-31T03:00:00.000Z'));
-
-      expect(iso(lastQuery().today.start)).toBe('2026-10-31T03:00:00.000Z');
-      expect(iso(lastQuery().today.end)).toBe('2026-11-01T02:59:59.999Z');
-    });
-
     it('should keep October and key the cache by local day after UTC midnight', async () => {
       await executeAt(new Date('2026-11-01T02:30:00.000Z'));
 
-      expect(iso(lastQuery().currentMonth.start)).toBe(
+      expect(iso(lastQuery().currentMonthStart)).toBe(
         '2026-10-01T03:00:00.000Z',
       );
       expect(cache.get).toHaveBeenCalledWith(
-        'report:month-summary:v3:ws-1:2026-10-31',
+        'report:month-summary:v4:ws-1:2026-10-31',
       );
     });
 
-    it('should roll to November with October, September and August as basis', async () => {
+    it('should query the ledger once from twelve months back to the end of the current month', async () => {
       await executeAt(new Date(NOVEMBER_START_ISO));
 
-      const query = lastQuery();
-      expect(iso(query.currentMonth.start)).toBe(NOVEMBER_START_ISO);
-      expect(iso(query.today.start)).toBe(NOVEMBER_START_ISO);
-      expect(query.basisMonths.map((m) => iso(m.start))).toEqual([
-        '2026-10-01T03:00:00.000Z',
-        '2026-09-01T03:00:00.000Z',
-        '2026-08-01T03:00:00.000Z',
-      ]);
-      expect(query.basisMonths.map((m) => iso(m.end))).toEqual([
-        '2026-11-01T02:59:59.999Z',
-        '2026-10-01T02:59:59.999Z',
-        '2026-09-01T02:59:59.999Z',
-      ]);
+      expect(projectionRepository.findMonthLedger).toHaveBeenCalledTimes(1);
+      expect(lastQuery()).toEqual({
+        workspaceId: 'ws-1',
+        timezone: 'America/Sao_Paulo',
+        currentMonthStart: new Date(NOVEMBER_START_ISO),
+        range: {
+          start: new Date('2025-11-01T03:00:00.000Z'),
+          end: new Date('2026-12-01T02:59:59.999Z'),
+        },
+      });
     });
 
     it('should use 28 days in February', async () => {
-      projectionRepository.sumProjectionTotals.mockResolvedValue(
-        makeProjectionTotals({
-          basisMonths: [
-            { totalExpense: 3100, variableExpense: 3100 },
-            { totalExpense: 3100, variableExpense: 3100 },
-            { totalExpense: 3000, variableExpense: 3000 },
-          ],
-          firstActivityAt: new Date('2025-01-01T00:00:00.000Z'),
-        }),
-      );
+      const activeMonth = (key: string) => ({
+        key,
+        totalExpense: 0,
+        pending: { totalIncome: 0, totalExpense: 0 },
+        plainExpenses: [10, 11, 12, 13, 14, 28].map((day) => ({
+          day,
+          categoryId: 'cat-daily',
+          amount: day === 28 ? 100 : 1000,
+          pending: false,
+        })),
+      });
+      projectionRepository.findMonthLedger.mockResolvedValue([
+        activeMonth('2026-01'),
+        activeMonth('2025-12'),
+        activeMonth('2025-11'),
+      ]);
 
       const summary = await executeAt(new Date('2026-02-28T12:00:00.000Z'));
 
-      expect(iso(lastQuery().currentMonth.end)).toBe(
-        '2026-03-01T02:59:59.999Z',
-      );
+      expect(iso(lastQuery().range.end)).toBe('2026-03-01T02:59:59.999Z');
       expect(summary.projection.variableEstimate).toBe(100);
     });
 
@@ -336,7 +304,7 @@ describe('FindMonthSummaryService', () => {
       await executeAt(NOW);
 
       expect(cache.set).toHaveBeenCalledWith(
-        'report:month-summary:v3:ws-1:2026-09-15',
+        'report:month-summary:v4:ws-1:2026-09-15',
         expect.any(String),
         300,
       );
@@ -359,7 +327,7 @@ describe('FindMonthSummaryService', () => {
 
       await service.execute({ sub: 'user-1', workspaceId: 'ws-1' });
 
-      expect(projectionRepository.sumProjectionTotals).not.toHaveBeenCalled();
+      expect(projectionRepository.findMonthLedger).not.toHaveBeenCalled();
       expect(
         projectionRepository.findActiveRecurringRules,
       ).not.toHaveBeenCalled();

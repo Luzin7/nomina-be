@@ -1,26 +1,19 @@
-import { PeriodTotals } from '@modules/report/valueObjects/MonthSummary';
-import { RecurringRuleSnapshot } from '@modules/report/valueObjects/MonthProjection';
+import {
+  LedgerMonth,
+  RecurringRuleSnapshot,
+} from '@modules/report/valueObjects/MonthProjection';
 
 export type DateRange = { start: Date; end: Date };
 
-export type ProjectionTotalsQuery = {
+export type MonthLedgerQuery = {
   workspaceId: string;
-  currentMonth: DateRange;
-  today: DateRange;
-  basisMonths: DateRange[];
-};
-
-export type ProjectionTotals = {
-  scheduled: PeriodTotals;
-  variableExpenseToday: number;
-  basisMonths: Array<{ totalExpense: number; variableExpense: number }>;
-  firstActivityAt: Date | null;
+  timezone: string;
+  range: DateRange;
+  currentMonthStart: Date;
 };
 
 export abstract class MonthProjectionRepository {
-  abstract sumProjectionTotals(
-    query: ProjectionTotalsQuery,
-  ): Promise<ProjectionTotals>;
+  abstract findMonthLedger(query: MonthLedgerQuery): Promise<LedgerMonth[]>;
 
   abstract findActiveRecurringRules(
     workspaceId: string,
