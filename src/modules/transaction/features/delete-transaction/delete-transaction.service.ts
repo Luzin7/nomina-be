@@ -8,6 +8,7 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { FindTransactionRequest } from '../find-transaction/find-transaction.dto';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 
 type Request = FindTransactionRequest & TokenPayloadBase;
 
@@ -30,7 +31,7 @@ export class DeleteTransactionService implements Service<Request, Error, void> {
     if (deletionResult.isLeft()) return left(deletionResult.value);
     if (!deletionResult.value) return left(new TransactionNotFoundError());
 
-    await this.redisService.delByPattern(`report:*:${request.workspaceId}:*`);
+    await bumpReportGeneration(this.redisService, request.workspaceId);
 
     return right(undefined);
   }

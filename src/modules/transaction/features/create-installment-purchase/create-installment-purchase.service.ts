@@ -29,6 +29,7 @@ import {
   CreateInstallmentPurchaseRequest,
   MIN_PURCHASE_INSTALLMENTS,
 } from './create-installment-purchase.dto';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 
 type Request = CreateInstallmentPurchaseRequest & TokenPayloadBase;
 
@@ -142,7 +143,7 @@ export class CreateInstallmentPurchaseService implements Service<
     );
     if (persisted.isLeft()) return left(persisted.value);
 
-    await this.cache.delByPattern(`report:*:${workspaceId}:*`);
+    await bumpReportGeneration(this.cache, workspaceId);
 
     return right({ recurring, firstInstallment });
   }

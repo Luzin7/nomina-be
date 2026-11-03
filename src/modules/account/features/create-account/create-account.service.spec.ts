@@ -75,6 +75,7 @@ describe('CreateAccountService', () => {
 
     redisService = {
       delByPattern: jest.fn(),
+      incrementCounter: jest.fn(),
       get: jest.fn(),
       set: jest.fn(),
       del: jest.fn(),
@@ -118,7 +119,13 @@ describe('CreateAccountService', () => {
     await service.execute(makeRequest());
 
     expect(redisService.delByPattern).toHaveBeenCalledTimes(1);
-    expect(redisService.delByPattern).toHaveBeenCalledWith('report:*:ws-1:*');
+    expect(redisService.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
+    expect(redisService.delByPattern).toHaveBeenCalledWith(
+      'report:month-summary:*:ws-1:*',
+    );
   });
 
   it('should not clear the report cache when the user is not found', async () => {

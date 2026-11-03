@@ -55,6 +55,7 @@ describe('SetTransactionStatusService', () => {
       acquireLock: jest.fn().mockResolvedValue(true),
       releaseLock: jest.fn().mockResolvedValue(true),
       delByPattern: jest.fn().mockResolvedValue(0),
+      incrementCounter: jest.fn().mockResolvedValue(1),
       getClient: jest.fn().mockReturnValue(null),
       isAvailable: jest.fn().mockReturnValue(false),
     } as unknown as jest.Mocked<CacheProvider>;
@@ -144,7 +145,13 @@ describe('SetTransactionStatusService', () => {
 
     await service.execute(makeRequest());
 
-    expect(cacheProvider.delByPattern).toHaveBeenCalledWith('report:*:ws-1:*');
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
+    expect(cacheProvider.delByPattern).toHaveBeenCalledWith(
+      'report:month-summary:*:ws-1:*',
+    );
   });
 
   it('should not touch the cache when the change is rejected', async () => {

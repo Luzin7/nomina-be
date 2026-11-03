@@ -92,6 +92,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       acquireLock: jest.fn().mockResolvedValue(LOCK),
       releaseLock: jest.fn().mockResolvedValue(true),
       delByPattern: jest.fn().mockResolvedValue(0),
+      incrementCounter: jest.fn().mockResolvedValue(1),
       getClient: jest.fn().mockReturnValue(null),
       isAvailable: jest.fn().mockReturnValue(true),
     } as unknown as jest.Mocked<CacheProvider>;
@@ -284,6 +285,75 @@ describe('GenerateRecurringTransactionsJobService', () => {
     expect(transactions).toHaveLength(1);
     expect(updatedRecurring.lastGenerated).toEqual(new Date('2024-01-10'));
     if (result.isRight()) expect(result.value.generatedCount).toBe(1);
+  });
+
+  it('invalidates the report cache once per workspace that persisted', async () => {
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      makeRecurring({
+        id: 'r-a1',
+        workspaceId: 'ws-a',
+        startDate: new Date('2024-01-10'),
+      }),
+      makeRecurring({
+        id: 'r-a2',
+        workspaceId: 'ws-a',
+        startDate: new Date('2024-01-10'),
+      }),
+      makeRecurring({
+        id: 'r-b1',
+        workspaceId: 'ws-b',
+        startDate: new Date('2024-01-10'),
+      }),
+    ]);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-02-10'),
+    );
+
+    await service.execute();
+
+    expect(redis.incrementCounter).toHaveBeenCalledTimes(2);
+    expect(redis.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-a',
+      expect.any(Number),
+    );
+    expect(redis.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-b',
+      expect.any(Number),
+    );
+  });
+
+  it('does not invalidate the report cache when nothing is due', async () => {
+    await service.execute();
+
+    expect(redis.incrementCounter).not.toHaveBeenCalled();
+  });
+
+  it('invalidates already persisted workspaces and propagates the error when a later batch fails', async () => {
+    const fullBatch = Array.from({ length: 50 }, (_, i) =>
+      makeRecurring({
+        id: `r-${String(i).padStart(3, '0')}`,
+        workspaceId: 'ws-a',
+        startDate: new Date('2024-01-10'),
+      }),
+    );
+    recurringRepository.listNeedingGeneration
+      .mockResolvedValueOnce(fullBatch)
+      .mockRejectedValueOnce(new Error('db down'));
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-02-10'),
+    );
+
+    const result = await service.execute();
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toMatchObject({
+      message: expect.stringContaining('db down'),
+    });
+    expect(redis.incrementCounter).toHaveBeenCalledTimes(1);
+    expect(redis.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-a',
+      expect.any(Number),
+    );
   });
 
   it('reports the count the repository inserted, not the batch size', async () => {

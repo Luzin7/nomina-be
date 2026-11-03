@@ -13,6 +13,9 @@ interface RedisClientUnderTest {
   eval: jest.Mock;
   exists: jest.Mock;
   ping: jest.Mock;
+  scanStream: jest.Mock;
+  pipeline: jest.Mock;
+  multi: jest.Mock;
 }
 
 const mockClient: RedisClientUnderTest = {
@@ -24,9 +27,17 @@ const mockClient: RedisClientUnderTest = {
   eval: jest.fn(),
   exists: jest.fn(),
   ping: jest.fn(),
+  scanStream: jest.fn(),
+  pipeline: jest.fn(),
+  multi: jest.fn(),
 };
 
 const mockRedisConstructor: jest.Mock = jest.fn(() => mockClient);
+const mockCaptureException: jest.Mock = jest.fn();
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: mockCaptureException,
+}));
 
 jest.mock('ioredis', () => ({
   __esModule: true,
@@ -46,6 +57,8 @@ type RedisServiceUnderTest = {
   del(key: string): Promise<boolean>;
   exists(key: string): Promise<boolean>;
   delByPattern(pattern: string): Promise<number>;
+  readCounter(key: string, initialValue: number): Promise<number | null>;
+  incrementCounter(key: string, initialValue: number): Promise<number | null>;
 };
 
 function loadRedisService(
@@ -382,6 +395,306 @@ describe('RedisService', () => {
 
       await expect(service.releaseLock(currentLock)).resolves.toBe(true);
       expect(store.has('lock:day')).toBe(false);
+    });
+  });
+});
+
+describe('RedisService delByPattern failures', () => {
+  const PATTERN = 'report:*:ws-1:*';
+
+  function makePipeline(execResult: unknown) {
+    const pipeline = {
+      unlink: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue(execResult),
+    };
+    mockClient.pipeline.mockReturnValue(pipeline);
+    return pipeline;
+  }
+
+  function makeKeyStream(batches: string[][]) {
+    mockClient.scanStream.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        for (const keys of batches) yield keys;
+      },
+    });
+  }
+
+  beforeEach(() => {
+    mockCaptureException.mockClear();
+    mockClient.scanStream.mockReset();
+    mockClient.pipeline.mockReset();
+  });
+
+  it('reports a SCAN failure with the pattern and returns zero', async () => {
+    const scanError = new Error('scan failed');
+    mockClient.scanStream.mockReturnValue({
+      // eslint-disable-next-line require-yield
+      async *[Symbol.asyncIterator]() {
+        throw scanError;
+      },
+    });
+    const service = loadRedisService();
+
+    await expect(service.delByPattern(PATTERN)).resolves.toBe(0);
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(scanError, {
+      tags: { 'cache.pattern': PATTERN },
+    });
+  });
+
+  it('reports per-command pipeline errors and counts only the keys removed', async () => {
+    const unlinkError = new Error('unlink failed');
+    makeKeyStream([['k1', 'k2']]);
+    makePipeline([
+      [null, 1],
+      [unlinkError, null],
+    ]);
+    const service = loadRedisService();
+
+    await expect(service.delByPattern(PATTERN)).resolves.toBe(1);
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(unlinkError, {
+      tags: { 'cache.pattern': PATTERN },
+      extra: { failedKeys: 1 },
+    });
+  });
+
+  it('reports one aggregated event per call however many keys fail', async () => {
+    makeKeyStream([['k1', 'k2', 'k3']]);
+    makePipeline([
+      [new Error('first'), null],
+      [new Error('second'), null],
+      [null, 1],
+    ]);
+    const service = loadRedisService();
+
+    await expect(service.delByPattern(PATTERN)).resolves.toBe(1);
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { 'cache.pattern': PATTERN },
+      extra: { failedKeys: 2 },
+    });
+  });
+
+  it('reports when the client is unavailable on an enabled instance', async () => {
+    const service = loadRedisService({ clientCreationFails: true });
+
+    await expect(service.delByPattern(PATTERN)).resolves.toBe(0);
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { 'cache.pattern': PATTERN },
+    });
+  });
+
+  it('stays silent when redis is intentionally disabled', async () => {
+    const service = loadRedisService({ enabled: false });
+
+    await expect(service.delByPattern(PATTERN)).resolves.toBe(0);
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it('does not report when every key is removed', async () => {
+    makeKeyStream([['k1', 'k2']]);
+    makePipeline([
+      [null, 1],
+      [null, 1],
+    ]);
+    const service = loadRedisService();
+
+    await expect(service.delByPattern(PATTERN)).resolves.toBe(2);
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+});
+
+describe('RedisService counters', () => {
+  const KEY = 'cache-gen:report:ws-1';
+  const INITIAL = 1700000000000;
+
+  function makeMulti(execResult: unknown) {
+    const transaction = {
+      set: jest.fn().mockReturnThis(),
+      get: jest.fn().mockReturnThis(),
+      incr: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue(execResult),
+    };
+    mockClient.multi.mockReturnValue(transaction);
+    return transaction;
+  }
+
+  beforeEach(() => {
+    mockCaptureException.mockClear();
+    mockClient.multi.mockReset();
+  });
+
+  it('reads a counter with SET NX then GET in one transaction', async () => {
+    const transaction = makeMulti([
+      [null, 'OK'],
+      [null, String(INITIAL)],
+    ]);
+    const service = loadRedisService();
+
+    await expect(service.readCounter(KEY, INITIAL)).resolves.toBe(INITIAL);
+    expect(transaction.set).toHaveBeenCalledWith(KEY, INITIAL, 'NX');
+    expect(transaction.get).toHaveBeenCalledWith(KEY);
+    expect(transaction.incr).not.toHaveBeenCalled();
+    expect(transaction.exec).toHaveBeenCalledTimes(1);
+  });
+
+  it('increments a counter with SET NX then INCR in one transaction', async () => {
+    const transaction = makeMulti([
+      [null, null],
+      [null, INITIAL + 1],
+    ]);
+    const service = loadRedisService();
+
+    await expect(service.incrementCounter(KEY, INITIAL)).resolves.toBe(
+      INITIAL + 1,
+    );
+    expect(transaction.set).toHaveBeenCalledWith(KEY, INITIAL, 'NX');
+    expect(transaction.incr).toHaveBeenCalledWith(KEY);
+    expect(transaction.get).not.toHaveBeenCalled();
+  });
+
+  it('reports once and returns null when EXEC returns null', async () => {
+    makeMulti(null);
+    const service = loadRedisService();
+
+    await expect(service.readCounter(KEY, INITIAL)).resolves.toBeNull();
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { 'cache.op': 'readCounter', 'cache.key': KEY },
+    });
+  });
+
+  it('reports once and returns null on a per-command error', async () => {
+    const commandError = new Error('WRONGTYPE');
+    makeMulti([
+      [null, null],
+      [commandError, null],
+    ]);
+    const service = loadRedisService();
+
+    await expect(service.incrementCounter(KEY, INITIAL)).resolves.toBeNull();
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(commandError, {
+      tags: { 'cache.op': 'incrementCounter', 'cache.key': KEY },
+    });
+  });
+
+  it('reports once and returns null when EXEC rejects', async () => {
+    const execError = new Error('connection reset');
+    const transaction = makeMulti(null);
+    transaction.exec.mockRejectedValue(execError);
+    const service = loadRedisService();
+
+    await expect(service.incrementCounter(KEY, INITIAL)).resolves.toBeNull();
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(execError, {
+      tags: { 'cache.op': 'incrementCounter', 'cache.key': KEY },
+    });
+  });
+
+  it('reports once and returns null when the client is unavailable', async () => {
+    const service = loadRedisService({ clientCreationFails: true });
+
+    await expect(service.readCounter(KEY, INITIAL)).resolves.toBeNull();
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { 'cache.op': 'readCounter', 'cache.key': KEY },
+    });
+  });
+
+  it('stays silent and returns null when redis is intentionally disabled', async () => {
+    const service = loadRedisService({ enabled: false });
+
+    await expect(service.readCounter(KEY, INITIAL)).resolves.toBeNull();
+    await expect(service.incrementCounter(KEY, INITIAL)).resolves.toBeNull();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+});
+
+describe('RedisService unavailable reporting throttle', () => {
+  const THROTTLE_MS = 60_000;
+  let nowSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    mockCaptureException.mockClear();
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+  });
+
+  afterEach(() => nowSpy.mockRestore());
+
+  it('sends one event per operation within the window', async () => {
+    const service = loadRedisService({ clientCreationFails: true });
+
+    await service.readCounter('k1', 1);
+    await service.readCounter('k2', 1);
+    await service.readCounter('k3', 1);
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends again once the window has passed', async () => {
+    const service = loadRedisService({ clientCreationFails: true });
+
+    await service.readCounter('k1', 1);
+    nowSpy.mockReturnValue(1_000_000 + THROTTLE_MS);
+    await service.readCounter('k1', 1);
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(2);
+  });
+
+  it('throttles each operation independently', async () => {
+    const service = loadRedisService({ clientCreationFails: true });
+
+    await service.readCounter('k1', 1);
+    await service.incrementCounter('k1', 1);
+    await service.delByPattern('report:*');
+    await service.delByPattern('report:other:*');
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(3);
+  });
+
+  describe('command failures', () => {
+    function makeRejectingMulti() {
+      mockClient.multi.mockReturnValue({
+        set: jest.fn().mockReturnThis(),
+        incr: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockRejectedValue(new Error('command timed out')),
+      });
+    }
+
+    function makeFailingScan() {
+      mockClient.scanStream.mockReturnValue({
+        // eslint-disable-next-line require-yield
+        async *[Symbol.asyncIterator]() {
+          throw new Error('scan timed out');
+        },
+      });
+    }
+
+    it('sends one counter failure event per window', async () => {
+      makeRejectingMulti();
+      const service = loadRedisService();
+
+      await service.incrementCounter('k1', 1);
+      await service.incrementCounter('k2', 1);
+      nowSpy.mockReturnValue(1_000_000 + THROTTLE_MS);
+      await service.incrementCounter('k3', 1);
+
+      expect(mockCaptureException).toHaveBeenCalledTimes(2);
+    });
+
+    it('sends one delByPattern failure event per window', async () => {
+      makeFailingScan();
+      const service = loadRedisService();
+
+      await service.delByPattern('report:*:ws-1:*');
+      await service.delByPattern('report:*:ws-2:*');
+      nowSpy.mockReturnValue(1_000_000 + THROTTLE_MS);
+      await service.delByPattern('report:*:ws-3:*');
+
+      expect(mockCaptureException).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -46,6 +46,7 @@ describe('SettleCardInstallmentsJobService', () => {
     } as unknown as jest.Mocked<TransactionRepository>;
     cache = {
       delByPattern: jest.fn().mockResolvedValue(0),
+      incrementCounter: jest.fn().mockResolvedValue(1),
     } as unknown as jest.Mocked<CacheProvider>;
     dateProvider = {
       now: jest.fn().mockReturnValue(NOW),
@@ -89,7 +90,13 @@ describe('SettleCardInstallmentsJobService', () => {
       },
       expect.objectContaining({ actorId: expect.any(String) }),
     );
-    expect(cache.delByPattern).toHaveBeenCalledWith('report:*:ws-1:*');
+    expect(cache.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
+    expect(cache.delByPattern).toHaveBeenCalledWith(
+      'report:month-summary:*:ws-1:*',
+    );
   });
 
   it('should ask the repository for rows due at the current time', async () => {

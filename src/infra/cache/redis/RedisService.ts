@@ -2,7 +2,8 @@ import { env } from '@infra/env';
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
-import Redis, { RedisOptions } from 'ioredis';
+import { captureException } from '@sentry/nestjs';
+import Redis, { ChainableCommander, RedisOptions } from 'ioredis';
 import { CacheProvider, LockHandle } from '../contracts/CacheProvider';
 import { RedisUnavailableError } from './errors/RedisUnavailableError';
 
@@ -11,6 +12,7 @@ const CONNECT_TIMEOUT_MS = 2000;
 const MAX_RETRIES_PER_REQUEST = 1;
 const RECONNECT_MIN_DELAY_MS = 50;
 const RECONNECT_MAX_DELAY_MS = 2000;
+const REPORT_THROTTLE_INTERVAL_MS = 60_000;
 const DEFAULT_LOCK_TTL_SECONDS = 30;
 export const RELEASE_LOCK_SCRIPT =
   "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end";
@@ -29,6 +31,7 @@ export class RedisService implements CacheProvider, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private client: Redis | null = null;
   private connectionLost = false;
+  private readonly lastReportedAt = new Map<string, number>();
   public readonly isEnabled: boolean;
 
   constructor(private readonly configService: ConfigService) {
@@ -227,31 +230,144 @@ export class RedisService implements CacheProvider, OnModuleDestroy {
 
   async delByPattern(pattern: string): Promise<number> {
     const client = this.getClient();
-    if (!client) return 0;
+    if (!client) {
+      this.reportUnavailable('delByPattern', `UNLINK by pattern "${pattern}"`, {
+        'cache.pattern': pattern,
+      });
+      return 0;
+    }
+
+    let totalDeleted = 0;
+    let failedKeys = 0;
+    let firstFailure: unknown = null;
 
     try {
-      let totalDeleted = 0;
       const stream = client.scanStream({
         match: pattern,
         count: RedisService.SCAN_BATCH_SIZE,
       });
 
       for await (const keys of stream) {
-        if (keys.length > 0) {
-          const pipeline = client.pipeline();
-          keys.forEach((key: string) => pipeline.unlink(key));
-          await pipeline.exec();
-          totalDeleted += keys.length;
+        if (keys.length === 0) continue;
+
+        const pipeline = client.pipeline();
+        keys.forEach((key: string) => pipeline.unlink(key));
+        const results = (await pipeline.exec()) ?? [];
+
+        for (const [error] of results) {
+          if (!error) {
+            totalDeleted++;
+            continue;
+          }
+          failedKeys++;
+          firstFailure ??= error;
         }
       }
+    } catch (error) {
+      firstFailure ??= error;
+    }
 
-      return totalDeleted;
+    if (firstFailure)
+      this.reportPatternFailure(firstFailure, pattern, failedKeys);
+
+    return totalDeleted;
+  }
+
+  async readCounter(key: string, initialValue: number): Promise<number | null> {
+    return this.runCounterTransaction('readCounter', key, initialValue, (tx) =>
+      tx.get(key),
+    );
+  }
+
+  async incrementCounter(
+    key: string,
+    initialValue: number,
+  ): Promise<number | null> {
+    return this.runCounterTransaction(
+      'incrementCounter',
+      key,
+      initialValue,
+      (tx) => tx.incr(key),
+    );
+  }
+
+  private async runCounterTransaction(
+    operation: string,
+    key: string,
+    initialValue: number,
+    addResultCommand: (transaction: ChainableCommander) => ChainableCommander,
+  ): Promise<number | null> {
+    const tags = { 'cache.op': operation, 'cache.key': key };
+    const client = this.getClient();
+    if (!client) {
+      this.reportUnavailable(operation, operation, tags);
+      return null;
+    }
+
+    try {
+      const transaction = client.multi().set(key, initialValue, 'NX');
+      const results = await addResultCommand(transaction).exec();
+      if (!results) throw new Error(`Redis ${operation} transaction aborted`);
+
+      const failed = results.find(([commandError]) => commandError);
+      if (failed) throw failed[0];
+
+      return Number(results[1][1]);
     } catch (error) {
       this.logger.warn(
-        `Redis scanStream/unlink failed for pattern "${pattern}":`,
-        error,
+        `Redis ${operation} failed for key ${key}: ${errorMessage(error)}`,
       );
-      return 0;
+      this.captureThrottled(`${operation}:failed`, error, { tags });
+      return null;
     }
+  }
+
+  private reportUnavailable(
+    operationKind: string,
+    description: string,
+    tags: Record<string, string>,
+  ): void {
+    if (!this.isEnabled) return;
+
+    this.logger.warn(`Redis unavailable for ${description}`);
+    this.captureThrottled(
+      `${operationKind}:unavailable`,
+      new RedisUnavailableError(
+        `Redis client is not available for ${description}`,
+      ),
+      { tags },
+    );
+  }
+
+  private captureThrottled(
+    throttleKey: string,
+    error: unknown,
+    context: Parameters<typeof captureException>[1],
+  ): void {
+    const now = Date.now();
+    const lastReportedAt = this.lastReportedAt.get(throttleKey);
+    if (
+      lastReportedAt !== undefined &&
+      now - lastReportedAt < REPORT_THROTTLE_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    this.lastReportedAt.set(throttleKey, now);
+    captureException(error, context);
+  }
+
+  private reportPatternFailure(
+    error: unknown,
+    pattern: string,
+    failedKeys: number,
+  ): void {
+    this.logger.warn(
+      `Redis scan/unlink failed for pattern "${pattern}" (failedKeys=${failedKeys}): ${errorMessage(error)}`,
+    );
+    this.captureThrottled('delByPattern:failed', error, {
+      tags: { 'cache.pattern': pattern },
+      ...(failedKeys > 0 && { extra: { failedKeys } }),
+    });
   }
 }

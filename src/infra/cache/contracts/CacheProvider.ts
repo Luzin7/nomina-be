@@ -22,4 +22,13 @@ export abstract class CacheProvider {
 
   abstract releaseLock(lock: LockHandle): Promise<boolean>;
   abstract delByPattern(pattern: string): Promise<number>;
+  abstract readCounter(
+    key: string,
+    initialValue: number,
+  ): Promise<number | null>;
+
+  abstract incrementCounter(
+    key: string,
+    initialValue: number,
+  ): Promise<number | null>;
 }

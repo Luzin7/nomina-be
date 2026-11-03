@@ -86,6 +86,10 @@ class InMemoryCache implements Partial<CacheProvider> {
     return 0;
   }
 
+  async incrementCounter(): Promise<number | null> {
+    return 1;
+  }
+
   async acquireLock(key: string): Promise<LockHandle | null> {
     if (this.locks.has(key)) return null;
 

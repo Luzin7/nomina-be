@@ -11,6 +11,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { captureException } from '@sentry/nestjs';
 import { getErrorDetails } from '@shared/utils/error-details';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 
 const BATCH_SIZE = 500;
 const TIME_BUDGET_MS = 30_000;
@@ -144,9 +145,7 @@ export class SettleCardInstallmentsJobService {
 
   private async invalidateReports(workspaceIds: Set<string>): Promise<void> {
     for (const workspaceId of workspaceIds) {
-      await this.cache
-        .delByPattern(`report:*:${workspaceId}:*`)
-        .catch((error: unknown) => captureException(error));
+      await bumpReportGeneration(this.cache, workspaceId);
     }
   }
 

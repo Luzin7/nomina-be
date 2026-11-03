@@ -26,7 +26,9 @@ function makeAccount(workspaceId = 'ws-1') {
 describe('DeleteAccountService', () => {
   let service: DeleteAccountService;
   let accountRepository: jest.Mocked<AccountRepository>;
-  let redisService: jest.Mocked<Pick<CacheProvider, 'delByPattern'>>;
+  let redisService: jest.Mocked<
+    Pick<CacheProvider, 'delByPattern' | 'incrementCounter'>
+  >;
 
   beforeEach(() => {
     accountRepository = {
@@ -43,6 +45,7 @@ describe('DeleteAccountService', () => {
 
     redisService = {
       delByPattern: jest.fn().mockResolvedValue(0),
+      incrementCounter: jest.fn().mockResolvedValue(1),
     };
 
     service = new DeleteAccountService(
@@ -87,6 +90,12 @@ describe('DeleteAccountService', () => {
 
     await service.execute(makeRequest());
 
-    expect(redisService.delByPattern).toHaveBeenCalledWith('report:*:ws-1:*');
+    expect(redisService.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
+    expect(redisService.delByPattern).toHaveBeenCalledWith(
+      'report:month-summary:*:ws-1:*',
+    );
   });
 });

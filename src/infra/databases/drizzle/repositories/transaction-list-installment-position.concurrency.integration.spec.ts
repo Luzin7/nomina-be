@@ -62,6 +62,10 @@ class InMemoryCache implements Partial<CacheProvider> {
     return 0;
   }
 
+  async incrementCounter(): Promise<number | null> {
+    return 1;
+  }
+
   async acquireLock(key: string) {
     return { key, token: randomUUID() };
   }

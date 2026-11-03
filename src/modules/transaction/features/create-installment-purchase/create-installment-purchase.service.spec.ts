@@ -98,6 +98,7 @@ describe('CreateInstallmentPurchaseService', () => {
     } as unknown as jest.Mocked<TransactionRepository>;
     cache = {
       delByPattern: jest.fn().mockResolvedValue(0),
+      incrementCounter: jest.fn().mockResolvedValue(1),
     } as unknown as jest.Mocked<CacheProvider>;
     dateProvider = {
       now: jest.fn().mockReturnValue(new Date(`${TODAY}T15:00:00.000Z`)),
@@ -134,7 +135,13 @@ describe('CreateInstallmentPurchaseService', () => {
     expect(transactionRepository.createInstallmentPlan).toHaveBeenCalledTimes(
       1,
     );
-    expect(cache.delByPattern).toHaveBeenCalledWith('report:*:ws-1:*');
+    expect(cache.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
+    expect(cache.delByPattern).toHaveBeenCalledWith(
+      'report:month-summary:*:ws-1:*',
+    );
   });
 
   it('should put the remainder on the first installment', async () => {

@@ -6,6 +6,7 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { DeleteAccountRequest } from './delete-account.dto';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 
 type Request = DeleteAccountRequest & Pick<TokenPayloadSchema, 'workspaceId'>;
 
@@ -27,7 +28,7 @@ export class DeleteAccountService implements Service<Request, Error, void> {
     }
 
     await this.accountRepository.delete(accountId);
-    await this.redisService.delByPattern(`report:*:${workspaceId}:*`);
+    await bumpReportGeneration(this.redisService, workspaceId);
 
     return right(undefined);
   }
