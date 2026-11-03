@@ -16,6 +16,10 @@ import { HttpException, Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
+import {
+  REPORT_CACHE_TTL_SECONDS,
+  readReportGeneration,
+} from '@shared/cache/report-cache';
 import { Either, right } from '@shared/core/errors/Either';
 import { nextOccurrence } from '@utils/installmentSchedule';
 
@@ -24,8 +28,6 @@ type Request = TokenPayloadBase;
 type Errors = HttpException;
 
 type Response = MonthSummary;
-
-const CACHE_TTL = 5 * 60;
 
 type ProjectionWindows = {
   currentMonth: DateRange;
@@ -99,12 +101,16 @@ export class FindMonthSummaryService implements Service<
   ) {}
 
   async execute({ workspaceId }: Request): Promise<Either<Errors, Response>> {
+    const generation = await readReportGeneration(this.cache, workspaceId);
     const now = this.dateProvider.now();
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 
     const currentMonthStart = this.dateProvider.startOfMonth(now, timezone);
-    const cacheKey = `report:month-summary:v4:${workspaceId}:${this.dateProvider.format(now, 'YYYY-MM-DD', timezone)}`;
-    const cached = await this.cache.get(cacheKey);
+    const cacheKey =
+      generation === null
+        ? null
+        : `report:month-summary:v5:${workspaceId}:g${generation}:${this.dateProvider.format(now, 'YYYY-MM-DD', timezone)}`;
+    const cached = cacheKey ? await this.cache.get(cacheKey) : null;
     if (cached) {
       const parsed = JSON.parse(cached);
       return right(
@@ -219,21 +225,23 @@ export class FindMonthSummaryService implements Service<
       projection,
     });
 
-    await this.cache.set(
-      cacheKey,
-      JSON.stringify({
-        month: monthSummary.month,
-        totalIncome: monthSummary.totalIncome,
-        totalExpense: monthSummary.totalExpense,
-        totalCheckingBalance: monthSummary.totalCheckingBalance,
-        totalInvestmentBalance: monthSummary.totalInvestmentBalance,
-        totalCreditCardBalance: monthSummary.totalCreditCardBalance,
-        rate: monthSummary.rate,
-        previousMonthToDate: monthSummary.previousMonthToDate,
-        projection: monthSummary.projection,
-      }),
-      CACHE_TTL,
-    );
+    if (cacheKey) {
+      await this.cache.set(
+        cacheKey,
+        JSON.stringify({
+          month: monthSummary.month,
+          totalIncome: monthSummary.totalIncome,
+          totalExpense: monthSummary.totalExpense,
+          totalCheckingBalance: monthSummary.totalCheckingBalance,
+          totalInvestmentBalance: monthSummary.totalInvestmentBalance,
+          totalCreditCardBalance: monthSummary.totalCreditCardBalance,
+          rate: monthSummary.rate,
+          previousMonthToDate: monthSummary.previousMonthToDate,
+          projection: monthSummary.projection,
+        }),
+        REPORT_CACHE_TTL_SECONDS,
+      );
+    }
 
     return right(monthSummary);
   }

@@ -139,9 +139,7 @@ describe('CreateInstallmentPurchaseService', () => {
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
-    expect(cache.delByPattern).toHaveBeenCalledWith(
-      'report:month-summary:*:ws-1:*',
-    );
+    expect(cache.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should put the remainder on the first installment', async () => {

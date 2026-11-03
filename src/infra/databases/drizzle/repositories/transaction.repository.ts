@@ -217,42 +217,6 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     };
   }
 
-  async sumTransactionsByDateRange(
-    workspaceId: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<{ totalIncome: number; totalExpense: number; balance: number }> {
-    const results = await this.drizzle.db
-      .select({
-        type: schema.transactions.type,
-        total: sum(schema.transactions.amount).mapWith(Number),
-      })
-      .from(schema.transactions)
-      .where(
-        and(
-          eq(schema.transactions.workspaceId, workspaceId),
-          eq(schema.transactions.status, 'COMPLETED'),
-          gte(schema.transactions.date, startDate),
-          lte(schema.transactions.date, endDate),
-        ),
-      )
-      .groupBy(schema.transactions.type);
-
-    let totalIncome = 0;
-    let totalExpense = 0;
-
-    for (const row of results) {
-      if (row.type === 'INCOME') totalIncome += row.total;
-      if (row.type === 'EXPENSE') totalExpense += row.total;
-    }
-
-    return {
-      totalIncome,
-      totalExpense,
-      balance: totalIncome - totalExpense,
-    };
-  }
-
   async createWithBalanceUpdate(
     transaction: Transaction,
     applyEffects: CreateBalanceMutation,

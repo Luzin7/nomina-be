@@ -2,7 +2,6 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import {
   REPORT_CACHE_TTL_SECONDS,
   bumpReportGeneration,
-  monthSummaryReportCachePattern,
   readReportGeneration,
   reportGenerationKey,
 } from './report-cache';
@@ -45,12 +44,6 @@ describe('report-cache', () => {
     expect(reportGenerationKey('ws-1')).toBe('cache-gen:report:ws-1');
   });
 
-  it('builds the month-summary pattern', () => {
-    expect(monthSummaryReportCachePattern('ws-1')).toBe(
-      'report:month-summary:*:ws-1:*',
-    );
-  });
-
   it('initialises a missing generation with the current time', async () => {
     const { cache, counters } = makeInMemoryCache();
 
@@ -69,7 +62,7 @@ describe('report-cache', () => {
     await expect(readReportGeneration(cache, 'ws-1')).resolves.toBeNull();
   });
 
-  it('bumps the generation and clears the month-summary keys', async () => {
+  it('bumps the generation without scanning the keyspace', async () => {
     const { cache, counters } = makeInMemoryCache();
     counters.set('cache-gen:report:ws-1', 5);
 
@@ -80,10 +73,7 @@ describe('report-cache', () => {
       'cache-gen:report:ws-1',
       NOW_MS,
     );
-    expect(cache.delByPattern).toHaveBeenCalledTimes(1);
-    expect(cache.delByPattern).toHaveBeenCalledWith(
-      'report:month-summary:*:ws-1:*',
-    );
+    expect(cache.delByPattern).not.toHaveBeenCalled();
   });
 
   it('keeps a late set from being served after a concurrent write', async () => {
