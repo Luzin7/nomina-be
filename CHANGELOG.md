@@ -3,6 +3,12 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.3](https://github.com/Luzin7/nomina-be/compare/v2.2.2...v2.2.3) (2026-11-03)
+
+### Bug Fixes
+
+* **observability:** tira IP do usuário do Sentry e ignora health check ([fbf2b32](https://github.com/Luzin7/nomina-be/commit/fbf2b32a3b848c0e62640af5a5f29867855a69b5))
+
 ## [2.2.2](https://github.com/Luzin7/nomina-be/compare/v2.2.1...v2.2.2) (2026-11-03)
 
 ### Performance Improvements
