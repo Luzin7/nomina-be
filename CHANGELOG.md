@@ -3,6 +3,17 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.1](https://github.com/Luzin7/nomina-be/compare/v2.2.0...v2.2.1) (2026-11-03)
+
+### Bug Fixes
+
+* **db:** alinha índices do schema com produção ([4c8d144](https://github.com/Luzin7/nomina-be/commit/4c8d144ea634d4725e1ffa96b22b4ca47e12937a))
+* **deps:** regera package-lock com npm 10 (mesma versão do CI) ([dc1b9c1](https://github.com/Luzin7/nomina-be/commit/dc1b9c1bbc3512d1341f375b6824e0666ea30f3b))
+
+### Performance Improvements
+
+* **report:** cache de relatórios com versão por workspace e TTL de 6 h ([99ecbac](https://github.com/Luzin7/nomina-be/commit/99ecbac60d70ec34542a1a88b1911c39e71b40d2))
+
 ## [2.2.0](https://github.com/Luzin7/nomina-be/compare/v2.1.0...v2.2.0) (2026-10-24)
 
 ### Features
