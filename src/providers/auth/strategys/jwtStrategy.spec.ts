@@ -1,5 +1,6 @@
 import { UserRole } from '@constants/enums';
 import * as Sentry from '@sentry/nestjs';
+import type { StreamedSpanJSON } from '@sentry/core';
 import { JwtStrategy, TokenPayloadSchema } from './jwtStrategy';
 
 describe('JwtStrategy', () => {
@@ -27,6 +28,47 @@ describe('JwtStrategy', () => {
 
       expect(Sentry.getIsolationScope().getScopeData().tags).toMatchObject({
         'workspace.id': payload.workspaceId,
+      });
+    });
+  });
+
+  describe('streamed segment spans', () => {
+    const spans: StreamedSpanJSON[] = [];
+
+    beforeAll(() => {
+      Sentry.init({
+        dsn: 'https://key@o0.ingest.sentry.io/0',
+        tracesSampleRate: 1,
+        defaultIntegrations: false,
+        transport: () => ({
+          send: async () => ({}),
+          flush: async () => true,
+        }),
+        beforeSendSpan: (span) => {
+          spans.push(span);
+          return span;
+        },
+      });
+    });
+
+    afterAll(async () => {
+      await Sentry.close();
+    });
+
+    it('should carry workspace id and user id as attributes of the segment span', async () => {
+      const strategy = new JwtStrategy();
+
+      await Sentry.withIsolationScope(async () => {
+        Sentry.startSpan({ name: 'GET /api/v1/x', op: 'http.server' }, () => {
+          strategy.validate(payload);
+        });
+        await Sentry.flush();
+      });
+
+      const segment = spans.find((span) => span.is_segment);
+      expect(segment?.attributes).toMatchObject({
+        'workspace.id': payload.workspaceId,
+        'user.id': payload.sub,
       });
     });
   });
