@@ -1,4 +1,5 @@
 import { BalanceMovementCause, TransactionStatus } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import {
@@ -19,6 +20,7 @@ import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { PayCreditCardInvoiceRequest } from './pay-credit-card-invoice.dto';
 
@@ -35,6 +37,7 @@ export class PayCreditCardInvoiceService implements Service<
     private readonly accountRepository: AccountRepository,
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
+    private readonly cacheProvider: CacheProvider,
   ) {}
 
   private async validateSourceAccount({
@@ -135,6 +138,8 @@ export class PayCreditCardInvoiceService implements Service<
       { cause: BalanceMovementCause.INVOICE_PAID, actorId: props.sub },
     );
     if (persisted.isLeft()) return left(persisted.value);
+
+    await bumpReportGeneration(this.cacheProvider, props.workspaceId);
 
     return right(transaction);
   }

@@ -4,6 +4,10 @@ import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-wor
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import {
+  REPORT_CACHE_TTL_SECONDS,
+  readReportGeneration,
+} from '@shared/cache/report-cache';
 import { GetExpensesByCategoryRequest } from './get-expenses-by-category.dto';
 import { TopExpensesByCategoryResult } from '@modules/report/presenters/TopExpensesByCategory.presenter';
 
@@ -11,7 +15,6 @@ type Request = GetExpensesByCategoryRequest &
   Pick<TokenPayloadSchema, 'workspaceId'>;
 
 const TOP_CATEGORIES_LIMIT = 5;
-const CACHE_TTL = 5 * 60;
 
 @Injectable()
 export class GetExpensesByCategoryService {
@@ -27,8 +30,12 @@ export class GetExpensesByCategoryService {
     month,
     year,
   }: Request): Promise<TopExpensesByCategoryResult> {
-    const cacheKey = `report:expenses-by-category:v2:${workspaceId}:${year}-${month}`;
-    const cached = await this.cache.get(cacheKey);
+    const generation = await readReportGeneration(this.cache, workspaceId);
+    const cacheKey =
+      generation === null
+        ? null
+        : `report:expenses-by-category:v3:${workspaceId}:g${generation}:${year}-${month}`;
+    const cached = cacheKey ? await this.cache.get(cacheKey) : null;
     if (cached) return JSON.parse(cached) as TopExpensesByCategoryResult;
 
     const timezone = await this.workspaceTimezone.execute(workspaceId);
@@ -53,7 +60,13 @@ export class GetExpensesByCategoryService {
       totalExpense,
     };
 
-    await this.cache.set(cacheKey, JSON.stringify(result), CACHE_TTL);
+    if (cacheKey) {
+      await this.cache.set(
+        cacheKey,
+        JSON.stringify(result),
+        REPORT_CACHE_TTL_SECONDS,
+      );
+    }
 
     return result;
   }

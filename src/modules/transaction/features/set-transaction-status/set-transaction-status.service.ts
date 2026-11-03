@@ -6,6 +6,7 @@ import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { SetTransactionStatusRequest } from './set-transaction-status.dto';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 
 type Request = SetTransactionStatusRequest &
   Pick<TokenPayloadBase, 'workspaceId' | 'sub'> & {
@@ -35,7 +36,7 @@ export class SetTransactionStatusService implements Service<
       );
     if (updated.isLeft()) return left(updated.value);
 
-    await this.redisService.delByPattern(`report:*:${request.workspaceId}:*`);
+    await bumpReportGeneration(this.redisService, request.workspaceId);
 
     return right(updated.value);
   }

@@ -15,6 +15,7 @@ import { NextGenerationDateCalculator } from '@modules/transaction/services/cont
 import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { captureException } from '@sentry/nestjs';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { getErrorDetails } from '@shared/utils/error-details';
 
@@ -60,6 +61,7 @@ interface GenerationCounters {
 interface RecurrenceOutcome {
   generatedCount: number;
   failed: boolean;
+  persisted: boolean;
 }
 
 function skippedSummary(
@@ -165,32 +167,46 @@ export class GenerateRecurringTransactionsJobService {
       failedCount: 0,
       processedCount: 0,
     };
+    const persistedWorkspaceIds = new Set<string>();
     let afterId: string | null = null;
     let batch: RecurringTransaction[];
 
-    do {
-      batch = await this.recurringRepository.listNeedingGeneration(
-        lookAheadDate,
-        BATCH_SIZE,
-        afterId,
-      );
-
-      for (const recurring of batch) {
-        counters.processedCount++;
-
-        const outcome = await this.generateForRecurring(
-          recurring,
+    try {
+      do {
+        batch = await this.recurringRepository.listNeedingGeneration(
           lookAheadDate,
+          BATCH_SIZE,
+          afterId,
         );
-        counters.generatedCount += outcome.generatedCount;
 
-        if (outcome.failed) counters.failedCount++;
-      }
+        for (const recurring of batch) {
+          counters.processedCount++;
 
-      afterId = batch.at(-1)?.id ?? null;
-    } while (batch.length === BATCH_SIZE);
+          const outcome = await this.generateForRecurring(
+            recurring,
+            lookAheadDate,
+          );
+          counters.generatedCount += outcome.generatedCount;
+
+          if (outcome.failed) counters.failedCount++;
+          if (outcome.persisted) {
+            persistedWorkspaceIds.add(recurring.workspaceId);
+          }
+        }
+
+        afterId = batch.at(-1)?.id ?? null;
+      } while (batch.length === BATCH_SIZE);
+    } finally {
+      await this.invalidateReports(persistedWorkspaceIds);
+    }
 
     return counters;
+  }
+
+  private async invalidateReports(workspaceIds: Set<string>): Promise<void> {
+    for (const workspaceId of workspaceIds) {
+      await bumpReportGeneration(this.redis, workspaceId);
+    }
   }
 
   private async generateForRecurring(
@@ -204,7 +220,7 @@ export class GenerateRecurringTransactionsJobService {
       );
     } catch (error: unknown) {
       this.reportRecurringFailure(recurring.id, error);
-      return { generatedCount: 0, failed: true };
+      return { generatedCount: 0, failed: true, persisted: false };
     }
   }
 
@@ -284,7 +300,9 @@ export class GenerateRecurringTransactionsJobService {
 
     const shouldPersist = transactionsToCreate.length > 0 || !recurring.active;
 
-    if (!shouldPersist) return { generatedCount: 0, failed };
+    if (!shouldPersist) {
+      return { generatedCount: 0, failed, persisted: false };
+    }
 
     const generatedCount =
       await this.recurringRepository.createGeneratedTransactions(
@@ -292,6 +310,6 @@ export class GenerateRecurringTransactionsJobService {
         recurring,
       );
 
-    return { generatedCount, failed };
+    return { generatedCount, failed, persisted: true };
   }
 }

@@ -1,4 +1,5 @@
 import { BalanceMovementCause, TransactionStatus } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import {
@@ -17,7 +18,7 @@ import {
 } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
-import { right } from '@shared/core/errors/Either';
+import { left, right } from '@shared/core/errors/Either';
 import { PayCreditCardInvoiceService } from './pay-credit-card-invoice.service';
 
 type ServiceRequest = Parameters<
@@ -44,6 +45,7 @@ describe('PayCreditCardInvoiceService', () => {
   let accountRepository: jest.Mocked<AccountRepository>;
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let cacheProvider: jest.Mocked<CacheProvider>;
 
   beforeEach(() => {
     accountRepository = {
@@ -85,10 +87,16 @@ describe('PayCreditCardInvoiceService', () => {
       startOfMonth: jest.fn(),
     } as unknown as jest.Mocked<DateProvider>;
 
+    cacheProvider = {
+      delByPattern: jest.fn().mockResolvedValue(0),
+      incrementCounter: jest.fn().mockResolvedValue(1),
+    } as unknown as jest.Mocked<CacheProvider>;
+
     service = new PayCreditCardInvoiceService(
       accountRepository,
       transactionRepository,
       dateProvider,
+      cacheProvider,
     );
   });
 
@@ -208,6 +216,30 @@ describe('PayCreditCardInvoiceService', () => {
       expect.any(Function),
       { cause: BalanceMovementCause.INVOICE_PAID, actorId: 'user-1' },
     );
+    expect(cacheProvider.delByPattern).toHaveBeenCalledTimes(1);
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
+    expect(cacheProvider.delByPattern).toHaveBeenCalledWith(
+      'report:month-summary:*:ws-1:*',
+    );
+  });
+
+  it('should not clear the report cache when persisting fails', async () => {
+    accountRepository.findById
+      .mockResolvedValueOnce(
+        makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+      )
+      .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue(
+      left(new AccountNotFoundError()),
+    );
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isLeft()).toBe(true);
+    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should date the payment as today when month/year are not provided', async () => {

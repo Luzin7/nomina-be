@@ -7,6 +7,7 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { DeleteRecurringTransactionRequest } from './delete-recurring-transaction.dto';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 
 type Request = DeleteRecurringTransactionRequest &
   Pick<TokenPayloadBase, 'workspaceId'>;
@@ -40,7 +41,7 @@ export class DeleteRecurringTransactionService implements Service<
 
     await this.recurringRepository.delete(recurringTransactionId);
 
-    await this.redisService.delByPattern(`report:*:${workspaceId}:*`);
+    await bumpReportGeneration(this.redisService, workspaceId);
 
     return right(undefined);
   }

@@ -108,7 +108,7 @@ describe('ListCategoriesService', () => {
       expect(redisService.set).toHaveBeenCalledTimes(1);
       const [key, payload, ttl] = redisService.set.mock.calls[0];
       expect(key).toContain('categories:list:ws-1');
-      expect(ttl).toBe(300);
+      expect(ttl).toBe(6 * 60 * 60);
       expect(typeof payload).toBe('string');
     });
 

@@ -16,6 +16,7 @@ import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { CreateAccountRequest } from './create-account.dto';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 
 type Request = CreateAccountRequest & TokenPayloadBase;
 
@@ -107,7 +108,7 @@ export class CreateAccountService implements Service<
 
     await this.accountRepository.createWithOpeningMovement(account, sub);
 
-    await this.redisService.delByPattern(`report:*:${workspaceId}:*`);
+    await bumpReportGeneration(this.redisService, workspaceId);
 
     return right(account);
   }
