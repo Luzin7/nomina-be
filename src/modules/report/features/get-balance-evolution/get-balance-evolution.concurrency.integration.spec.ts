@@ -7,6 +7,7 @@ import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { AccountRepositoryImplementation } from '@infra/databases/drizzle/repositories/account.repository';
 import { CategoryRepositoryImplementation } from '@infra/databases/drizzle/repositories/category.repository';
 import { MonthProjectionRepositoryImplementation } from '@infra/databases/drizzle/repositories/month-projection.repository';
+import { ReportRepositoryImplementation } from '@infra/databases/drizzle/repositories/report.repository';
 import { TransactionRepositoryImplementation } from '@infra/databases/drizzle/repositories/transaction.repository';
 import { WorkspaceRepositoryImplementation } from '@infra/databases/drizzle/repositories/workspace.repository';
 import * as schema from '@infra/databases/drizzle/schema';
@@ -19,6 +20,7 @@ import {
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
+import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
 import { CreateTransactionService } from '@modules/transaction/features/create-transaction/create-transaction.service';
 import { PayCreditCardInvoiceService } from '@modules/transaction/features/pay-credit-card-invoice/pay-credit-card-invoice.service';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
@@ -128,6 +130,10 @@ describe('balance evolution net worth series', () => {
         {
           provide: MonthProjectionRepository,
           useClass: MonthProjectionRepositoryImplementation,
+        },
+        {
+          provide: ReportRepository,
+          useClass: ReportRepositoryImplementation,
         },
         { provide: CacheProvider, useClass: RedisService },
         { provide: ConfigService, useValue: {} },

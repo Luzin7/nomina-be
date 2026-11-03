@@ -3,14 +3,14 @@ import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
-import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import {
   DateRange,
   MonthProjectionRepository,
 } from '@modules/report/repositories/contracts/MonthProjectionRepository';
+import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
 import { projectMonthEnd } from '@modules/report/valueObjects/MonthProjection';
-import { LOOKBACK_MONTHS } from '@modules/report/valueObjects/ProjectionRules';
 import { MonthSummary } from '@modules/report/valueObjects/MonthSummary';
+import { LOOKBACK_MONTHS } from '@modules/report/valueObjects/ProjectionRules';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { HttpException, Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
@@ -90,7 +90,7 @@ export class FindMonthSummaryService implements Service<
   Response
 > {
   constructor(
-    private readonly transactionRepository: TransactionRepository,
+    private readonly reportRepository: ReportRepository,
     private readonly accountRepository: AccountRepository,
     private readonly monthProjectionRepository: MonthProjectionRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
@@ -148,41 +148,27 @@ export class FindMonthSummaryService implements Service<
       timezone,
     );
 
-    const [
-      currentMonthData,
-      previousMonthData,
-      previousMonthToDateData,
-      accounts,
-      ledger,
-      recurringRules,
-    ] = await Promise.all([
-      this.transactionRepository.sumTransactionsByDateRange(
-        workspaceId,
-        currentMonthStart,
-        currentMonthEnd,
-      ),
-      this.transactionRepository.sumTransactionsByDateRange(
-        workspaceId,
-        previousMonthStart,
-        previousMonthEnd,
-      ),
-      this.transactionRepository.sumTransactionsByDateRange(
-        workspaceId,
-        previousMonthStart,
-        previousMonthToDateEnd,
-      ),
-      this.accountRepository.findAllByWorkspaceId(workspaceId),
-      this.monthProjectionRepository.findMonthLedger({
-        workspaceId,
-        timezone,
-        range: windows.ledgerRange,
-        currentMonthStart,
-      }),
-      this.monthProjectionRepository.findActiveRecurringRules(
-        workspaceId,
-        windows.currentMonth,
-      ),
-    ]);
+    const [summaryMetrics, accounts, ledger, recurringRules] =
+      await Promise.all([
+        this.reportRepository.findMonthSummaryMetrics(workspaceId, {
+          currentStart: currentMonthStart,
+          currentEnd: currentMonthEnd,
+          prevStart: previousMonthStart,
+          prevEnd: previousMonthEnd,
+          prevMtdEnd: previousMonthToDateEnd,
+        }),
+        this.accountRepository.findAllByWorkspaceId(workspaceId),
+        this.monthProjectionRepository.findMonthLedger({
+          workspaceId,
+          timezone,
+          range: windows.ledgerRange,
+          currentMonthStart,
+        }),
+        this.monthProjectionRepository.findActiveRecurringRules(
+          workspaceId,
+          windows.currentMonth,
+        ),
+      ]);
 
     const projection = projectMonthEnd({
       month: {
@@ -192,8 +178,8 @@ export class FindMonthSummaryService implements Service<
       },
       dayOfMonth: windows.dayOfMonth,
       realized: {
-        totalIncome: currentMonthData.totalIncome,
-        totalExpense: currentMonthData.totalExpense,
+        totalIncome: summaryMetrics.currentMonthData.totalIncome,
+        totalExpense: summaryMetrics.currentMonthData.totalExpense,
       },
       ledger,
       recurringRules,
@@ -211,22 +197,24 @@ export class FindMonthSummaryService implements Service<
 
     const monthSummary = MonthSummary.create({
       month: currentMonthStart,
-      totalIncome: currentMonthData.totalIncome,
-      totalExpense: currentMonthData.totalExpense,
+      totalIncome: summaryMetrics.currentMonthData.totalIncome,
+      totalExpense: summaryMetrics.currentMonthData.totalExpense,
       ...aggregateAccountBalances(accounts),
       rate: {
         currentMonthSaving: calculateSavingRate(
-          currentMonthData.totalIncome,
-          currentMonthData.totalExpense,
+          summaryMetrics.currentMonthData.totalIncome,
+          summaryMetrics.currentMonthData.totalExpense,
         ),
         previousMonthCompareSaving: calculatePercentageChange(
-          currentMonthData.totalIncome - currentMonthData.totalExpense,
-          previousMonthData.totalIncome - previousMonthData.totalExpense,
+          summaryMetrics.currentMonthData.totalIncome -
+            summaryMetrics.currentMonthData.totalExpense,
+          summaryMetrics.previousMonthData.totalIncome -
+            summaryMetrics.previousMonthData.totalExpense,
         ),
       },
       previousMonthToDate: {
-        totalIncome: previousMonthToDateData.totalIncome,
-        totalExpense: previousMonthToDateData.totalExpense,
+        totalIncome: summaryMetrics.previousMonthToDateData.totalIncome,
+        totalExpense: summaryMetrics.previousMonthToDateData.totalExpense,
       },
       projection,
     });

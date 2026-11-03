@@ -1,7 +1,8 @@
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
-import { SubscriptionRepository } from '@modules/subscription/repositories/contracts/SubscriptionRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
+import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
+import { SubscriptionRepository } from '@modules/subscription/repositories/contracts/SubscriptionRepository';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { AuthSessionsRepository } from '@modules/user/repositories/contracts/auth-session.repository';
@@ -22,6 +23,7 @@ import { CategoryRepositoryImplementation } from './drizzle/repositories/categor
 import { MonthProjectionRepositoryImplementation } from './drizzle/repositories/month-projection.repository';
 import { RecurringTransactionRepositoryImplementation } from './drizzle/repositories/recurring-transaction.repository';
 import { RefreshTokenRepositoryImplementation } from './drizzle/repositories/refresh-token.repository';
+import { ReportRepositoryImplementation } from './drizzle/repositories/report.repository';
 import { SubscriptionRepositoryImplementation } from './drizzle/repositories/subscription.repository';
 import { TransactionRepositoryImplementation } from './drizzle/repositories/transaction.repository';
 import { UserRepositoryImplementation } from './drizzle/repositories/user.repository';
@@ -82,6 +84,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       provide: SubscriptionRepository,
       useClass: SubscriptionRepositoryImplementation,
     },
+    {
+      provide: ReportRepository,
+      useClass: ReportRepositoryImplementation,
+    },
   ],
   exports: [
     DrizzleService,
@@ -97,6 +103,7 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     AccountRepository,
     CategoryRepository,
     SubscriptionRepository,
+    ReportRepository,
   ],
 })
 export class DatabaseModule {}
