@@ -41,7 +41,6 @@
     "@nestjs/swagger": "^11.2.6",
     "@nestjs/throttler": "^6.5.0",
     "@sentry/nestjs": "^11.1.0",
-    "@sentry/profiling-node": "^11.1.0",
     "bcryptjs": "^2.4.3",
     "class-validator": "^0.14.1",
     "dayjs": "^1.11.11",

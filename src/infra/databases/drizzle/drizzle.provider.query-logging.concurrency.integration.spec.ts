@@ -3,6 +3,7 @@ import {
   PostgreSqlContainer,
   StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql';
+import { Logger } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { DrizzleProvider } from './drizzle.provider';
 
@@ -39,5 +40,24 @@ describe('DrizzleProvider query logging', () => {
     );
 
     expect(row.total).toBe('5001');
+  });
+
+  it('should not introspect pg_type after the first query', async () => {
+    const debugSpy = jest.spyOn(Logger.prototype, 'debug');
+
+    await Promise.all(
+      Array.from({ length: 5 }, () =>
+        provider.db.execute(sql`SELECT pg_sleep(0.3)`),
+      ),
+    );
+
+    const loggedQueries = debugSpy.mock.calls.map(([message]) =>
+      String(message),
+    );
+    debugSpy.mockRestore();
+    expect(loggedQueries.length).toBeGreaterThan(0);
+    expect(loggedQueries.some((q) => q.includes('pg_catalog.pg_type'))).toBe(
+      false,
+    );
   });
 });

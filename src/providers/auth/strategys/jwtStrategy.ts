@@ -2,6 +2,7 @@ import { UserRole } from '@constants/enums';
 import { env } from '@infra/env';
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
+import * as Sentry from '@sentry/nestjs';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import z from 'zod';
 
@@ -32,6 +33,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   validate(payload: TokenPayloadSchema) {
-    return tokenPayloadSchema.parse(payload);
+    const parsed = tokenPayloadSchema.parse(payload);
+    Sentry.setUser({ id: parsed.sub });
+    Sentry.setTag('workspace.id', parsed.workspaceId);
+    return parsed;
   }
 }

@@ -1,10 +1,10 @@
+import '../../instrument.js';
 import { env } from '@infra/env';
 import { VersioningType } from '@nestjs/common';
 import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
-import '../../instrument.js';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
