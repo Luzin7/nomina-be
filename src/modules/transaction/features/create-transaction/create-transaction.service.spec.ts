@@ -89,7 +89,6 @@ describe('CreateTransactionService', () => {
       findUniqueById: jest.fn(),
       listTransactionsByWorkspaceId: jest.fn(),
       getTopExpensesByCategory: jest.fn(),
-      sumTransactionsByDateRange: jest.fn(),
       updateWithBalanceEffect: jest.fn(),
       deleteWithBalanceEffect: jest.fn(),
       updateStatusWithBalanceEffect: jest.fn(),

@@ -76,16 +76,6 @@ export abstract class TransactionRepository {
     pageSize: number;
   }): Promise<{ expenses: TopExpensesByCategory[]; totalExpense: number }>;
 
-  abstract sumTransactionsByDateRange(
-    workspaceId: string,
-    startDate: Date,
-    endDate: Date,
-  ): Promise<{
-    totalIncome: number;
-    totalExpense: number;
-    balance: number;
-  }>;
-
   abstract createWithBalanceUpdate(
     transaction: Transaction,
     applyEffects: CreateBalanceMutation,
