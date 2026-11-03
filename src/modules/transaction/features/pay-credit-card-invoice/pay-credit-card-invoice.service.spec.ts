@@ -65,7 +65,6 @@ describe('PayCreditCardInvoiceService', () => {
       findUniqueById: jest.fn(),
       listTransactionsByWorkspaceId: jest.fn(),
       getTopExpensesByCategory: jest.fn(),
-      sumTransactionsByDateRange: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
       createInstallmentPlan: jest.fn(),
       updateWithBalanceEffect: jest.fn(),
@@ -216,14 +215,11 @@ describe('PayCreditCardInvoiceService', () => {
       expect.any(Function),
       { cause: BalanceMovementCause.INVOICE_PAID, actorId: 'user-1' },
     );
-    expect(cacheProvider.delByPattern).toHaveBeenCalledTimes(1);
     expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
-    expect(cacheProvider.delByPattern).toHaveBeenCalledWith(
-      'report:month-summary:*:ws-1:*',
-    );
+    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should not clear the report cache when persisting fails', async () => {

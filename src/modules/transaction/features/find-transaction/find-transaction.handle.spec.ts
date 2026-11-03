@@ -37,7 +37,6 @@ describe('FindTransactionByIdService', () => {
       create: jest.fn(),
       listTransactionsByWorkspaceId: jest.fn(),
       getTopExpensesByCategory: jest.fn(),
-      sumTransactionsByDateRange: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
       createInstallmentPlan: jest.fn(),
       updateWithBalanceEffect: jest.fn(),

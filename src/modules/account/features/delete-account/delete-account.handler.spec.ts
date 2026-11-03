@@ -94,8 +94,6 @@ describe('DeleteAccountService', () => {
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
-    expect(redisService.delByPattern).toHaveBeenCalledWith(
-      'report:month-summary:*:ws-1:*',
-    );
+    expect(redisService.delByPattern).not.toHaveBeenCalled();
   });
 });

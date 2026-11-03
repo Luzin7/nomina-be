@@ -5,8 +5,10 @@ import { ReportRepository } from '@modules/report/repositories/contracts/ReportR
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
+import { REPORT_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import { FindMonthSummaryService } from './get-month-summary.service';
 
+const GENERATION = 7;
 const NOW = new Date('2026-09-15T12:00:00.000Z');
 const NOVEMBER_START_ISO = '2026-11-01T03:00:00.000Z';
 const CURRENT_START = new Date('2026-09-01T03:00:00.000Z');
@@ -54,6 +56,7 @@ describe('FindMonthSummaryService', () => {
     cache = {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue(true),
+      readCounter: jest.fn().mockResolvedValue(GENERATION),
     } as unknown as jest.Mocked<CacheProvider>;
 
     service = new FindMonthSummaryService(
@@ -214,7 +217,7 @@ describe('FindMonthSummaryService', () => {
         '2026-10-01T03:00:00.000Z',
       );
       expect(cache.get).toHaveBeenCalledWith(
-        'report:month-summary:v4:ws-1:2026-10-31',
+        'report:month-summary:v5:ws-1:g7:2026-10-31',
       );
     });
 
@@ -257,14 +260,40 @@ describe('FindMonthSummaryService', () => {
       expect(summary.projection.variableEstimate).toBe(100);
     });
 
-    it('should key the cache by version and local day', async () => {
+    it('should key the cache by version, generation and local day', async () => {
       await executeAt(NOW);
 
       expect(cache.set).toHaveBeenCalledWith(
-        'report:month-summary:v4:ws-1:2026-09-15',
+        'report:month-summary:v5:ws-1:g7:2026-09-15',
         expect.any(String),
-        300,
+        REPORT_CACHE_TTL_SECONDS,
       );
+    });
+
+    it('should miss after a writer bumps the generation', async () => {
+      await executeAt(NOW);
+      cache.readCounter.mockResolvedValue(GENERATION + 1);
+
+      await executeAt(NOW);
+
+      expect(cache.get).toHaveBeenNthCalledWith(
+        1,
+        'report:month-summary:v5:ws-1:g7:2026-09-15',
+      );
+      expect(cache.get).toHaveBeenNthCalledWith(
+        2,
+        'report:month-summary:v5:ws-1:g8:2026-09-15',
+      );
+    });
+
+    it('should skip the cache when the generation is unreadable', async () => {
+      cache.readCounter.mockResolvedValue(null);
+
+      await executeAt(NOW);
+
+      expect(cache.get).not.toHaveBeenCalled();
+      expect(cache.set).not.toHaveBeenCalled();
+      expect(projectionRepository.findMonthLedger).toHaveBeenCalledTimes(1);
     });
 
     it('should not call the projection repository on a cache hit', async () => {

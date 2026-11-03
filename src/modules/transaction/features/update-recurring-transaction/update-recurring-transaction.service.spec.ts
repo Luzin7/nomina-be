@@ -192,14 +192,11 @@ describe('UpdateRecurringTransactionService', () => {
 
     await service.execute(makeRequest({ title: 'Novo título' }));
 
-    expect(cacheProvider.delByPattern).toHaveBeenCalledTimes(1);
     expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
-    expect(cacheProvider.delByPattern).toHaveBeenCalledWith(
-      'report:month-summary:*:ws-1:*',
-    );
+    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should not clear the report cache when the update is rejected', async () => {

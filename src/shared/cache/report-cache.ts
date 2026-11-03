@@ -5,9 +5,6 @@ export const REPORT_CACHE_TTL_SECONDS = 6 * 60 * 60;
 export const reportGenerationKey = (workspaceId: string): string =>
   `cache-gen:report:${workspaceId}`;
 
-export const monthSummaryReportCachePattern = (workspaceId: string): string =>
-  `report:month-summary:*:${workspaceId}:*`;
-
 export const readReportGeneration = (
   cache: CacheProvider,
   workspaceId: string,
@@ -19,5 +16,4 @@ export async function bumpReportGeneration(
   workspaceId: string,
 ): Promise<void> {
   await cache.incrementCounter(reportGenerationKey(workspaceId), Date.now());
-  await cache.delByPattern(monthSummaryReportCachePattern(workspaceId));
 }

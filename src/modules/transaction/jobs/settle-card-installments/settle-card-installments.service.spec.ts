@@ -94,9 +94,7 @@ describe('SettleCardInstallmentsJobService', () => {
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
-    expect(cache.delByPattern).toHaveBeenCalledWith(
-      'report:month-summary:*:ws-1:*',
-    );
+    expect(cache.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should ask the repository for rows due at the current time', async () => {

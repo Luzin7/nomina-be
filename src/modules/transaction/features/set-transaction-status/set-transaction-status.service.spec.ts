@@ -35,7 +35,6 @@ describe('SetTransactionStatusService', () => {
       findUniqueById: jest.fn(),
       listTransactionsByWorkspaceId: jest.fn(),
       getTopExpensesByCategory: jest.fn(),
-      sumTransactionsByDateRange: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
       createInstallmentPlan: jest.fn(),
       updateWithBalanceEffect: jest.fn(),
@@ -149,9 +148,7 @@ describe('SetTransactionStatusService', () => {
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
-    expect(cacheProvider.delByPattern).toHaveBeenCalledWith(
-      'report:month-summary:*:ws-1:*',
-    );
+    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should not touch the cache when the change is rejected', async () => {
