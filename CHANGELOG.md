@@ -3,6 +3,12 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.2.2](https://github.com/Luzin7/nomina-be/compare/v2.2.1...v2.2.2) (2026-11-03)
+
+### Performance Improvements
+
+* **report:** resumo do mês usa a versão por workspace e TTL de 6 h ([e643b23](https://github.com/Luzin7/nomina-be/commit/e643b23c9ba1557afb36347d4b0f479d35d587d7)), closes [#101](https://github.com/Luzin7/nomina-be/issues/101)
+
 ## [2.2.1](https://github.com/Luzin7/nomina-be/compare/v2.2.0...v2.2.1) (2026-11-03)
 
 ### Bug Fixes
