@@ -1,6 +1,6 @@
-import { sql } from 'drizzle-orm';
 import { BalanceMovementCause } from '@constants/enums';
 import { DEFAULT_TIMEZONE } from '@constants/timezone';
+import { sql } from 'drizzle-orm';
 import {
   AnyPgColumn,
   bigint,
@@ -23,7 +23,7 @@ export const users = pgTable('users', {
   id: text('id')
     .primaryKey()
     .$default(() => crypto.randomUUID()),
-  email: text('email').notNull().unique(),
+  email: text('email').notNull().unique('users_email_key'),
   passwordHash: text('password_hash').notNull(),
   name: text('name').notNull(),
   phone: text('phone'),
@@ -133,7 +133,10 @@ export const workspaceUsers = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex('unq_workspace_user').on(table.workspaceId, table.userId),
+    uniqueIndex('workspace_users_workspace_id_user_id_key').on(
+      table.workspaceId,
+      table.userId,
+    ),
     index('idx_wu_user_default').on(table.userId, table.isDefault),
   ],
 );
@@ -144,7 +147,7 @@ export const workspaceInvites = pgTable(
     id: text('id')
       .primaryKey()
       .$default(() => crypto.randomUUID()),
-    code: text('code').notNull().unique(),
+    code: text('code').notNull().unique('workspace_invites_code_key'),
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
@@ -160,8 +163,11 @@ export const workspaceInvites = pgTable(
     usedBy: text('used_by'),
   },
   (table) => [
-    index('idx_invite_code').on(table.code),
-    index('idx_invite_ws_expires').on(table.workspaceId, table.expiresAt),
+    index('workspace_invites_code_idx').on(table.code),
+    index('workspace_invites_workspace_id_expires_at_idx').on(
+      table.workspaceId,
+      table.expiresAt,
+    ),
   ],
 );
 
@@ -221,9 +227,9 @@ export const categories = pgTable(
       .where(
         sql`${table.workspaceId} IS NULL AND ${table.isSystemCategory} = true`,
       ),
-    index('idx_cat_ws_type').on(table.workspaceId, table.type),
-    index('idx_cat_parent').on(table.parentId),
-    index('idx_cat_system').on(table.isSystemCategory),
+    index('categories_workspace_id_type_idx').on(table.workspaceId, table.type),
+    index('categories_parent_id_idx').on(table.parentId),
+    index('categories_is_system_category_idx').on(table.isSystemCategory),
   ],
 );
 
@@ -288,30 +294,24 @@ export const transactions = pgTable(
     categoryId: text('category_id')
       .references(() => categories.id)
       .notNull(),
-
     title: text('title').notNull(),
     description: text('description'),
     amount: bigint('amount', { mode: 'number' }).notNull(),
     date: timestamp('date', { withTimezone: true, mode: 'date' }).notNull(),
     type: text('type').notNull(),
     status: text('status').notNull(),
-
     installmentGroupId: text('installment_group_id'),
     installmentNumber: integer('installment_number'),
     installmentCount: integer('installment_count'),
-
     recurringId: text('recurring_transaction_id').references(
       () => recurringTransactions.id,
     ),
-
     destinationAccountId: text('destination_account_id').references(
       () => accounts.id,
       { onDelete: 'set null' },
     ),
-
     invoicePeriodMonth: integer('invoice_period_month'),
     invoicePeriodYear: integer('invoice_period_year'),
-
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .defaultNow()
       .notNull(),
@@ -321,14 +321,14 @@ export const transactions = pgTable(
     }).$onUpdate(() => new Date()),
   },
   (table) => [
-    index('idx_trans_ws_date_status_type').on(
+    index('transactions_workspace_id_status_date_type_idx').on(
       table.workspaceId,
-      table.date,
       table.status,
+      table.date,
       table.type,
     ),
-    index('idx_trans_account').on(table.accountId),
-    index('idx_trans_category_filter').on(
+    index('transactions_account_id_idx').on(table.accountId),
+    index('transactions_workspace_id_category_id_type_date_idx').on(
       table.workspaceId,
       table.categoryId,
       table.type,

@@ -1,7 +1,7 @@
 import { AccountType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
-import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
@@ -10,30 +10,6 @@ import { FindMonthSummaryService } from './get-month-summary.service';
 const NOW = new Date('2026-09-15T12:00:00.000Z');
 const NOVEMBER_START_ISO = '2026-11-01T03:00:00.000Z';
 const CURRENT_START = new Date('2026-09-01T03:00:00.000Z');
-
-type FakeTransaction = {
-  date: Date;
-  type: 'INCOME' | 'EXPENSE';
-  amount: number;
-};
-
-function sumByRange(transactions: FakeTransaction[]) {
-  return async (_workspaceId: string, start: Date, end: Date) => {
-    const inRange = transactions.filter(
-      (t) => t.date >= start && t.date <= end,
-    );
-    const sum = (type: FakeTransaction['type']) =>
-      inRange
-        .filter((t) => t.type === type)
-        .reduce((total, t) => total + t.amount, 0);
-
-    return {
-      totalIncome: sum('INCOME'),
-      totalExpense: sum('EXPENSE'),
-      balance: sum('INCOME') - sum('EXPENSE'),
-    };
-  };
-}
 
 function makeAccounts() {
   return [
@@ -46,7 +22,7 @@ function makeAccounts() {
 
 describe('FindMonthSummaryService', () => {
   let service: FindMonthSummaryService;
-  let transactionRepository: jest.Mocked<TransactionRepository>;
+  let reportRepository: jest.Mocked<ReportRepository>;
   let accountRepository: jest.Mocked<AccountRepository>;
   let projectionRepository: jest.Mocked<MonthProjectionRepository>;
   let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
@@ -55,9 +31,9 @@ describe('FindMonthSummaryService', () => {
   let cache: jest.Mocked<CacheProvider>;
 
   beforeEach(() => {
-    transactionRepository = {
-      sumTransactionsByDateRange: jest.fn(),
-    } as unknown as jest.Mocked<TransactionRepository>;
+    reportRepository = {
+      findMonthSummaryMetrics: jest.fn(),
+    } as unknown as jest.Mocked<ReportRepository>;
 
     accountRepository = {
       findAllByWorkspaceId: jest.fn().mockResolvedValue(makeAccounts()),
@@ -81,7 +57,7 @@ describe('FindMonthSummaryService', () => {
     } as unknown as jest.Mocked<CacheProvider>;
 
     service = new FindMonthSummaryService(
-      transactionRepository,
+      reportRepository,
       accountRepository,
       projectionRepository,
       workspaceTimezone,
@@ -93,18 +69,11 @@ describe('FindMonthSummaryService', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('aggregates balances, saving rate and previous month comparison', async () => {
-    transactionRepository.sumTransactionsByDateRange
-      .mockResolvedValue({ totalIncome: 0, totalExpense: 0, balance: 0 })
-      .mockResolvedValueOnce({
-        totalIncome: 10000,
-        totalExpense: 4000,
-        balance: 6000,
-      })
-      .mockResolvedValueOnce({
-        totalIncome: 8000,
-        totalExpense: 5000,
-        balance: 3000,
-      });
+    reportRepository.findMonthSummaryMetrics.mockResolvedValue({
+      currentMonthData: { totalIncome: 10000, totalExpense: 4000 },
+      previousMonthData: { totalIncome: 8000, totalExpense: 5000 },
+      previousMonthToDateData: { totalIncome: 0, totalExpense: 0 },
+    });
 
     const result = await service.execute({
       sub: 'user-1',
@@ -124,11 +93,16 @@ describe('FindMonthSummaryService', () => {
   });
 
   describe('previousMonthToDate', () => {
-    async function executeAt(now: Date, transactions: FakeTransaction[]) {
+    async function executeAt(
+      now: Date,
+      previousMonthToDateData = { totalIncome: 0, totalExpense: 0 },
+    ) {
       nowSpy.mockReturnValue(now);
-      transactionRepository.sumTransactionsByDateRange.mockImplementation(
-        sumByRange(transactions),
-      );
+      reportRepository.findMonthSummaryMetrics.mockResolvedValue({
+        currentMonthData: { totalIncome: 0, totalExpense: 0 },
+        previousMonthData: { totalIncome: 0, totalExpense: 0 },
+        previousMonthToDateData,
+      });
 
       const result = await service.execute({
         sub: 'user-1',
@@ -136,80 +110,59 @@ describe('FindMonthSummaryService', () => {
       });
       if (!result.isRight()) throw new Error('expected right');
 
-      return result.value.previousMonthToDate;
+      return result.value;
     }
 
     it('should return the previous month totals up to the same day', async () => {
-      const previousMonthToDate = await executeAt(NOW, [
-        {
-          date: new Date('2026-08-01T10:00:00.000Z'),
-          type: 'INCOME',
-          amount: 1000,
-        },
-        {
-          date: new Date('2026-08-15T10:00:00.000Z'),
-          type: 'EXPENSE',
-          amount: 300,
-        },
-        {
-          date: new Date('2026-08-15T20:00:00.000Z'),
-          type: 'EXPENSE',
-          amount: 200,
-        },
-      ]);
+      const summary = await executeAt(NOW, {
+        totalIncome: 1000,
+        totalExpense: 500,
+      });
 
-      expect(previousMonthToDate).toEqual({
+      expect(reportRepository.findMonthSummaryMetrics).toHaveBeenCalledWith(
+        'ws-1',
+        {
+          currentStart: new Date('2026-09-01T03:00:00.000Z'),
+          currentEnd: new Date('2026-10-01T02:59:59.999Z'),
+          prevStart: new Date('2026-08-01T03:00:00.000Z'),
+          prevEnd: new Date('2026-09-01T02:59:59.999Z'),
+          prevMtdEnd: new Date('2026-08-16T02:59:59.999Z'),
+        },
+      );
+      expect(summary.previousMonthToDate).toEqual({
         totalIncome: 1000,
         totalExpense: 500,
       });
     });
 
     it('should clamp the day to the end of a shorter previous month', async () => {
-      const previousMonthToDate = await executeAt(
-        new Date('2026-03-31T12:00:00.000Z'),
-        [
-          {
-            date: new Date('2026-02-28T20:00:00.000Z'),
-            type: 'EXPENSE',
-            amount: 700,
-          },
-          {
-            date: new Date('2026-03-01T10:00:00.000Z'),
-            type: 'EXPENSE',
-            amount: 900,
-          },
-        ],
-      );
+      await executeAt(new Date('2026-03-31T12:00:00.000Z'));
 
-      expect(previousMonthToDate).toEqual({
-        totalIncome: 0,
-        totalExpense: 700,
-      });
+      expect(reportRepository.findMonthSummaryMetrics).toHaveBeenCalledWith(
+        'ws-1',
+        {
+          currentStart: new Date('2026-03-01T03:00:00.000Z'),
+          currentEnd: new Date('2026-04-01T02:59:59.999Z'),
+          prevStart: new Date('2026-02-01T03:00:00.000Z'),
+          prevEnd: new Date('2026-03-01T02:59:59.999Z'),
+          prevMtdEnd: new Date('2026-03-01T02:59:59.999Z'),
+        },
+      );
     });
 
     it('should not include previous month transactions after the same day', async () => {
-      const previousMonthToDate = await executeAt(NOW, [
-        {
-          date: new Date('2026-08-10T10:00:00.000Z'),
-          type: 'EXPENSE',
-          amount: 400,
-        },
-        {
-          date: new Date('2026-08-16T10:00:00.000Z'),
-          type: 'EXPENSE',
-          amount: 5000,
-        },
-        {
-          date: new Date('2026-08-31T10:00:00.000Z'),
-          type: 'INCOME',
-          amount: 9000,
-        },
-      ]);
+      await executeAt(NOW);
 
-      expect(previousMonthToDate).toEqual({
-        totalIncome: 0,
-        totalExpense: 400,
-      });
+      expect(reportRepository.findMonthSummaryMetrics).toHaveBeenCalledWith(
+        'ws-1',
+        {
+          currentStart: new Date('2026-09-01T03:00:00.000Z'),
+          currentEnd: new Date('2026-10-01T02:59:59.999Z'),
+          prevStart: new Date('2026-08-01T03:00:00.000Z'),
+          prevEnd: new Date('2026-09-01T02:59:59.999Z'),
+          prevMtdEnd: new Date('2026-08-16T02:59:59.999Z'),
+        },
+      );
     });
   });
 
@@ -218,12 +171,17 @@ describe('FindMonthSummaryService', () => {
 
     async function executeAt(
       now: Date,
-      totals = { totalIncome: 0, totalExpense: 0, balance: 0 },
+      totals = { totalIncome: 0, totalExpense: 0 },
     ) {
       nowSpy.mockReturnValue(now);
-      transactionRepository.sumTransactionsByDateRange.mockResolvedValue(
-        totals,
-      );
+      reportRepository.findMonthSummaryMetrics.mockResolvedValue({
+        currentMonthData: {
+          totalIncome: totals.totalIncome,
+          totalExpense: totals.totalExpense,
+        },
+        previousMonthData: { totalIncome: 0, totalExpense: 0 },
+        previousMonthToDateData: { totalIncome: 0, totalExpense: 0 },
+      });
       const result = await service.execute({
         sub: 'user-1',
         workspaceId: 'ws-1',
@@ -241,7 +199,6 @@ describe('FindMonthSummaryService', () => {
       const summary = await executeAt(NOW, {
         totalIncome: 10000,
         totalExpense: 4000,
-        balance: 6000,
       });
 
       expect(summary.projection.realized).toEqual({
@@ -331,6 +288,7 @@ describe('FindMonthSummaryService', () => {
       expect(
         projectionRepository.findActiveRecurringRules,
       ).not.toHaveBeenCalled();
+      expect(reportRepository.findMonthSummaryMetrics).not.toHaveBeenCalled();
     });
   });
 
@@ -354,9 +312,7 @@ describe('FindMonthSummaryService', () => {
     });
 
     expect(result.isRight()).toBe(true);
-    expect(
-      transactionRepository.sumTransactionsByDateRange,
-    ).not.toHaveBeenCalled();
+    expect(reportRepository.findMonthSummaryMetrics).not.toHaveBeenCalled();
     expect(accountRepository.findAllByWorkspaceId).not.toHaveBeenCalled();
   });
 });
