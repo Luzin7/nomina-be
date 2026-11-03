@@ -36,6 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const parsed = tokenPayloadSchema.parse(payload);
     Sentry.setUser({ id: parsed.sub });
     Sentry.setTag('workspace.id', parsed.workspaceId);
+    Sentry.setAttribute('workspace.id', parsed.workspaceId);
     return parsed;
   }
 }
