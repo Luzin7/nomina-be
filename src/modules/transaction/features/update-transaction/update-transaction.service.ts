@@ -19,6 +19,7 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { UpdateTransactionRequest } from './update-transaction.dto';
+import { bumpReportGeneration } from '@shared/cache/report-cache';
 
 type Request = UpdateTransactionRequest & {
   transactionId: string;
@@ -73,7 +74,7 @@ export class UpdateTransactionService implements Service<
       );
     if (updateResult.isLeft()) return left(updateResult.value);
 
-    await this.redisService.delByPattern(`report:*:${request.workspaceId}:*`);
+    await bumpReportGeneration(this.redisService, request.workspaceId);
 
     return right(updateResult.value);
   }

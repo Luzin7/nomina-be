@@ -156,7 +156,7 @@ describe('account creation opening movement', () => {
 
   it('should return the created account with its id from the service', async () => {
     const userRepository = { findUniqueById: jest.fn().mockResolvedValue({}) };
-    const cache = { delByPattern: jest.fn() };
+    const cache = { delByPattern: jest.fn(), incrementCounter: jest.fn() };
     const service = new CreateAccountService(
       repository,
       userRepository as never,

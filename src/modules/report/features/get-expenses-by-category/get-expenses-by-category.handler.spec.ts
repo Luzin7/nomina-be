@@ -3,6 +3,7 @@ import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpe
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { REPORT_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import { GetExpensesByCategoryService } from './get-expenses-by-category.handler';
 
 const START = new Date('2026-09-01T03:00:00.000Z');
@@ -40,6 +41,7 @@ describe('GetExpensesByCategoryService', () => {
     cache = {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue(true),
+      readCounter: jest.fn().mockResolvedValue(7),
     } as unknown as jest.Mocked<CacheProvider>;
 
     service = new GetExpensesByCategoryService(
@@ -104,9 +106,43 @@ describe('GetExpensesByCategoryService', () => {
       totalExpense: 10000,
     });
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v2:ws-1:2026-9',
+      'report:expenses-by-category:v3:ws-1:g7:2026-9',
       JSON.stringify(result),
-      300,
+      REPORT_CACHE_TTL_SECONDS,
+    );
+  });
+
+  it('skips the cache entirely when the generation is unreadable', async () => {
+    cache.readCounter.mockResolvedValue(null);
+    transactionRepository.getTopExpensesByCategory.mockResolvedValue({
+      expenses: [],
+      totalExpense: 0,
+    });
+
+    await service.execute(makeRequest());
+
+    expect(cache.get).not.toHaveBeenCalled();
+    expect(cache.set).not.toHaveBeenCalled();
+    expect(transactionRepository.getTopExpensesByCategory).toHaveBeenCalled();
+  });
+
+  it('misses on the next read when a write bumped the generation during compute', async () => {
+    cache.readCounter.mockResolvedValueOnce(7).mockResolvedValueOnce(8);
+    transactionRepository.getTopExpensesByCategory.mockResolvedValue({
+      expenses: [],
+      totalExpense: 0,
+    });
+
+    await service.execute(makeRequest());
+    await service.execute(makeRequest());
+
+    expect(cache.set).toHaveBeenCalledWith(
+      'report:expenses-by-category:v3:ws-1:g7:2026-9',
+      expect.any(String),
+      REPORT_CACHE_TTL_SECONDS,
+    );
+    expect(cache.get).toHaveBeenLastCalledWith(
+      'report:expenses-by-category:v3:ws-1:g8:2026-9',
     );
   });
 });

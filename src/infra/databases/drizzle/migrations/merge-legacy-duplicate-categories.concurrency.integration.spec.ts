@@ -20,6 +20,11 @@ import postgres from 'postgres';
 const MIGRATIONS_FOLDER = resolve(__dirname, '../../../../../drizzle');
 const MERGE_TAG = '0024_merge_legacy_duplicate_categories';
 
+interface JournalEntry {
+  idx: number;
+  tag: string;
+}
+
 jest.setTimeout(240_000);
 
 type Sql = postgres.Sql;
@@ -160,13 +165,20 @@ describe('0024 merge legacy duplicate categories', () => {
   function buildPreMergeFolder(): string {
     const folder = mkdtempSync(join(tmpdir(), 'drizzle-pre-0024-'));
     cpSync(MIGRATIONS_FOLDER, folder, { recursive: true });
-    rmSync(join(folder, `${MERGE_TAG}.sql`));
-    rmSync(join(folder, 'meta', '0024_snapshot.json'));
     const journalPath = join(folder, 'meta', '_journal.json');
-    const journal = JSON.parse(readFileSync(journalPath, 'utf8'));
-    journal.entries = journal.entries.filter(
-      (entry: { tag: string }) => entry.tag !== MERGE_TAG,
+    const journal: { entries: JournalEntry[] } = JSON.parse(
+      readFileSync(journalPath, 'utf8'),
     );
+    const mergeIdx = journal.entries.find(
+      (entry) => entry.tag === MERGE_TAG,
+    )!.idx;
+    const removed = journal.entries.filter((entry) => entry.idx >= mergeIdx);
+    for (const entry of removed) {
+      const prefix = entry.tag.split('_')[0];
+      rmSync(join(folder, `${entry.tag}.sql`));
+      rmSync(join(folder, 'meta', `${prefix}_snapshot.json`), { force: true });
+    }
+    journal.entries = journal.entries.filter((entry) => entry.idx < mergeIdx);
     writeFileSync(journalPath, JSON.stringify(journal));
     return folder;
   }

@@ -80,7 +80,10 @@ describe('settle card installments against a real postgres', () => {
         },
         {
           provide: CacheProvider,
-          useValue: { delByPattern: jest.fn().mockResolvedValue(0) },
+          useValue: {
+            delByPattern: jest.fn().mockResolvedValue(0),
+            incrementCounter: jest.fn().mockResolvedValue(1),
+          },
         },
         { provide: DateProvider, useValue: dateProvider },
         SettleCardInstallmentsJobService,

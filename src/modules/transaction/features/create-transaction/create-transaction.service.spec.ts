@@ -125,6 +125,7 @@ describe('CreateTransactionService', () => {
         acquireLock: jest.fn().mockResolvedValue(true),
         releaseLock: jest.fn().mockResolvedValue(true),
         delByPattern: jest.fn().mockResolvedValue(0),
+        incrementCounter: jest.fn().mockResolvedValue(1),
         getClient: jest.fn().mockReturnValue(null),
         isAvailable: jest.fn().mockReturnValue(false),
       } as unknown as jest.Mocked<CacheProvider>,

@@ -71,6 +71,20 @@
       "when": 1792793878610,
       "tag": "0024_merge_legacy_duplicate_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793722629500,
+      "tag": "0025_perpetual_warstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793723134177,
+      "tag": "0026_nervous_tusk",
+      "breakpoints": true
     }
   ]
 }

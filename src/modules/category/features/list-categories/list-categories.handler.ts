@@ -39,7 +39,7 @@ interface CachePayload {
   hierarchy: Record<string, CategoryCacheData[]> | null;
 }
 
-const CACHE_TTL = 300;
+const CATEGORIES_CACHE_TTL_SECONDS = 6 * 60 * 60;
 
 @Injectable()
 export class ListCategoriesService implements Service<
@@ -63,7 +63,7 @@ export class ListCategoriesService implements Service<
       await this.redisService.set(
         this.buildCacheKey(request),
         this.serializeResponse(response.value),
-        CACHE_TTL,
+        CATEGORIES_CACHE_TTL_SECONDS,
       );
     }
 

@@ -6,6 +6,10 @@ import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-wor
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import {
+  REPORT_CACHE_TTL_SECONDS,
+  readReportGeneration,
+} from '@shared/cache/report-cache';
 import { Either, right } from '@shared/core/errors/Either';
 import { MoneyUtils } from '@utils/MoneyUtils';
 import { and, eq, gte, lt, lte, ne, or, sql } from 'drizzle-orm';
@@ -60,8 +64,7 @@ type BuildDailySummaryParams = {
   explicitStartBalance?: number;
 };
 
-const CACHE_TTL = 5 * 60;
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v4';
 
 const destAccount = alias(schema.accounts, 'dest_account');
 const sumAmount = sql<number>`SUM(${schema.transactions.amount})`
@@ -316,12 +319,17 @@ export class BalanceEvolutionService {
     workspaceId,
     period,
   }: Request): Promise<Either<Error, Response>> {
-    const cacheKey = `report:balance-evolution:${CACHE_VERSION}:${workspaceId}:${period}`;
-    const cached = await this.cache.get(cacheKey);
-    if (cached) return right(JSON.parse(cached) as Response);
-
+    const generation = await readReportGeneration(this.cache, workspaceId);
     const timezone = await this.workspaceTimezone.execute(workspaceId);
     const now = this.dateProvider.now();
+    const localDay = this.dateProvider.format(now, 'YYYY-MM-DD', timezone);
+    const cacheKey =
+      generation === null
+        ? null
+        : `report:balance-evolution:${CACHE_VERSION}:${workspaceId}:g${generation}:${period}:${localDay}`;
+    const cached = cacheKey ? await this.cache.get(cacheKey) : null;
+    if (cached) return right(JSON.parse(cached) as Response);
+
     const periodDays = period === '7d' ? 7 : 30;
     const startDate = this.dateProvider.startOfDay(
       this.dateProvider.add(now, -periodDays, 'day', timezone),
@@ -393,7 +401,13 @@ export class BalanceEvolutionService {
       totalInvested,
     };
 
-    await this.cache.set(cacheKey, JSON.stringify(response), CACHE_TTL);
+    if (cacheKey) {
+      await this.cache.set(
+        cacheKey,
+        JSON.stringify(response),
+        REPORT_CACHE_TTL_SECONDS,
+      );
+    }
 
     return right(response);
   }

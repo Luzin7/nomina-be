@@ -117,6 +117,7 @@ describe('UpdateRecurringTransactionService', () => {
 
     cacheProvider = {
       delByPattern: jest.fn().mockResolvedValue(0),
+      incrementCounter: jest.fn().mockResolvedValue(1),
     } as unknown as jest.Mocked<CacheProvider>;
 
     service = new UpdateRecurringTransactionService(
@@ -192,7 +193,13 @@ describe('UpdateRecurringTransactionService', () => {
     await service.execute(makeRequest({ title: 'Novo título' }));
 
     expect(cacheProvider.delByPattern).toHaveBeenCalledTimes(1);
-    expect(cacheProvider.delByPattern).toHaveBeenCalledWith('report:*:ws-1:*');
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
+    expect(cacheProvider.delByPattern).toHaveBeenCalledWith(
+      'report:month-summary:*:ws-1:*',
+    );
   });
 
   it('should not clear the report cache when the update is rejected', async () => {

@@ -1,10 +1,15 @@
 import { AccountType } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import {
+  REPORT_CACHE_TTL_SECONDS,
+  readReportGeneration,
+} from '@shared/cache/report-cache';
 import { MoneyUtils } from '@utils/MoneyUtils';
 import { and, desc, eq, gte, lte, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -25,6 +30,7 @@ export class CashFlowEvolutionService {
     private readonly drizzle: DrizzleService,
     private readonly dateProvider: DateProvider,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute({
@@ -32,6 +38,14 @@ export class CashFlowEvolutionService {
     startDate,
     endDate,
   }: Request): Promise<Response> {
+    const generation = await readReportGeneration(this.cache, workspaceId);
+    const cacheKey =
+      generation === null
+        ? null
+        : `report:cash-flow-evolution:v2:${workspaceId}:g${generation}:${startDate}:${endDate}`;
+    const cached = cacheKey ? await this.cache.get(cacheKey) : null;
+    if (cached) return JSON.parse(cached) as Response;
+
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 
     const start = this.dateProvider.startOfDay(startDate, timezone);
@@ -91,11 +105,21 @@ export class CashFlowEvolutionService {
       .groupBy(dateFormatted)
       .orderBy(desc(dateFormatted));
 
-    return aggregates.map((item) => ({
+    const response: Response = aggregates.map((item) => ({
       date: item.date,
       income: MoneyUtils.centsToDecimal(item.income),
       expense: MoneyUtils.centsToDecimal(item.expense),
       balance: MoneyUtils.centsToDecimal(item.balance),
     }));
+
+    if (cacheKey) {
+      await this.cache.set(
+        cacheKey,
+        JSON.stringify(response),
+        REPORT_CACHE_TTL_SECONDS,
+      );
+    }
+
+    return response;
   }
 }

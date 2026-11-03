@@ -23,7 +23,8 @@ export class DrizzleProvider implements OnModuleDestroy {
 
     this.queryClient = postgres(connectionString, {
       max: 10,
-      idle_timeout: 25,
+      idle_timeout: 240,
+      fetch_types: false,
       connect_timeout: 10,
       connection: { TimeZone: 'UTC' },
       ssl: env.NODE_ENV === 'production' ? 'require' : false,

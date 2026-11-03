@@ -1,5 +1,10 @@
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
+import { REPORT_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import {
+  BalanceEvolutionService,
   buildDailySummary,
   buildNetWorthEvolution,
   calculateNetPeriodEffect,
@@ -223,5 +228,92 @@ describe('buildNetWorthEvolution', () => {
       { date: '2026-09-01', income: 0, expense: 0, balance: -25 },
       { date: '2026-09-02', income: 0, expense: 0, balance: -25 },
     ]);
+  });
+});
+
+describe('BalanceEvolutionService cache', () => {
+  let service: BalanceEvolutionService;
+  let cache: jest.Mocked<CacheProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
+  let nowSpy: jest.SpyInstance;
+  const request = {
+    workspaceId: 'ws-1',
+    period: '7d',
+  } as Parameters<BalanceEvolutionService['execute']>[0];
+
+  function makeEmptyQueryBuilder(): unknown {
+    const builder: unknown = new Proxy(() => undefined, {
+      get: (_target, property) =>
+        property === 'then'
+          ? (resolve: (rows: unknown[]) => void) => resolve([])
+          : () => builder,
+    });
+    return builder;
+  }
+
+  beforeEach(() => {
+    const drizzle = {
+      db: { select: () => makeEmptyQueryBuilder() },
+    } as unknown as DrizzleService;
+    cache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+      readCounter: jest.fn().mockResolvedValue(7),
+    } as unknown as jest.Mocked<CacheProvider>;
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
+    nowSpy = jest.spyOn(dateProvider, 'now');
+
+    service = new BalanceEvolutionService(
+      drizzle,
+      cache,
+      workspaceTimezone,
+      dateProvider,
+    );
+  });
+
+  afterEach(() => nowSpy.mockRestore());
+
+  it('keys the cache by the local day before the midnight boundary', async () => {
+    nowSpy.mockReturnValue(new Date('2026-11-04T02:59:00.000Z'));
+
+    await service.execute(request);
+
+    expect(cache.get).toHaveBeenCalledWith(
+      'report:balance-evolution:v4:ws-1:g7:7d:2026-11-03',
+    );
+  });
+
+  it('keys the cache by the next local day after the midnight boundary', async () => {
+    nowSpy.mockReturnValue(new Date('2026-11-04T03:00:00.000Z'));
+
+    await service.execute(request);
+
+    expect(cache.get).toHaveBeenCalledWith(
+      'report:balance-evolution:v4:ws-1:g7:7d:2026-11-04',
+    );
+  });
+
+  it('stores the response with the report TTL', async () => {
+    nowSpy.mockReturnValue(new Date('2026-11-04T03:00:00.000Z'));
+
+    await service.execute(request);
+
+    expect(cache.set).toHaveBeenCalledWith(
+      'report:balance-evolution:v4:ws-1:g7:7d:2026-11-04',
+      expect.any(String),
+      REPORT_CACHE_TTL_SECONDS,
+    );
+  });
+
+  it('skips the cache entirely when the generation is unreadable', async () => {
+    cache.readCounter.mockResolvedValue(null);
+    nowSpy.mockReturnValue(new Date('2026-11-04T03:00:00.000Z'));
+
+    await service.execute(request);
+
+    expect(cache.get).not.toHaveBeenCalled();
+    expect(cache.set).not.toHaveBeenCalled();
   });
 });
