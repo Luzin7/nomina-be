@@ -47,7 +47,22 @@ export class MonthSummaryPresenter {
         recurringNotYetGenerated: periodTotalsToHTTP(
           projection.recurringNotYetGenerated,
         ),
-        variableEstimate: toDecimal(projection.variableEstimate),
+        fixedBillsDue: toDecimal(projection.fixedBillsDue),
+        accountedExpense: toDecimal(projection.accountedExpense),
+        variableRemaining: toDecimal(projection.variableRemaining),
+        paceDaily:
+          projection.paceDaily === null
+            ? null
+            : toDecimal(projection.paceDaily),
+        paceRemaining:
+          projection.paceRemaining === null
+            ? null
+            : toDecimal(projection.paceRemaining),
+        paceBalance:
+          projection.paceBalance === null
+            ? null
+            : toDecimal(projection.paceBalance),
+        daysRemaining: projection.daysRemaining,
         usualExpense:
           projection.usualExpense === null
             ? null

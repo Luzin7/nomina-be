@@ -109,7 +109,7 @@ export class FindMonthSummaryService implements Service<
     const cacheKey =
       generation === null
         ? null
-        : `report:month-summary:v5:${workspaceId}:g${generation}:${this.dateProvider.format(now, 'YYYY-MM-DD', timezone)}`;
+        : `report:month-summary:v8:${workspaceId}:g${generation}:${this.dateProvider.format(now, 'YYYY-MM-DD', timezone)}`;
     const cached = cacheKey ? await this.cache.get(cacheKey) : null;
     if (cached) {
       const parsed = JSON.parse(cached);
