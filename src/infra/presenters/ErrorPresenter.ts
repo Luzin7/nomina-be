@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   GoneException,
   HttpException,
+  HttpStatus,
   InternalServerErrorException,
   Logger,
   NotFoundException,
@@ -15,6 +16,8 @@ import {
   ForbiddenDomainError,
   GoneDomainError,
   NotFoundDomainError,
+  PLAN_LIMIT_EXCEEDED_CODE,
+  PlanLimitExceededDomainError,
   UnauthorizedDomainError,
 } from '@shared/core/errors/DomainError';
 
@@ -40,6 +43,15 @@ export class ErrorPresenter {
 
     if (error instanceof UnauthorizedDomainError) {
       throw new UnauthorizedException(error.message);
+    }
+
+    if (error instanceof PlanLimitExceededDomainError) {
+      throw new ForbiddenException({
+        statusCode: HttpStatus.FORBIDDEN,
+        message: error.message,
+        error: 'Forbidden',
+        code: PLAN_LIMIT_EXCEEDED_CODE,
+      });
     }
 
     if (error instanceof ForbiddenDomainError) {

@@ -15,23 +15,23 @@ export interface PlanLimits {
 
 export const PLAN_LIMITS: Record<string, PlanLimits> = {
   [PlanType.TRIAL]: {
-    maxWorkspaces: 2,
-    maxAccountsPerWorkspace: 2,
-    maxMembersPerWorkspace: 3,
+    maxWorkspaces: 5,
+    maxAccountsPerWorkspace: 50,
+    maxMembersPerWorkspace: 10,
     maxCategories: 0,
     maxTransactionsPerMonth: 25,
   },
   [PlanType.FREE]: {
-    maxWorkspaces: 1,
-    maxAccountsPerWorkspace: 1,
-    maxMembersPerWorkspace: 3,
+    maxWorkspaces: 5,
+    maxAccountsPerWorkspace: 50,
+    maxMembersPerWorkspace: 10,
     maxCategories: 0,
     maxTransactionsPerMonth: 15,
   },
   [PlanType.PRO]: {
     maxWorkspaces: 5,
-    maxAccountsPerWorkspace: 5,
-    maxMembersPerWorkspace: 3,
+    maxAccountsPerWorkspace: 100,
+    maxMembersPerWorkspace: 25,
     maxCategories: 10,
     maxTransactionsPerMonth: -1,
   },
