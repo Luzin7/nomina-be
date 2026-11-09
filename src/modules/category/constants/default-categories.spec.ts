@@ -6,6 +6,28 @@ const allNames = DEFAULT_CATEGORIES.flatMap((node) => [
   ...(node.children ?? []),
 ]);
 
+const allIdentities = DEFAULT_CATEGORIES.flatMap((node) => [
+  `${node.type}:${node.name}:root`,
+  ...(node.children ?? []).map((child) => `${node.type}:${child}:${node.name}`),
+]);
+
+const allNameTypePairs = DEFAULT_CATEGORIES.flatMap((node) => [
+  { name: node.name, type: node.type },
+  ...(node.children ?? []).map((child) => ({ name: child, type: node.type })),
+]);
+
+function typesByName(): Map<string, Set<TransactionType>> {
+  const types = new Map<string, Set<TransactionType>>();
+
+  for (const entry of allNameTypePairs) {
+    const entryTypes = types.get(entry.name) ?? new Set<TransactionType>();
+    entryTypes.add(entry.type);
+    types.set(entry.name, entryTypes);
+  }
+
+  return types;
+}
+
 describe('DEFAULT_CATEGORIES', () => {
   it('has non-empty names', () => {
     for (const name of allNames) {
@@ -19,8 +41,24 @@ describe('DEFAULT_CATEGORIES', () => {
     }
   });
 
-  it('has no duplicate names', () => {
-    expect(new Set(allNames).size).toBe(allNames.length);
+  it('has no duplicate name within the same transaction type', () => {
+    const nameTypePairs = allNameTypePairs.map(
+      (entry) => `${entry.type}:${entry.name}`,
+    );
+
+    expect(new Set(nameTypePairs).size).toBe(nameTypePairs.length);
+  });
+
+  it('has no duplicate name+type+parent combinations', () => {
+    expect(new Set(allIdentities).size).toBe(allIdentities.length);
+  });
+
+  it('repeats a name across transaction types only for Investimentos', () => {
+    const crossTypeNames = [...typesByName().entries()]
+      .filter(([, types]) => types.size > 1)
+      .map(([name]) => name);
+
+    expect(crossTypeNames).toEqual(['Investimentos']);
   });
 
   it('has every child name attached to an existing parent', () => {
@@ -32,12 +70,12 @@ describe('DEFAULT_CATEGORIES', () => {
     }
   });
 
-  it('has 10 EXPENSE parents, 5 INCOME parents and 22 children', () => {
+  it('has 11 EXPENSE parents, 5 INCOME parents and 22 children', () => {
     expect(
       DEFAULT_CATEGORIES.filter(
         (node) => node.type === TransactionType.EXPENSE,
       ),
-    ).toHaveLength(10);
+    ).toHaveLength(11);
     expect(
       DEFAULT_CATEGORIES.filter((node) => node.type === TransactionType.INCOME),
     ).toHaveLength(5);
@@ -47,6 +85,13 @@ describe('DEFAULT_CATEGORIES', () => {
         0,
       ),
     ).toBe(22);
+  });
+
+  it('has Investimentos as a top-level EXPENSE category', () => {
+    expect(DEFAULT_CATEGORIES).toContainEqual({
+      name: 'Investimentos',
+      type: TransactionType.EXPENSE,
+    });
   });
 
   it('uses the pt-BR starter names', () => {
