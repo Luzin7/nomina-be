@@ -343,6 +343,61 @@ export const transactions = pgTable(
   ],
 );
 
+export const budgets = pgTable(
+  'budgets',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    effectiveFrom: timestamp('effective_from', {
+      withTimezone: true,
+      mode: 'date',
+    }).notNull(),
+    monthlyIncome: bigint('monthly_income', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_budget_ws_effective_from').on(
+      table.workspaceId,
+      table.effectiveFrom,
+    ),
+    index('idx_budget_ws').on(table.workspaceId),
+  ],
+);
+
+export const budgetAllocations = pgTable(
+  'budget_allocations',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    budgetId: text('budget_id')
+      .notNull()
+      .references(() => budgets.id, { onDelete: 'cascade' }),
+    categoryId: text('category_id')
+      .notNull()
+      .references(() => categories.id),
+    groupName: text('group_name').notNull(),
+    groupOrder: integer('group_order').notNull(),
+    categoryOrder: integer('category_order').notNull(),
+    percentageOfIncome: integer('percentage_of_income').notNull(),
+    targetCents: bigint('target_cents', { mode: 'number' }).notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_budget_allocation_budget_category').on(
+      table.budgetId,
+      table.categoryId,
+    ),
+    index('idx_budget_allocation_budget').on(table.budgetId),
+    index('idx_budget_allocation_category').on(table.categoryId),
+  ],
+);
+
 export const balanceMovements = pgTable(
   'balance_movements',
   {
