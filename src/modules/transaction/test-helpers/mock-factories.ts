@@ -1,4 +1,9 @@
-import { RecurrenceFrequency, TransactionStatus } from '@constants/enums';
+import {
+  RecurrenceFrequency,
+  RecurringSuggestionStatus,
+  TransactionStatus,
+} from '@constants/enums';
+import { RecurringSuggestion } from '@modules/transaction/entities/RecurringSuggestion';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 
@@ -99,4 +104,30 @@ export function makeRecurring(
   );
   if (r.isLeft()) throw r.value;
   return r.value;
+}
+
+export function makeSuggestion(
+  overrides: Partial<Parameters<typeof RecurringSuggestion.restore>[0]> & {
+    id?: string;
+  } = {},
+): RecurringSuggestion {
+  const { id = 'suggestion-1', ...props } = overrides;
+
+  return RecurringSuggestion.restore(
+    {
+      workspaceId: 'ws-1',
+      categoryId: 'cat-1',
+      accountId: 'acc-1',
+      suggestedTitle: 'Aluguel',
+      amount: 150000n,
+      dayOfMonth: 5,
+      status: RecurringSuggestionStatus.PENDING,
+      recurringId: null,
+      shownAt: null,
+      createdAt: new Date('2026-10-01T00:00:00.000Z'),
+      updatedAt: null,
+      ...props,
+    },
+    id,
+  );
 }

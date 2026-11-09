@@ -2,6 +2,7 @@ import { RecurrenceFrequency } from '@constants/enums';
 import {
   detectFixedBills,
   FixedBill,
+  isSimilarAmount,
   isSimilarToAnyBill,
   sumFixedBillsDue,
 } from '@modules/report/valueObjects/FixedBills';
@@ -20,6 +21,7 @@ import { median } from '@utils/median';
 export type RecurringRuleSnapshot = {
   id: string;
   type: 'INCOME' | 'EXPENSE';
+  categoryId: string | null;
   amount: number;
   frequency: RecurrenceFrequency;
   interval: number;
@@ -164,6 +166,49 @@ const isPendingOccurrence = (
 const isBeyondRuleEnd = (rule: RecurringRuleSnapshot, cursor: Date): boolean =>
   rule.endDate !== null && cursor.getTime() > rule.endDate.getTime();
 
+const ruleOccursInMonth = (
+  rule: RecurringRuleSnapshot,
+  month: MonthProjectionInput['month'],
+  nextOccurrence: MonthProjectionInput['nextOccurrence'],
+): boolean => {
+  let cursor = rule.startDate;
+
+  for (let step = 0; step < MAX_OCCURRENCE_STEPS; step++) {
+    if (cursor.getTime() > month.end.getTime()) return false;
+    if (isBeyondRuleEnd(rule, cursor)) return false;
+    if (cursor.getTime() >= month.start.getTime()) return true;
+    cursor = nextOccurrence(cursor, rule);
+  }
+
+  return false;
+};
+
+const isCoveredByActiveRule = (
+  bill: FixedBill,
+  rules: RecurringRuleSnapshot[],
+  month: MonthProjectionInput['month'],
+  nextOccurrence: MonthProjectionInput['nextOccurrence'],
+): boolean =>
+  rules.some(
+    (rule) =>
+      rule.type === 'EXPENSE' &&
+      rule.frequency === RecurrenceFrequency.MONTHLY &&
+      rule.interval === 1 &&
+      rule.categoryId === bill.categoryId &&
+      isSimilarAmount(rule.amount, bill.amount) &&
+      ruleOccursInMonth(rule, month, nextOccurrence),
+  );
+
+const dropCoveredBills = (
+  bills: FixedBill[],
+  rules: RecurringRuleSnapshot[],
+  month: MonthProjectionInput['month'],
+  nextOccurrence: MonthProjectionInput['nextOccurrence'],
+): FixedBill[] =>
+  bills.filter(
+    (bill) => !isCoveredByActiveRule(bill, rules, month, nextOccurrence),
+  );
+
 const sumRuleOccurrences = (
   rule: RecurringRuleSnapshot,
   month: MonthProjectionInput['month'],
@@ -217,13 +262,21 @@ export const projectMonthEnd = (
   const basis = selectBasisMonths(input.ledger, month.key);
   const hasHistory = basis.length >= MIN_BASIS_MONTHS;
 
-  const bills = hasHistory ? detectFixedBills(basis) : [];
-  const fixedBillsDue = hasHistory ? sumFixedBillsDue(bills, currentRows) : 0;
+  const detectedBills = hasHistory ? detectFixedBills(basis) : [];
+  const billsToProject = dropCoveredBills(
+    detectedBills,
+    input.recurringRules,
+    month,
+    input.nextOccurrence,
+  );
+  const fixedBillsDue = hasHistory
+    ? sumFixedBillsDue(billsToProject, currentRows)
+    : 0;
   const variableRemaining = hasHistory
-    ? habitualVariableRemaining(basis, bills, input.dayOfMonth)
+    ? habitualVariableRemaining(basis, detectedBills, input.dayOfMonth)
     : 0;
   const paceDailyExact = hasHistory
-    ? currentDailyPaceExact(currentRows, bills, input.dayOfMonth)
+    ? currentDailyPaceExact(currentRows, detectedBills, input.dayOfMonth)
     : null;
   const paceDaily = paceDailyExact === null ? null : Math.round(paceDailyExact);
   const daysRemaining = Math.max(0, month.days - Math.max(0, input.dayOfMonth));

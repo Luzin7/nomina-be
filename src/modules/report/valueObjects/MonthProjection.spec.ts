@@ -33,6 +33,7 @@ const makeRule = (
 ): RecurringRuleSnapshot => ({
   id: 'rule-1',
   type: 'EXPENSE',
+  categoryId: 'cat-1',
   amount: 5000,
   frequency: RecurrenceFrequency.MONTHLY,
   interval: 1,
@@ -387,6 +388,60 @@ describe('projectMonthEnd', () => {
           ledger: [
             ...billMonths([20000, 22000, 24000]),
             currentMonth([aluguelRow]),
+          ],
+        }),
+      );
+
+      expect(projection.fixedBillsDue).toBe(22000);
+    });
+
+    it('keeps a rule-covered bill fixed for the variable window', () => {
+      const projection = projectMonthEnd(
+        makeOctoberInput({
+          dayOfMonth: 1,
+          ledger: [
+            ...billMonths([22000, 22000, 22000]),
+            currentMonth([aluguelRow]),
+          ],
+          recurringRules: [makeRule({ categoryId: 'luz', amount: 22000 })],
+        }),
+      );
+
+      expect(projection.fixedBillsDue).toBe(0);
+      expect(projection.recurringNotYetGenerated.totalExpense).toBe(22000);
+      expect(projection.variableRemaining).toBe(6000);
+      expect(projection.expectedExpense).toBe(28000);
+    });
+
+    it('still counts a bill covered by a yearly rule', () => {
+      const projection = projectMonthEnd(
+        makeOctoberInput({
+          ledger: [
+            ...billMonths([22000, 22000, 22000]),
+            currentMonth([aluguelRow]),
+          ],
+          recurringRules: [
+            makeRule({
+              categoryId: 'luz',
+              amount: 22000,
+              frequency: RecurrenceFrequency.YEARLY,
+            }),
+          ],
+        }),
+      );
+
+      expect(projection.fixedBillsDue).toBe(22000);
+    });
+
+    it('still counts a bill covered by a rule with interval above one', () => {
+      const projection = projectMonthEnd(
+        makeOctoberInput({
+          ledger: [
+            ...billMonths([22000, 22000, 22000]),
+            currentMonth([aluguelRow]),
+          ],
+          recurringRules: [
+            makeRule({ categoryId: 'luz', amount: 22000, interval: 2 }),
           ],
         }),
       );

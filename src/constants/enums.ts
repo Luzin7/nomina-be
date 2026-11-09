@@ -74,6 +74,12 @@ export enum RecurringKind {
   RECURRING = 'recurring',
 }
 
+export enum RecurringSuggestionStatus {
+  PENDING = 'pending',
+  ACCEPTED = 'accepted',
+  DISMISSED = 'dismissed',
+}
+
 export enum SubscriptionStatus {
   ACTIVE = 'ACTIVE',
   CANCELED = 'CANCELED',
