@@ -77,6 +77,36 @@ describe('GetBudgetSetupService', () => {
       percentageOfIncome: 25,
       groupName: 'Investimentos',
     });
+    expect(
+      result.value.allocations.find(
+        (allocation) => allocation.categoryName === 'Impostos',
+      ),
+    ).toEqual({
+      categoryId: 'taxes',
+      categoryName: 'Impostos',
+      percentageOfIncome: 2,
+      groupName: 'Impostos',
+    });
+    expect(
+      result.value.allocations.reduce(
+        (total, allocation) => total + allocation.percentageOfIncome,
+        0,
+      ),
+    ).toBe(100);
+    expect(
+      new Set(
+        result.value.allocations.map((allocation) => allocation.groupName),
+      ),
+    ).toEqual(
+      new Set([
+        'Custos fixos',
+        'Conforto',
+        'Conhecimento',
+        'Impostos',
+        'Investimentos',
+        'Outros',
+      ]),
+    );
   });
 
   it('omits Investimentos when the workspace does not have the category', async () => {

@@ -79,10 +79,22 @@ describe('buildPresetAllocations', () => {
       ]),
     );
 
+    expect(
+      new Set(allocations.map((allocation) => allocation.groupName)),
+    ).toEqual(
+      new Set([
+        'Custos fixos',
+        'Conforto',
+        'Conhecimento',
+        'Impostos',
+        'Investimentos',
+        'Outros',
+      ]),
+    );
     expect(groups.Moradia).toBe('Custos fixos');
     expect(groups.Lazer).toBe('Conforto');
     expect(groups.Educação).toBe('Conhecimento');
-    expect(groups.Impostos).toBe('Outros');
+    expect(groups.Impostos).toBe('Impostos');
   });
 
   it('keeps the split summing to 100 with a custom category', () => {
