@@ -18,16 +18,17 @@ type PresetRule = {
 const DEFAULT_RULE: PresetRule = { groupName: 'Outros', weight: 1 };
 
 const PRESET_RULES: Record<string, PresetRule> = {
-  Moradia: { groupName: 'Custos fixos', weight: 35 },
-  Alimentação: { groupName: 'Custos fixos', weight: 18 },
-  Transporte: { groupName: 'Custos fixos', weight: 8 },
-  Saúde: { groupName: 'Custos fixos', weight: 7 },
-  Serviços: { groupName: 'Custos fixos', weight: 5 },
-  Lazer: { groupName: 'Conforto', weight: 7 },
-  Compras: { groupName: 'Conforto', weight: 5 },
-  Educação: { groupName: 'Conhecimento', weight: 5 },
-  Impostos: { groupName: 'Outros', weight: 5 },
-  'Outros Gastos': { groupName: 'Outros', weight: 5 },
+  Moradia: { groupName: 'Custos fixos', weight: 28 },
+  Alimentação: { groupName: 'Custos fixos', weight: 15 },
+  Transporte: { groupName: 'Custos fixos', weight: 6 },
+  Saúde: { groupName: 'Custos fixos', weight: 5 },
+  Serviços: { groupName: 'Custos fixos', weight: 3 },
+  Lazer: { groupName: 'Conforto', weight: 6 },
+  Compras: { groupName: 'Conforto', weight: 4 },
+  Educação: { groupName: 'Conhecimento', weight: 3 },
+  Impostos: { groupName: 'Outros', weight: 2 },
+  Investimentos: { groupName: 'Investimentos', weight: 25 },
+  'Outros Gastos': { groupName: 'Outros', weight: 3 },
 };
 
 const TOTAL_PERCENTAGE = 100;
