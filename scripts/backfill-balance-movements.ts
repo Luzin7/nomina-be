@@ -98,7 +98,7 @@ export class BackfillAccountsFailedError extends Error {
   }
 }
 
-export function initAlerting(): void {
+function initAlerting(): void {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     enabled: Boolean(process.env.SENTRY_DSN),
