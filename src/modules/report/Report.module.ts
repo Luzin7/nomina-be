@@ -26,5 +26,6 @@ import { FindMonthSummaryService } from './features/get-month-summary/get-month-
     BalanceEvolutionService,
     FindMonthSummaryService,
   ],
+  exports: [FindMonthSummaryService],
 })
 export class ReportModule {}

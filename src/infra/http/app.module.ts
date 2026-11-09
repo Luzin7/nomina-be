@@ -1,4 +1,5 @@
 import { AccountModule } from '@modules/account/Account.module';
+import { BudgetModule } from '@modules/budget/Budget.module';
 import { CategoryModule } from '@modules/category/Category.module';
 import { ReportModule } from '@modules/report/Report.module';
 import { SubscriptionModule } from '@modules/subscription/Subscription.module';
@@ -43,6 +44,7 @@ import { buildRateLimitOptions } from './throttling/rate-limit.options';
     AccountModule,
     CategoryModule,
     ReportModule,
+    BudgetModule,
     SubscriptionModule,
   ],
   providers: [

@@ -1,4 +1,5 @@
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
@@ -19,6 +20,7 @@ import {
 import { DrizzleService } from './drizzle/drizzle.service';
 import { AccountRepositoryImplementation } from './drizzle/repositories/account.repository';
 import { AuthSessionRepositoryImplementation } from './drizzle/repositories/auth-session.repository';
+import { BudgetRepositoryImplementation } from './drizzle/repositories/budget.repository';
 import { CategoryRepositoryImplementation } from './drizzle/repositories/category.repository';
 import { MonthProjectionRepositoryImplementation } from './drizzle/repositories/month-projection.repository';
 import { RecurringTransactionRepositoryImplementation } from './drizzle/repositories/recurring-transaction.repository';
@@ -81,6 +83,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: CategoryRepositoryImplementation,
     },
     {
+      provide: BudgetRepository,
+      useClass: BudgetRepositoryImplementation,
+    },
+    {
       provide: SubscriptionRepository,
       useClass: SubscriptionRepositoryImplementation,
     },
@@ -102,6 +108,7 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     RecurringTransactionRepository,
     AccountRepository,
     CategoryRepository,
+    BudgetRepository,
     SubscriptionRepository,
     ReportRepository,
   ],
