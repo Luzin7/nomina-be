@@ -26,7 +26,7 @@ const PRESET_RULES: Record<string, PresetRule> = {
   Lazer: { groupName: 'Conforto', weight: 6 },
   Compras: { groupName: 'Conforto', weight: 4 },
   Educação: { groupName: 'Conhecimento', weight: 3 },
-  Impostos: { groupName: 'Outros', weight: 2 },
+  Impostos: { groupName: 'Custos fixos', weight: 2 },
   Investimentos: { groupName: 'Investimentos', weight: 25 },
   'Outros Gastos': { groupName: 'Outros', weight: 3 },
 };

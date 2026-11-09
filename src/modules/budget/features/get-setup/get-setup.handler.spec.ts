@@ -77,6 +77,16 @@ describe('GetBudgetSetupService', () => {
       percentageOfIncome: 25,
       groupName: 'Investimentos',
     });
+    expect(
+      result.value.allocations.find(
+        (allocation) => allocation.categoryName === 'Impostos',
+      ),
+    ).toEqual({
+      categoryId: 'taxes',
+      categoryName: 'Impostos',
+      percentageOfIncome: 2,
+      groupName: 'Custos fixos',
+    });
   });
 
   it('omits Investimentos when the workspace does not have the category', async () => {
