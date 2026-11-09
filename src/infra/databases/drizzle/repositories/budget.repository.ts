@@ -8,14 +8,36 @@ import {
   SavedBudgetSnapshot,
   SaveBudgetSnapshotInput,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
-import { BudgetSnapshotConflictError } from '@modules/budget/errors';
+import {
+  BudgetSnapshotConflictError,
+  ForbiddenBudgetCategoryError,
+} from '@modules/budget/errors';
 import { pickApplicableSnapshot } from '@modules/budget/valueObjects/BudgetSnapshotResolution';
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, lte, sql, sum } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  sum,
+} from 'drizzle-orm';
 import { getErrorDetails } from '@shared/utils/error-details';
 import * as schema from '../schema';
 
 const UNIQUE_VIOLATION = '23505';
+const FOREIGN_KEY_VIOLATION = '23503';
+const BUDGET_CATEGORY_FK =
+  /budget_allocations_category_id_(categories_id_fk|fkey)/;
+
+type DrizzleTransaction = Parameters<
+  Parameters<DrizzleService['db']['transaction']>[0]
+>[0];
 
 @Injectable()
 export class BudgetRepositoryImplementation implements BudgetRepository {
@@ -114,7 +136,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
           sql`SELECT pg_advisory_xact_lock(hashtext(${input.workspaceId}))`,
         );
 
-        await tx
+        const [existing] = await tx
           .select({ id: schema.budgets.id })
           .from(schema.budgets)
           .where(
@@ -125,31 +147,37 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
           )
           .for('update');
 
-        await tx
-          .delete(schema.budgets)
-          .where(
-            and(
-              eq(schema.budgets.workspaceId, input.workspaceId),
-              eq(schema.budgets.effectiveFrom, input.effectiveFrom),
-            ),
-          );
+        await assertCategoriesBelongToWorkspace(tx, input);
 
-        const [created] = await tx
-          .insert(schema.budgets)
-          .values({
-            workspaceId: input.workspaceId,
-            effectiveFrom: input.effectiveFrom,
-            monthlyIncome: input.monthlyIncome,
-          })
-          .returning({
-            id: schema.budgets.id,
-            effectiveFrom: schema.budgets.effectiveFrom,
-          });
+        const [saved] = existing
+          ? await tx
+              .update(schema.budgets)
+              .set({ monthlyIncome: input.monthlyIncome })
+              .where(eq(schema.budgets.id, existing.id))
+              .returning({
+                id: schema.budgets.id,
+                effectiveFrom: schema.budgets.effectiveFrom,
+              })
+          : await tx
+              .insert(schema.budgets)
+              .values({
+                workspaceId: input.workspaceId,
+                effectiveFrom: input.effectiveFrom,
+                monthlyIncome: input.monthlyIncome,
+              })
+              .returning({
+                id: schema.budgets.id,
+                effectiveFrom: schema.budgets.effectiveFrom,
+              });
+
+        await tx
+          .delete(schema.budgetAllocations)
+          .where(eq(schema.budgetAllocations.budgetId, saved.id));
 
         if (input.allocations.length > 0) {
           await tx.insert(schema.budgetAllocations).values(
             input.allocations.map((allocation) => ({
-              budgetId: created.id,
+              budgetId: saved.id,
               categoryId: allocation.categoryId,
               groupName: allocation.groupName,
               groupOrder: allocation.groupOrder,
@@ -160,11 +188,20 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
           );
         }
 
-        return created;
+        return saved;
       });
     } catch (error) {
-      if (getErrorDetails(error).sqlState === UNIQUE_VIOLATION) {
+      const details = getErrorDetails(error);
+
+      if (details.sqlState === UNIQUE_VIOLATION) {
         throw new BudgetSnapshotConflictError();
+      }
+
+      if (
+        details.sqlState === FOREIGN_KEY_VIOLATION &&
+        BUDGET_CATEGORY_FK.test(details.messageChain)
+      ) {
+        throw new ForbiddenBudgetCategoryError();
       }
 
       throw error;
@@ -204,5 +241,30 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         ),
       )
       .orderBy(asc(schema.categories.name));
+  }
+}
+
+async function assertCategoriesBelongToWorkspace(
+  tx: DrizzleTransaction,
+  input: SaveBudgetSnapshotInput,
+): Promise<void> {
+  const categoryIds = [...new Set(input.allocations.map((a) => a.categoryId))];
+  if (categoryIds.length === 0) return;
+
+  const found = await tx
+    .select({ id: schema.categories.id })
+    .from(schema.categories)
+    .where(
+      and(
+        inArray(schema.categories.id, categoryIds),
+        or(
+          isNull(schema.categories.workspaceId),
+          eq(schema.categories.workspaceId, input.workspaceId),
+        ),
+      ),
+    );
+
+  if (found.length !== categoryIds.length) {
+    throw new ForbiddenBudgetCategoryError();
   }
 }

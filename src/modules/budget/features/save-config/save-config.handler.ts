@@ -113,7 +113,10 @@ export class SaveBudgetConfigService implements Service<
 
       return right(saved);
     } catch (error) {
-      if (error instanceof BudgetSnapshotConflictError) {
+      if (
+        error instanceof BudgetSnapshotConflictError ||
+        error instanceof ForbiddenBudgetCategoryError
+      ) {
         return left(error);
       }
 

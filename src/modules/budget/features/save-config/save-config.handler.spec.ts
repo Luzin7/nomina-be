@@ -247,4 +247,20 @@ describe('SaveBudgetConfigService', () => {
       expect(result.value).toBeInstanceOf(BudgetSnapshotConflictError);
     }
   });
+
+  it('maps a category removed before the write to a forbidden error', async () => {
+    repository.saveSnapshot.mockRejectedValueOnce(
+      new ForbiddenBudgetCategoryError(),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest(),
+    });
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(ForbiddenBudgetCategoryError);
+    }
+  });
 });
