@@ -27,9 +27,11 @@ export class ListRecurringSuggestionsController {
     }
 
     return {
-      suggestions: data.value.suggestions.map(
-        RecurringSuggestionPresenter.toHTTP,
-      ),
+      data: {
+        suggestions: data.value.suggestions.map(
+          RecurringSuggestionPresenter.toHTTP,
+        ),
+      },
     };
   }
 }

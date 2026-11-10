@@ -48,6 +48,6 @@ export class AcceptRecurringSuggestionController {
       return ErrorPresenter.toHTTP(data.value);
     }
 
-    return { recurringId: data.value.recurringId };
+    return { data: { recurringId: data.value.recurringId } };
   }
 }

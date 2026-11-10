@@ -34,6 +34,6 @@ export class DismissRecurringSuggestionController {
       return ErrorPresenter.toHTTP(data.value);
     }
 
-    return data.value;
+    return { data: data.value };
   }
 }
