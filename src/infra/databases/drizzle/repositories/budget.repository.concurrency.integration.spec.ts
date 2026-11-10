@@ -2,7 +2,10 @@ import { TransactionType } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
 import { ForbiddenBudgetCategoryError } from '@modules/budget/errors';
-import { SavedBudgetSnapshot } from '@modules/budget/repositories/contracts/BudgetRepository';
+import {
+  SavedBudgetSnapshot,
+  SaveBudgetSnapshotInput,
+} from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
   PostgreSqlContainer,
   StartedPostgreSqlContainer,
@@ -101,6 +104,7 @@ describe('BudgetRepositoryImplementation against a real postgres', () => {
         workspaceId,
         effectiveFrom: JANUARY,
         monthlyIncome,
+        mode: 'percentage',
         allocations: [
           {
             categoryId,
@@ -170,10 +174,11 @@ describe('BudgetRepositoryImplementation against a real postgres', () => {
   });
 
   it('keeps the snapshot id and a single row on an identical replay', async () => {
-    const payload = {
+    const payload: SaveBudgetSnapshotInput = {
       workspaceId,
       effectiveFrom: JANUARY,
       monthlyIncome: 100_000,
+      mode: 'percentage',
       allocations: [
         {
           categoryId,
@@ -220,6 +225,7 @@ describe('BudgetRepositoryImplementation against a real postgres', () => {
       workspaceId,
       effectiveFrom: JANUARY,
       monthlyIncome: 100_000,
+      mode: 'percentage',
       allocations: [
         {
           categoryId,
@@ -236,6 +242,7 @@ describe('BudgetRepositoryImplementation against a real postgres', () => {
       workspaceId,
       effectiveFrom: JANUARY,
       monthlyIncome: 200_000,
+      mode: 'percentage',
       allocations: [
         {
           categoryId: secondCategoryId,
@@ -276,6 +283,7 @@ describe('BudgetRepositoryImplementation against a real postgres', () => {
         workspaceId,
         effectiveFrom: JANUARY,
         monthlyIncome: 100_000,
+        mode: 'percentage',
         allocations: [
           {
             categoryId,
@@ -310,12 +318,14 @@ describe('BudgetRepositoryImplementation against a real postgres', () => {
       workspaceId,
       effectiveFrom: JANUARY,
       monthlyIncome: 100_000,
+      mode: 'percentage',
       allocations: [],
     });
     await repository.saveSnapshot({
       workspaceId,
       effectiveFrom: MARCH,
       monthlyIncome: 200_000,
+      mode: 'percentage',
       allocations: [],
     });
 
@@ -332,5 +342,54 @@ describe('BudgetRepositoryImplementation against a real postgres', () => {
     expect(february?.effectiveFrom).toEqual(JANUARY);
     expect(march?.effectiveFrom).toEqual(MARCH);
     expect(before).toBeNull();
+  });
+
+  it('defaults a snapshot written without mode to percentage', async () => {
+    const [inserted] = await db
+      .insert(schema.budgets)
+      .values({
+        workspaceId,
+        effectiveFrom: JANUARY,
+        monthlyIncome: 100_000,
+      })
+      .returning({ id: schema.budgets.id });
+
+    const snapshot = await repository.resolveSnapshot(workspaceId, JANUARY);
+
+    expect(snapshot?.id).toBe(inserted.id);
+    expect(snapshot?.mode).toBe('percentage');
+  });
+
+  it('keeps a single snapshot when two modes race for the same month', async () => {
+    const save = (mode: 'percentage' | 'fixed') =>
+      repository.saveSnapshot({
+        workspaceId,
+        effectiveFrom: JANUARY,
+        monthlyIncome: 100_000,
+        mode,
+        allocations: [],
+      });
+
+    const results = await Promise.allSettled([
+      save('percentage'),
+      save('fixed'),
+    ]);
+    const fulfilled = results.filter(
+      (result): result is PromiseFulfilledResult<SavedBudgetSnapshot> =>
+        result.status === 'fulfilled',
+    );
+
+    expect(fulfilled).toHaveLength(2);
+    expect(new Set(fulfilled.map((result) => result.value.id)).size).toBe(1);
+    expect(await snapshotCount()).toBe(1);
+
+    const [stored] = await db
+      .select({ mode: schema.budgets.mode })
+      .from(schema.budgets)
+      .where(eq(schema.budgets.workspaceId, workspaceId));
+    const snapshot = await repository.resolveSnapshot(workspaceId, JANUARY);
+
+    expect(['percentage', 'fixed']).toContain(stored.mode);
+    expect(snapshot?.mode).toBe(stored.mode);
   });
 });

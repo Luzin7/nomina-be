@@ -41,6 +41,7 @@ function makeSnapshot(overrides: Partial<BudgetSnapshot> = {}): BudgetSnapshot {
     workspaceId: 'ws-1',
     effectiveFrom: NOVEMBER_START,
     monthlyIncome: 100_000,
+    mode: 'percentage',
     allocations: [
       {
         id: 'allocation-1',
@@ -225,6 +226,7 @@ describe('GetBudgetStatusService', () => {
         targetCents: 60_000,
         spentCents: 10_000,
         remainingCents: 50_000,
+        percentageOfIncome: 60,
         percentageUsed: 17,
       },
       {
@@ -234,6 +236,7 @@ describe('GetBudgetStatusService', () => {
         targetCents: 40_000,
         spentCents: 20_000,
         remainingCents: 20_000,
+        percentageOfIncome: 40,
         percentageUsed: 50,
       },
     ]);
@@ -251,7 +254,7 @@ describe('GetBudgetStatusService', () => {
         percentage: 40,
       },
     ]);
-    expect(result.value.totalTarget).toBe(100_000);
+    expect(result.value.totalTargetCents).toBe(100_000);
     expect(result.value.totalSpent).toBe(30_000);
     expect(result.value.unallocatedSpent).toBe(0);
     expect(findMonthSummary.execute).not.toHaveBeenCalled();
@@ -271,7 +274,7 @@ describe('GetBudgetStatusService', () => {
     if (!result.isRight() || !result.value.exists) return;
     expect(result.value.projection).toBeNull();
     expect(result.value.allocations).toHaveLength(2);
-    expect(result.value.totalTarget).toBe(100_000);
+    expect(result.value.totalTargetCents).toBe(100_000);
     expect(result.value.totalSpent).toBe(0);
     expect(findMonthSummary.execute).not.toHaveBeenCalled();
   });
@@ -301,6 +304,7 @@ describe('GetBudgetStatusService', () => {
         targetCents: 60_000,
         spentCents: 30_000,
         remainingCents: 30_000,
+        percentageOfIncome: 60,
         percentageUsed: 50,
       },
       {
@@ -310,11 +314,12 @@ describe('GetBudgetStatusService', () => {
         targetCents: 40_000,
         spentCents: 50_000,
         remainingCents: -10_000,
+        percentageOfIncome: 40,
         percentageUsed: 125,
       },
     ]);
     expect(result.value.unallocatedSpent).toBe(5_000);
-    expect(result.value.totalTarget).toBe(100_000);
+    expect(result.value.totalTargetCents).toBe(100_000);
     expect(result.value.totalSpent).toBe(85_000);
     expect(result.value.pillars).toEqual([
       {
@@ -507,5 +512,156 @@ describe('GetBudgetStatusService', () => {
         (allocation) => allocation.categoryId === 'cat-deleted',
       ),
     ).toBe(false);
+  });
+
+  it('reports the declared income and the summed plan separately in fixed mode', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        mode: 'fixed',
+        monthlyIncome: 100_000,
+        allocations: [
+          {
+            id: 'allocation-1',
+            categoryId: 'cat-1',
+            categoryName: 'Moradia',
+            groupName: 'Custos fixos',
+            groupOrder: 0,
+            categoryOrder: 0,
+            percentageOfIncome: 60,
+            targetCents: 60_000,
+          },
+          {
+            id: 'allocation-2',
+            categoryId: 'cat-2',
+            categoryName: 'Lazer',
+            groupName: 'Conforto',
+            groupOrder: 1,
+            categoryOrder: 0,
+            percentageOfIncome: 20,
+            targetCents: 20_000,
+          },
+        ],
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.mode).toBe('fixed');
+    expect(result.value.monthlyIncomeCents).toBe(100_000);
+    expect(result.value.totalTargetCents).toBe(80_000);
+    expect(result.value.monthlyIncomeCents).not.toBe(
+      result.value.totalTargetCents,
+    );
+    expect(result.value.unallocatedIncomeCents).toBe(20_000);
+    expect(result.value.allocationState).toBe('under');
+    expect(
+      result.value.allocations.map(
+        (allocation) => allocation.percentageOfIncome,
+      ),
+    ).toEqual([60, 20]);
+  });
+
+  it('clamps unallocated income at zero and flags an over plan', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        mode: 'fixed',
+        monthlyIncome: 100_000,
+        allocations: [
+          {
+            id: 'allocation-1',
+            categoryId: 'cat-1',
+            categoryName: 'Moradia',
+            groupName: 'Custos fixos',
+            groupOrder: 0,
+            categoryOrder: 0,
+            percentageOfIncome: 60,
+            targetCents: 60_000,
+          },
+          {
+            id: 'allocation-2',
+            categoryId: 'cat-2',
+            categoryName: 'Lazer',
+            groupName: 'Conforto',
+            groupOrder: 1,
+            categoryOrder: 0,
+            percentageOfIncome: 50,
+            targetCents: 50_000,
+          },
+        ],
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.monthlyIncomeCents).toBe(100_000);
+    expect(result.value.totalTargetCents).toBe(110_000);
+    expect(result.value.unallocatedIncomeCents).toBe(0);
+    expect(result.value.allocationState).toBe('over');
+  });
+
+  it('is balanced when the plan equals the declared income', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.mode).toBe('percentage');
+    expect(result.value.unallocatedIncomeCents).toBe(0);
+    expect(result.value.allocationState).toBe('balanced');
+  });
+
+  it('sums the plan before dropping allocations whose category is gone', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        mode: 'fixed',
+        monthlyIncome: 100_000,
+        allocations: [
+          ...makeSnapshot().allocations,
+          {
+            id: 'allocation-3',
+            categoryId: 'cat-deleted',
+            categoryName: null,
+            groupName: 'Conforto',
+            groupOrder: 1,
+            categoryOrder: 1,
+            percentageOfIncome: 25,
+            targetCents: 25_000,
+          },
+        ],
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.allocations).toHaveLength(2);
+    expect(result.value.totalTargetCents).toBe(125_000);
+    expect(result.value.allocationState).toBe('over');
   });
 });

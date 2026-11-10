@@ -48,9 +48,7 @@ const PROJECTION: MonthProjection = {
 
 jest.setTimeout(180_000);
 
-function makeExpenseCategory(
-  overrides: Partial<CategoryRow>,
-): CategoryFixture {
+function makeExpenseCategory(overrides: Partial<CategoryRow>): CategoryFixture {
   return {
     id: randomUUID(),
     name: 'Moradia',
@@ -180,7 +178,7 @@ describe('budget status over a hidden category', () => {
         (total, item) => total + item.targetCents,
         0,
       ),
-    ).toBe(after.value.totalTarget);
+    ).toBe(after.value.totalTargetCents);
     expect(after.value.pillars.map((pillar) => pillar.percentage)).toEqual([
       60, 40,
     ]);

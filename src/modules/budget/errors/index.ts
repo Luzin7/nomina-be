@@ -55,3 +55,19 @@ export class BudgetSnapshotConflictError extends ConflictDomainError {
     );
   }
 }
+
+export class MixedBudgetModeFieldsError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'Envie os campos de apenas um modo de orçamento: percentuais ou valores por categoria.',
+    );
+  }
+}
+
+export class InvalidBudgetTargetError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'O valor por categoria deve ser um número inteiro de centavos maior ou igual a zero.',
+    );
+  }
+}
