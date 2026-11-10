@@ -437,6 +437,7 @@ describe('month projection repository against a real postgres', () => {
       expect(snapshot).toEqual({
         id: rule.id,
         type: TransactionType.EXPENSE,
+        categoryId: rule.categoryId,
         amount: 5_000,
         frequency: RecurrenceFrequency.MONTHLY,
         interval: 2,

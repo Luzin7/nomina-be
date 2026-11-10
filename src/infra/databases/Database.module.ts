@@ -4,6 +4,7 @@ import { CategoryRepository } from '@modules/category/repositories/contracts/Cat
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
 import { SubscriptionRepository } from '@modules/subscription/repositories/contracts/SubscriptionRepository';
+import { RecurringSuggestionRepository } from '@modules/transaction/repositories/contracts/RecurringSuggestionRepository';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { AuthSessionsRepository } from '@modules/user/repositories/contracts/auth-session.repository';
@@ -13,6 +14,7 @@ import { WorkspaceInviteRepository } from '@modules/workspace/repositories/contr
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
 import { Module } from '@nestjs/common';
+import { DateModule } from '@providers/date/Date.module';
 import {
   DrizzleProvider,
   DrizzleTokenProvider,
@@ -23,6 +25,7 @@ import { AuthSessionRepositoryImplementation } from './drizzle/repositories/auth
 import { BudgetRepositoryImplementation } from './drizzle/repositories/budget.repository';
 import { CategoryRepositoryImplementation } from './drizzle/repositories/category.repository';
 import { MonthProjectionRepositoryImplementation } from './drizzle/repositories/month-projection.repository';
+import { RecurringSuggestionRepositoryImplementation } from './drizzle/repositories/recurring-suggestion.repository';
 import { RecurringTransactionRepositoryImplementation } from './drizzle/repositories/recurring-transaction.repository';
 import { RefreshTokenRepositoryImplementation } from './drizzle/repositories/refresh-token.repository';
 import { ReportRepositoryImplementation } from './drizzle/repositories/report.repository';
@@ -34,6 +37,7 @@ import { WorkspaceUserRepositoryImplementation } from './drizzle/repositories/wo
 import { WorkspaceRepositoryImplementation } from './drizzle/repositories/workspace.repository';
 
 @Module({
+  imports: [DateModule],
   providers: [
     DrizzleProvider,
     DrizzleTokenProvider,
@@ -75,6 +79,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: RecurringTransactionRepositoryImplementation,
     },
     {
+      provide: RecurringSuggestionRepository,
+      useClass: RecurringSuggestionRepositoryImplementation,
+    },
+    {
       provide: AccountRepository,
       useClass: AccountRepositoryImplementation,
     },
@@ -106,6 +114,7 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     TransactionRepository,
     MonthProjectionRepository,
     RecurringTransactionRepository,
+    RecurringSuggestionRepository,
     AccountRepository,
     CategoryRepository,
     BudgetRepository,

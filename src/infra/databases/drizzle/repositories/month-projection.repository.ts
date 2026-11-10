@@ -44,6 +44,7 @@ const INCOME_OR_EXPENSE = ['INCOME', 'EXPENSE'];
 type RecurringRuleRow = {
   id: string;
   type: string;
+  categoryId: string | null;
   amount: number;
   frequency: string;
   interval: number;
@@ -131,6 +132,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
       .select({
         id: recurringTransactions.id,
         type: recurringTransactions.type,
+        categoryId: recurringTransactions.categoryId,
         amount: recurringTransactions.amount,
         frequency: recurringTransactions.frequency,
         interval: recurringTransactions.interval,
@@ -165,6 +167,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
     return rows.map((row) => ({
       id: row.id,
       type: row.type as RecurringRuleSnapshot['type'],
+      categoryId: row.categoryId,
       amount: row.amount,
       frequency: row.frequency as RecurrenceFrequency,
       interval: row.interval,

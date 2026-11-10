@@ -2,6 +2,8 @@ import {
   BusinessRuleDomainError,
   ConflictDomainError,
   DomainError,
+  GoneDomainError,
+  NotFoundDomainError,
 } from '@shared/core/errors/DomainError';
 
 export class InvalidAmountError extends BusinessRuleDomainError {
@@ -45,6 +47,30 @@ export class EndDateMustBeInTheFutureError extends BusinessRuleDomainError {
 export class RecurringTransactionNotFoundError extends BusinessRuleDomainError {
   constructor() {
     super('Transação recorrente não encontrada.');
+  }
+}
+
+export class RecurringSuggestionNotFoundError extends NotFoundDomainError {
+  constructor() {
+    super('Sugestão de recorrência não encontrada.');
+  }
+}
+
+export class RecurringSuggestionDismissedError extends ConflictDomainError {
+  constructor() {
+    super('Esta sugestão foi dispensada e não pode ser aceita.');
+  }
+}
+
+export class RecurringSuggestionAlreadyAcceptedError extends ConflictDomainError {
+  constructor() {
+    super('Esta sugestão já foi transformada em recorrência.');
+  }
+}
+
+export class RecurringRuleMissingError extends GoneDomainError {
+  constructor() {
+    super('A recorrência criada a partir desta sugestão não existe mais.');
   }
 }
 

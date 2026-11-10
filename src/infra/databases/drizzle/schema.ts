@@ -111,6 +111,10 @@ export const workspaces = pgTable('workspaces', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .defaultNow()
     .notNull(),
+  lastBillDetectionAt: timestamp('last_bill_detection_at', {
+    withTimezone: true,
+    mode: 'date',
+  }),
 });
 
 export const workspaceUsers = pgTable(
@@ -339,6 +343,68 @@ export const transactions = pgTable(
     uniqueIndex('ux_transactions_recurring_date').on(
       table.recurringId,
       table.date,
+    ),
+  ],
+);
+
+export const recurringSuggestions = pgTable(
+  'recurring_suggestions',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    categoryId: text('category_id')
+      .notNull()
+      .references(() => categories.id),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id),
+    suggestedTitle: text('suggested_title').notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+    dayOfMonth: integer('day_of_month').notNull(),
+    status: text('status').notNull(),
+    recurringId: text('recurring_id').references(
+      () => recurringTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    shownAt: timestamp('shown_at', { withTimezone: true, mode: 'date' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', {
+      withTimezone: true,
+      mode: 'date',
+    }).$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index('idx_recurring_suggestion_ws_status').on(
+      table.workspaceId,
+      table.status,
+    ),
+    index('idx_recurring_suggestion_ws_category').on(
+      table.workspaceId,
+      table.categoryId,
+    ),
+  ],
+);
+
+export const recurringSuggestionTransactions = pgTable(
+  'recurring_suggestion_transactions',
+  {
+    suggestionId: text('suggestion_id')
+      .notNull()
+      .references(() => recurringSuggestions.id, { onDelete: 'cascade' }),
+    transactionId: text('transaction_id')
+      .notNull()
+      .references(() => transactions.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    uniqueIndex('unq_recurring_suggestion_transaction').on(table.transactionId),
+    index('idx_recurring_suggestion_transaction_suggestion').on(
+      table.suggestionId,
     ),
   ],
 );
