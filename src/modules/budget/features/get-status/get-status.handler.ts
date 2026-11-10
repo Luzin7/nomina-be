@@ -1,4 +1,5 @@
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
@@ -76,12 +77,13 @@ export class GetBudgetStatusService implements Service<
     );
     if (!snapshot) return right({ exists: false });
 
-    const [expensesByCategory, summary] = await Promise.all([
+    const [expensesByCategory, categoryParentMap, summary] = await Promise.all([
       this.budgetRepository.findCompletedExpenseByCategory(
         workspaceId,
         monthStart,
         monthEnd,
       ),
+      this.budgetRepository.findCategoryParentMap(workspaceId),
       isCurrentMonth
         ? this.findMonthSummary.execute({ workspaceId, sub: request.sub })
         : Promise.resolve(null),
@@ -92,9 +94,14 @@ export class GetBudgetStatusService implements Service<
     const visibleAllocations = snapshot.allocations.filter(
       (allocation) => allocation.categoryName !== null,
     );
+    const { spentByAllocation, unallocatedSpent } = attributeSpendToAllocations(
+      expensesByCategory,
+      categoryParentMap,
+      new Set(visibleAllocations.map((allocation) => allocation.categoryId)),
+    );
     const pillars = new Map<string, BudgetStatusPillar>();
     const allocations = visibleAllocations.map((allocation) => {
-      const spentCents = expensesByCategory[allocation.categoryId] ?? 0;
+      const spentCents = spentByAllocation[allocation.categoryId] ?? 0;
       const pillar = pillars.get(allocation.groupName) ?? {
         groupName: allocation.groupName,
         targetCents: 0,
@@ -121,10 +128,6 @@ export class GetBudgetStatusService implements Service<
       };
     });
 
-    const allocatedSpent = allocations.reduce(
-      (total, allocation) => total + allocation.spentCents,
-      0,
-    );
     const totalSpent = Object.values(expensesByCategory).reduce(
       (total, value) => total + value,
       0,
@@ -136,7 +139,7 @@ export class GetBudgetStatusService implements Service<
       effectiveFrom: snapshot.effectiveFrom,
       allocations,
       pillars: [...pillars.values()],
-      unallocatedSpent: totalSpent - allocatedSpent,
+      unallocatedSpent,
       totalTarget: snapshot.monthlyIncome,
       totalSpent,
       projection: summary?.isRight() ? summary.value.projection : null,

@@ -61,6 +61,10 @@ export abstract class BudgetRepository {
     end: Date,
   ): Promise<Record<string, number>>;
 
+  abstract findCategoryParentMap(
+    workspaceId: string,
+  ): Promise<Record<string, string | null>>;
+
   abstract saveSnapshot(
     input: SaveBudgetSnapshotInput,
   ): Promise<SavedBudgetSnapshot>;

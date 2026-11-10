@@ -93,6 +93,7 @@ describe('GetBudgetStatusService', () => {
       resolveSnapshot: jest.fn(),
       findCategoriesByIds: jest.fn(),
       findCompletedExpenseByCategory: jest.fn().mockResolvedValue({}),
+      findCategoryParentMap: jest.fn().mockResolvedValue({}),
       saveSnapshot: jest.fn(),
       findMonthlyIncomeSuggestion: jest.fn(),
       findPresetCategories: jest.fn(),
@@ -329,6 +330,128 @@ describe('GetBudgetStatusService', () => {
         percentage: 40,
       },
     ]);
+  });
+
+  it('rolls a child transaction up to its allocated parent', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-aluguel': 15_000,
+    });
+    repository.findCategoryParentMap.mockResolvedValueOnce({
+      'cat-1': null,
+      'cat-aluguel': 'cat-1',
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.allocations[0]).toMatchObject({
+      categoryId: 'cat-1',
+      spentCents: 15_000,
+      remainingCents: 45_000,
+      percentageUsed: 25,
+    });
+    expect(result.value.unallocatedSpent).toBe(0);
+    expect(result.value.totalSpent).toBe(15_000);
+    expect(result.value.pillars[0]).toMatchObject({
+      groupName: 'Custos fixos',
+      spentCents: 15_000,
+    });
+  });
+
+  it('adds sibling child transactions under the allocated parent', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-aluguel': 10_000,
+      'cat-internet': 5_000,
+    });
+    repository.findCategoryParentMap.mockResolvedValueOnce({
+      'cat-1': null,
+      'cat-aluguel': 'cat-1',
+      'cat-internet': 'cat-1',
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.allocations[0].spentCents).toBe(15_000);
+    expect(result.value.unallocatedSpent).toBe(0);
+  });
+
+  it('keeps a child of an unallocated parent as unallocated spend', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-cinema': 5_000,
+    });
+    repository.findCategoryParentMap.mockResolvedValueOnce({
+      'cat-lazer': null,
+      'cat-cinema': 'cat-lazer',
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.allocations[1].spentCents).toBe(0);
+    expect(result.value.unallocatedSpent).toBe(5_000);
+  });
+
+  it('attributes spend to the nearest allocated category without double counting', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: [
+          ...makeSnapshot().allocations,
+          {
+            id: 'allocation-3',
+            categoryId: 'cat-aluguel',
+            categoryName: 'Aluguel',
+            groupName: 'Custos fixos',
+            groupOrder: 0,
+            categoryOrder: 1,
+            percentageOfIncome: 0,
+            targetCents: 20_000,
+          },
+        ],
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-aluguel': 10_000,
+    });
+    repository.findCategoryParentMap.mockResolvedValueOnce({
+      'cat-1': null,
+      'cat-aluguel': 'cat-1',
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.allocations[0].spentCents).toBe(0);
+    expect(result.value.allocations[2].spentCents).toBe(10_000);
+    expect(result.value.unallocatedSpent).toBe(0);
+    expect(result.value.totalSpent).toBe(10_000);
   });
 
   it('keeps a budgeted category with zero spend at 0% used', async () => {
