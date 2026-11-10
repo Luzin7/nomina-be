@@ -1,7 +1,11 @@
 import { TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { buildCategoryListCacheKey } from '@modules/category/constants/cache-keys';
 import { Category } from '@modules/category/entities/Category';
-import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import {
+  CategoryRepository,
+  CategoryVisibility,
+} from '@modules/category/repositories/contracts/CategoryRepository';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
@@ -31,6 +35,7 @@ interface CategoryCacheData {
   type: string;
   parentId: string | null;
   isSystemCategory: boolean;
+  isHidden: boolean;
 }
 
 interface CachePayload {
@@ -53,21 +58,23 @@ export class ListCategoriesService implements Service<
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Response>> {
-    const cached = await this.redisService.get(this.buildCacheKey(request));
+    const cacheKey = buildCategoryListCacheKey(request);
+    const cached = await this.redisService.get(cacheKey);
+
     if (cached) {
       return right(this.deserializeResponse(JSON.parse(cached)));
     }
 
     const response = await this.fetchAndProcess(request);
-    if (response.isRight()) {
-      await this.redisService.set(
-        this.buildCacheKey(request),
-        this.serializeResponse(response.value),
-        CATEGORIES_CACHE_TTL_SECONDS,
-      );
-    }
+    if (response.isLeft()) return response;
 
-    return response;
+    await this.redisService.set(
+      cacheKey,
+      this.serializeResponse(response.value),
+      CATEGORIES_CACHE_TTL_SECONDS,
+    );
+
+    return right(response.value);
   }
 
   private async fetchAndProcess({
@@ -76,44 +83,60 @@ export class ListCategoriesService implements Service<
     pageSize,
     type,
     parentId,
+    hidden,
   }: Request): Promise<Either<Error, Response>> {
-    if (parentId !== undefined) {
-      const result = await this.categoryRepository.findManyByWorkspaceId(
-        workspaceId,
-        {
-          type,
-          parentId: parentId === 'null' ? null : parentId,
-        },
-        page,
-        pageSize,
-      );
+    const visibility = toVisibility(hidden);
 
-      return right(result);
+    if (parentId !== undefined) {
+      const { categories, total } =
+        await this.categoryRepository.findManyByWorkspaceId(
+          workspaceId,
+          {
+            type,
+            parentId: parentId === 'null' ? null : parentId,
+            visibility,
+          },
+          page,
+          pageSize,
+        );
+
+      return right({ categories, total });
     }
 
     const { categories, usageCounts } =
       await this.categoryRepository.findManyByWorkspaceId(workspaceId, {
         type,
+        visibility,
       });
+
+    return right(this.buildHierarchy(categories, usageCounts));
+  }
+
+  private buildHierarchy(
+    categories: Category[],
+    usageCounts: Record<string, number>,
+  ): HierarchyResponse {
+    const rootIds = new Set(
+      categories
+        .filter((category) => !category.parentId)
+        .map((category) => category.id),
+    );
 
     const parents: Category[] = [];
     const childrenByParentId: Record<string, Category[]> = {};
 
     for (const category of categories) {
-      if (!category.parentId) {
-        parents.push(category);
+      if (category.parentId !== null && rootIds.has(category.parentId)) {
+        childrenByParentId[category.parentId] ??= [];
+        childrenByParentId[category.parentId].push(category);
         continue;
       }
 
-      const parentKey = category.parentId;
-      if (!childrenByParentId[parentKey]) {
-        childrenByParentId[parentKey] = [];
-      }
-      childrenByParentId[parentKey].push(category);
+      parents.push(category);
     }
 
-    for (const parentIdKey of Object.keys(childrenByParentId)) {
-      childrenByParentId[parentIdKey].sort((a, b) => {
+    for (const parentId of Object.keys(childrenByParentId)) {
+      childrenByParentId[parentId].sort((a, b) => {
         const usageA = usageCounts[a.id] ?? 0;
         const usageB = usageCounts[b.id] ?? 0;
         return usageB !== usageA
@@ -134,21 +157,11 @@ export class ListCategoriesService implements Service<
       return sumB !== sumA ? sumB - sumA : a.name.localeCompare(b.name);
     });
 
-    return right({
+    return {
       categories: parents,
       total: parents.length,
       hierarchy: childrenByParentId,
-    });
-  }
-
-  private buildCacheKey({
-    workspaceId,
-    type,
-    parentId,
-    page,
-    pageSize,
-  }: Request): string {
-    return `categories:list:${workspaceId}:t=${type ?? ''}:p=${parentId ?? 'none'}:${page}:${pageSize}`;
+    };
   }
 
   private serializeResponse(response: Response): string {
@@ -159,6 +172,7 @@ export class ListCategoriesService implements Service<
       type: c.type,
       parentId: c.parentId,
       isSystemCategory: c.isSystemCategory,
+      isHidden: c.isHidden,
     });
 
     const payload: CachePayload = {
@@ -186,6 +200,7 @@ export class ListCategoriesService implements Service<
           type: data.type as TransactionType,
           parentId: data.parentId,
           isSystemCategory: data.isSystemCategory,
+          isHidden: data.isHidden ?? false,
         },
         data.id,
       );
@@ -203,4 +218,10 @@ export class ListCategoriesService implements Service<
 
     return { categories, total: payload.total, hierarchy };
   }
+}
+
+function toVisibility(
+  hidden: ListCategoriesRequest['hidden'],
+): CategoryVisibility {
+  return hidden === 'all' ? 'all' : 'visible';
 }

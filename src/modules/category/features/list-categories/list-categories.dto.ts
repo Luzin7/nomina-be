@@ -16,6 +16,7 @@ const listCategoriesSchema = z.object({
     .default(20),
   type: z.nativeEnum(TransactionType).optional(),
   parentId: z.string().optional(),
+  hidden: z.enum(['false', 'all']).default('false'),
 });
 
 export const ListCategoriesPipe = new ZodValidationPipe(listCategoriesSchema);

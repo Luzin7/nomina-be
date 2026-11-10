@@ -2,10 +2,21 @@ import { TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { ListCategoriesRequest } from './list-categories.dto';
 import { ListCategoriesService } from './list-categories.handler';
 
-function makeRequest(overrides = {}) {
-  return { workspaceId: 'ws-1', page: 1, pageSize: 10, ...overrides };
+function makeRequest(
+  overrides: Partial<
+    Pick<ListCategoriesRequest, 'hidden' | 'parentId' | 'type'>
+  > = {},
+) {
+  return {
+    workspaceId: 'ws-1',
+    page: 1,
+    pageSize: 10,
+    hidden: 'false' as const,
+    ...overrides,
+  };
 }
 
 function makeCategory(
@@ -15,6 +26,7 @@ function makeCategory(
     type: TransactionType;
     parentId: string | null;
     isSystemCategory: boolean;
+    isHidden: boolean;
   }> = {},
   id?: string,
 ): Category {
@@ -67,6 +79,9 @@ describe('ListCategoriesService', () => {
       countTransactions: jest.fn(),
       reassignChildren: jest.fn(),
       findManyByIds: jest.fn(),
+      countBudgetAllocations: jest.fn(),
+      countRecurringTransactions: jest.fn(),
+      deleteIfUnreferenced: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
     redisService = makeRedisService();
@@ -223,7 +238,7 @@ describe('ListCategoriesService', () => {
 
       expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledWith(
         'ws-1',
-        { type: undefined },
+        { type: undefined, visibility: 'visible' },
       );
     });
 
@@ -338,7 +353,7 @@ describe('ListCategoriesService', () => {
 
       expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledWith(
         'ws-1',
-        { type: undefined, parentId: null },
+        { type: undefined, parentId: null, visibility: 'visible' },
         1,
         10,
       );
@@ -367,7 +382,7 @@ describe('ListCategoriesService', () => {
 
       expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledWith(
         'ws-1',
-        { type: undefined, parentId: 'parent-1' },
+        { type: undefined, parentId: 'parent-1', visibility: 'visible' },
         1,
         10,
       );
@@ -389,10 +404,182 @@ describe('ListCategoriesService', () => {
 
       expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledWith(
         'ws-1',
-        { type: TransactionType.INCOME, parentId: null },
+        {
+          type: TransactionType.INCOME,
+          parentId: null,
+          visibility: 'visible',
+        },
         1,
         10,
       );
+    });
+  });
+
+  describe('visibility filter', () => {
+    it('should ask the repository for visible rows by default', async () => {
+      categoryRepository.findManyByWorkspaceId.mockResolvedValue({
+        categories: [],
+        total: 0,
+        usageCounts: {},
+      });
+
+      await service.execute(makeRequest());
+
+      expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledWith(
+        'ws-1',
+        { type: undefined, visibility: 'visible' },
+      );
+    });
+
+    it('should ask the repository for every row when hidden=all', async () => {
+      categoryRepository.findManyByWorkspaceId.mockResolvedValue({
+        categories: [],
+        total: 0,
+        usageCounts: {},
+      });
+
+      await service.execute(makeRequest({ hidden: 'all' }));
+
+      expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledWith(
+        'ws-1',
+        { type: undefined, visibility: 'all' },
+      );
+    });
+
+    it('should take the page total from the repository count', async () => {
+      const root = makeCategory({ name: 'Raiz' }, 'cat-root');
+      categoryRepository.findManyByWorkspaceId.mockResolvedValue({
+        categories: [root],
+        total: 7,
+        usageCounts: {},
+      });
+
+      const result = await service.execute(makeRequest({ parentId: 'null' }));
+
+      expect(result.isRight()).toBe(true);
+      if (result.isRight()) {
+        expect(result.value.categories.map((category) => category.id)).toEqual([
+          root.id,
+        ]);
+        expect(result.value.total).toBe(7);
+      }
+    });
+
+    it('should promote visible children of a hidden parent to the root list', async () => {
+      const visibleChild = makeCategory(
+        { parentId: 'cat-hidden-parent', name: 'Mercado' },
+        'cat-visible-child',
+      );
+
+      categoryRepository.findManyByWorkspaceId.mockResolvedValue({
+        categories: [visibleChild],
+        total: 1,
+        usageCounts: {},
+      });
+
+      const result = await service.execute(makeRequest());
+
+      expect(result.isRight()).toBe(true);
+      if (result.isRight()) {
+        expect(result.value.categories.map((category) => category.id)).toEqual([
+          visibleChild.id,
+        ]);
+        expect(result.value.categories[0].parentId).toBe('cat-hidden-parent');
+        expect(result.value.hierarchy).toEqual({});
+        expect(result.value.total).toBe(1);
+      }
+
+      expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledWith(
+        'ws-1',
+        { type: undefined, visibility: 'visible' },
+      );
+    });
+
+    it('should keep visible children nested under a hidden parent when hidden=all', async () => {
+      const hiddenParent = makeCategory(
+        { name: 'Lazer', isHidden: true },
+        'cat-hidden-parent',
+      );
+      const visibleChild = makeCategory(
+        { parentId: hiddenParent.id, name: 'Cinema' },
+        'cat-visible-child',
+      );
+
+      categoryRepository.findManyByWorkspaceId.mockResolvedValue({
+        categories: [hiddenParent, visibleChild],
+        total: 2,
+        usageCounts: {},
+      });
+
+      const result = await service.execute(makeRequest({ hidden: 'all' }));
+
+      expect(result.isRight()).toBe(true);
+      if (result.isRight()) {
+        expect(result.value.categories.map((category) => category.id)).toEqual([
+          hiddenParent.id,
+        ]);
+        expect(result.value.hierarchy![hiddenParent.id]).toHaveLength(1);
+        expect(result.value.hierarchy![hiddenParent.id][0].id).toBe(
+          visibleChild.id,
+        );
+        expect(result.value.total).toBe(1);
+      }
+
+      expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledWith(
+        'ws-1',
+        { type: undefined, visibility: 'all' },
+      );
+    });
+
+    it('should key the cache by visibility', async () => {
+      categoryRepository.findManyByWorkspaceId.mockResolvedValue({
+        categories: [],
+        total: 0,
+        usageCounts: {},
+      });
+
+      await service.execute(makeRequest());
+      await service.execute(makeRequest({ hidden: 'all' }));
+
+      expect(redisService.get).toHaveBeenNthCalledWith(
+        1,
+        'categories:list:ws-1:t=:p=none:h=false:1:10',
+      );
+      expect(redisService.get).toHaveBeenNthCalledWith(
+        2,
+        'categories:list:ws-1:t=:p=none:h=all:1:10',
+      );
+    });
+
+    it('should serve a cached payload as stored', async () => {
+      const hidden = makeCategory(
+        { name: 'Lazer', isHidden: true },
+        'cat-hidden',
+      );
+
+      redisService.get.mockResolvedValue(
+        JSON.stringify({
+          categories: [
+            {
+              id: hidden.id,
+              workspaceId: 'ws-1',
+              name: hidden.name,
+              type: 'EXPENSE',
+              parentId: null,
+              isSystemCategory: false,
+              isHidden: true,
+            },
+          ],
+          total: 1,
+          hierarchy: null,
+        }),
+      );
+
+      const result = await service.execute(makeRequest({ hidden: 'all' }));
+
+      expect(result.isRight() && result.value.categories).toHaveLength(1);
+      expect(result.isRight() && result.value.total).toBe(1);
+      expect(categoryRepository.findManyByWorkspaceId).not.toHaveBeenCalled();
     });
   });
 });

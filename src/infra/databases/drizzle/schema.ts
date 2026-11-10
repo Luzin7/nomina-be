@@ -220,6 +220,7 @@ export const categories = pgTable(
     name: text('name').notNull(),
     type: text('type').notNull(),
     isSystemCategory: boolean('is_system_category').default(false).notNull(),
+    isHidden: boolean('is_hidden').default(false).notNull(),
     parentId: text('parent_id').references((): AnyPgColumn => categories.id),
   },
   (table) => [
