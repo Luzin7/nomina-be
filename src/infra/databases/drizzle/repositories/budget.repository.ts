@@ -256,6 +256,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         and(
           eq(schema.categories.workspaceId, workspaceId),
           eq(schema.categories.type, TransactionType.EXPENSE),
+          eq(schema.categories.isHidden, false),
           sql`${schema.categories.parentId} IS NULL`,
         ),
       )

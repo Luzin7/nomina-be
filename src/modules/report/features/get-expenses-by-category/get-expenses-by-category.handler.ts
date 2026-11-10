@@ -39,7 +39,11 @@ export class GetExpensesByCategoryService {
     if (cached) return JSON.parse(cached) as TopExpensesByCategoryResult;
 
     const timezone = await this.workspaceTimezone.execute(workspaceId);
-    const referenceDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+    const referenceDate = `${monthKey}-01`;
+    const isCurrentMonth =
+      this.dateProvider.format(this.dateProvider.now(), 'YYYY-MM', timezone) ===
+      monthKey;
     const startDate = this.dateProvider.startOfMonth(referenceDate, timezone);
     const endDate = this.dateProvider.endOfMonth(referenceDate, timezone);
 
@@ -49,6 +53,7 @@ export class GetExpensesByCategoryService {
         startDate,
         endDate,
         pageSize: TOP_CATEGORIES_LIMIT,
+        isCurrentMonth,
       });
 
     const result: TopExpensesByCategoryResult = {

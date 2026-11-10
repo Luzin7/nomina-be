@@ -8,6 +8,7 @@ import { GetExpensesByCategoryService } from './get-expenses-by-category.handler
 
 const START = new Date('2026-09-01T03:00:00.000Z');
 const END = new Date('2026-09-30T02:59:59.999Z');
+const NOW = new Date('2026-09-10T12:00:00.000Z');
 
 function makeRequest(overrides = {}) {
   return { workspaceId: 'ws-1', month: 9, year: 2026, ...overrides };
@@ -34,6 +35,8 @@ describe('GetExpensesByCategoryService', () => {
     } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
 
     dateProvider = {
+      now: jest.fn().mockReturnValue(NOW),
+      format: jest.fn().mockReturnValue('2026-09'),
       startOfMonth: jest.fn().mockReturnValue(START),
       endOfMonth: jest.fn().mockReturnValue(END),
     } as unknown as jest.Mocked<DateProvider>;
@@ -87,7 +90,21 @@ describe('GetExpensesByCategoryService', () => {
         startDate: START,
         endDate: END,
         pageSize: 5,
+        isCurrentMonth: true,
       },
+    );
+  });
+
+  it('keeps hidden categories for a historical month', async () => {
+    transactionRepository.getTopExpensesByCategory.mockResolvedValue({
+      expenses: [],
+      totalExpense: 0,
+    });
+
+    await service.execute(makeRequest({ month: 8 }));
+
+    expect(transactionRepository.getTopExpensesByCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ isCurrentMonth: false }),
     );
   });
 

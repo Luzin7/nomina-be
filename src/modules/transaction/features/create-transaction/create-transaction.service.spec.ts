@@ -5,6 +5,7 @@ import { AccountRepository } from '@modules/account/repositories/contracts/Accou
 import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { Category } from '@modules/category/entities/Category';
+import { CategoryNotFoundError } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { CreditCardTransferNotAllowedError } from '@modules/transaction/errors';
@@ -80,6 +81,9 @@ describe('CreateTransactionService', () => {
       countTransactions: jest.fn(),
       reassignChildren: jest.fn(),
       findManyByIds: jest.fn(),
+      countBudgetAllocations: jest.fn(),
+      countRecurringTransactions: jest.fn(),
+      deleteIfUnreferenced: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
     transactionRepository = {
@@ -153,6 +157,16 @@ describe('CreateTransactionService', () => {
     const result = await service.execute(makeRequest());
     expect(result.isLeft()).toBe(true);
     expect(result.value).toBeInstanceOf(UnauthorizedError);
+  });
+
+  it('should return a 422 domain error when the category is not found', async () => {
+    accountRepository.findById.mockResolvedValue(makeAccount());
+    categoryRepository.findById.mockResolvedValue(null);
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(CategoryNotFoundError);
   });
 
   it('should return left(UnauthorizedError) when account belongs to different workspace', async () => {

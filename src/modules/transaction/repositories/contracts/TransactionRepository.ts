@@ -74,6 +74,7 @@ export abstract class TransactionRepository {
     startDate: Date;
     endDate: Date;
     pageSize: number;
+    isCurrentMonth: boolean;
   }): Promise<{ expenses: TopExpensesByCategory[]; totalExpense: number }>;
 
   abstract createWithBalanceUpdate(

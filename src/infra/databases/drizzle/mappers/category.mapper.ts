@@ -10,6 +10,7 @@ export class CategoryMapper {
     const result = Category.create(
       {
         isSystemCategory: raw.isSystemCategory,
+        isHidden: raw.isHidden,
         name: raw.name,
         type: raw.type as TransactionType,
         workspaceId: raw.workspaceId,
@@ -29,6 +30,7 @@ export class CategoryMapper {
     return {
       id: entity.id,
       isSystemCategory: entity.isSystemCategory,
+      isHidden: entity.isHidden,
       name: entity.name,
       type: entity.type,
       workspaceId: entity.workspaceId,

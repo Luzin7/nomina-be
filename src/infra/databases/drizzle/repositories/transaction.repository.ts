@@ -165,8 +165,10 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
     startDate: Date;
     endDate: Date;
     pageSize: number;
+    isCurrentMonth: boolean;
   }): Promise<{ expenses: TopExpensesByCategory[]; totalExpense: number }> {
-    const { workspaceId, startDate, endDate, pageSize } = params;
+    const { workspaceId, startDate, endDate, pageSize, isCurrentMonth } =
+      params;
 
     const periodFilter = and(
       eq(schema.transactions.workspaceId, workspaceId),
@@ -176,6 +178,13 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
       lte(schema.transactions.date, endDate),
     );
 
+    const categoryJoin = isCurrentMonth
+      ? and(
+          eq(schema.categories.id, schema.transactions.categoryId),
+          eq(schema.categories.isHidden, false),
+        )
+      : eq(schema.categories.id, schema.transactions.categoryId);
+
     const [results, [{ totalExpense }]] = await Promise.all([
       this.drizzle.db
         .select({
@@ -184,10 +193,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
           totalAmount: sum(schema.transactions.amount).mapWith(Number),
         })
         .from(schema.transactions)
-        .innerJoin(
-          schema.categories,
-          eq(schema.categories.id, schema.transactions.categoryId),
-        )
+        .innerJoin(schema.categories, categoryJoin)
         .where(periodFilter)
         .groupBy(schema.transactions.categoryId, schema.categories.name)
         .orderBy(desc(sum(schema.transactions.amount)))
