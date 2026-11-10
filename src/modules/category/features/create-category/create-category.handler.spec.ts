@@ -7,6 +7,7 @@ import {
   InvalidParentCategoryError,
 } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { Logger } from '@nestjs/common';
 import { CreateCategoryPipe } from './create-category.dto';
 import { CreateCategoryService } from './create-category.handler';
 
@@ -74,7 +75,7 @@ function makeCacheProvider(): jest.Mocked<CacheProvider> {
     acquireLock: jest.fn(),
     releaseLock: jest.fn(),
     readCounter: jest.fn(),
-    incrementCounter: jest.fn(),
+    incrementCounter: jest.fn().mockResolvedValue(1),
   } as unknown as jest.Mocked<CacheProvider>;
 }
 
@@ -89,7 +90,10 @@ describe('CreateCategoryService', () => {
     service = new CreateCategoryService(categoryRepository, cacheProvider);
   });
 
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => {
+    jest.clearAllMocks();
+    jest.restoreAllMocks();
+  });
 
   it('should write the category with the workspace from the token', async () => {
     categoryRepository.create.mockImplementation(async (category) => category);
@@ -225,14 +229,16 @@ describe('CreateCategoryService', () => {
     expect(categoryRepository.create).not.toHaveBeenCalled();
   });
 
-  it('should invalidate the category list after the write', async () => {
+  it('should bump the category list generation after the write', async () => {
     categoryRepository.create.mockImplementation(async (category) => category);
 
     await service.execute(makeRequest());
 
-    expect(cacheProvider.delByPattern).toHaveBeenCalledWith(
-      'categories:list:ws-1:*',
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:category:ws-1',
+      expect.any(Number),
     );
+    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should keep the cache when the write fails', async () => {
@@ -242,7 +248,39 @@ describe('CreateCategoryService', () => {
 
     await service.execute(makeRequest());
 
+    expect(cacheProvider.incrementCounter).not.toHaveBeenCalled();
     expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
+  });
+
+  it('should keep the committed write when the generation bump fails', async () => {
+    categoryRepository.create.mockImplementation(async (category) => category);
+    cacheProvider.incrementCounter.mockResolvedValue(null);
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isRight()).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/ws-1.*create-category/),
+    );
+  });
+
+  it('should keep the committed write when the generation bump throws', async () => {
+    categoryRepository.create.mockImplementation(async (category) => category);
+    cacheProvider.incrementCounter.mockRejectedValue(new Error('redis down'));
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isRight()).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/ws-1.*create-category/),
+      expect.any(Error),
+    );
   });
 
   it('should rethrow an unexpected repository failure', async () => {

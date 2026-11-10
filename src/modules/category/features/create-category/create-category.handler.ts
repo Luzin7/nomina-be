@@ -1,12 +1,12 @@
 import { TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
-import { buildCategoryListInvalidationPattern } from '@modules/category/constants/cache-keys';
 import { Category } from '@modules/category/entities/Category';
 import {
   CategoryNameAlreadyExistsError,
   InvalidParentCategoryError,
 } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { bumpCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
@@ -50,9 +50,11 @@ export class CreateCategoryService implements Service<
 
     try {
       const created = await this.categoryRepository.create(category.value);
-      await this.cacheProvider.delByPattern(
-        buildCategoryListInvalidationPattern(workspaceId),
-      );
+      await bumpCategoryGeneration({
+        cache: this.cacheProvider,
+        workspaceId,
+        operation: 'create-category',
+      });
 
       return right(created);
     } catch (error) {

@@ -58,6 +58,8 @@ function makeRedisService(): jest.Mocked<CacheProvider> {
     getClient: jest.fn(),
     isAvailable: jest.fn().mockReturnValue(true),
     onModuleDestroy: jest.fn(),
+    readCounter: jest.fn().mockResolvedValue(1),
+    incrementCounter: jest.fn().mockResolvedValue(2),
   } as unknown as jest.Mocked<CacheProvider>;
 }
 
@@ -125,6 +127,51 @@ describe('ListCategoriesService', () => {
       expect(key).toContain('categories:list:ws-1');
       expect(ttl).toBe(6 * 60 * 60);
       expect(typeof payload).toBe('string');
+    });
+
+    it('should not serve an entry written under the previous generation', async () => {
+      const stale = JSON.stringify({
+        categories: [],
+        total: 0,
+        hierarchy: null,
+      });
+      redisService.readCounter.mockResolvedValue(7);
+      redisService.get.mockImplementation(async (key) =>
+        key.includes(':g7:') ? null : stale,
+      );
+      categoryRepository.findManyByWorkspaceId.mockResolvedValue({
+        categories: [],
+        total: 0,
+        usageCounts: {},
+      });
+
+      await service.execute(makeRequest());
+
+      expect(redisService.get).toHaveBeenCalledTimes(1);
+      expect(redisService.get).toHaveBeenCalledWith(
+        'categories:list:ws-1:g7:t=:p=none:h=false:1:10',
+      );
+      expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledTimes(1);
+      expect(redisService.set).toHaveBeenCalledWith(
+        'categories:list:ws-1:g7:t=:p=none:h=false:1:10',
+        expect.any(String),
+        6 * 60 * 60,
+      );
+    });
+
+    it('should skip the cache when the generation is unreadable', async () => {
+      redisService.readCounter.mockResolvedValue(null);
+      categoryRepository.findManyByWorkspaceId.mockResolvedValue({
+        categories: [],
+        total: 0,
+        usageCounts: {},
+      });
+
+      await service.execute(makeRequest());
+
+      expect(redisService.get).not.toHaveBeenCalled();
+      expect(redisService.set).not.toHaveBeenCalled();
+      expect(categoryRepository.findManyByWorkspaceId).toHaveBeenCalledTimes(1);
     });
 
     it('should return cached data on cache hit without calling repository', async () => {
@@ -543,11 +590,11 @@ describe('ListCategoriesService', () => {
 
       expect(redisService.get).toHaveBeenNthCalledWith(
         1,
-        'categories:list:ws-1:t=:p=none:h=false:1:10',
+        'categories:list:ws-1:g1:t=:p=none:h=false:1:10',
       );
       expect(redisService.get).toHaveBeenNthCalledWith(
         2,
-        'categories:list:ws-1:t=:p=none:h=all:1:10',
+        'categories:list:ws-1:g1:t=:p=none:h=all:1:10',
       );
     });
 

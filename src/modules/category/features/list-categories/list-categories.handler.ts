@@ -6,6 +6,7 @@ import {
   CategoryRepository,
   CategoryVisibility,
 } from '@modules/category/repositories/contracts/CategoryRepository';
+import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
@@ -58,8 +59,15 @@ export class ListCategoriesService implements Service<
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Response>> {
-    const cacheKey = buildCategoryListCacheKey(request);
-    const cached = await this.redisService.get(cacheKey);
+    const generation = await readCategoryGeneration(
+      this.redisService,
+      request.workspaceId,
+    );
+    const cacheKey =
+      generation === null
+        ? null
+        : buildCategoryListCacheKey(request, generation);
+    const cached = cacheKey ? await this.redisService.get(cacheKey) : null;
 
     if (cached) {
       return right(this.deserializeResponse(JSON.parse(cached)));
@@ -68,11 +76,13 @@ export class ListCategoriesService implements Service<
     const response = await this.fetchAndProcess(request);
     if (response.isLeft()) return response;
 
-    await this.redisService.set(
-      cacheKey,
-      this.serializeResponse(response.value),
-      CATEGORIES_CACHE_TTL_SECONDS,
-    );
+    if (cacheKey) {
+      await this.redisService.set(
+        cacheKey,
+        this.serializeResponse(response.value),
+        CATEGORIES_CACHE_TTL_SECONDS,
+      );
+    }
 
     return right(response.value);
   }

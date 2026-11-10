@@ -68,7 +68,7 @@ function makeCacheProvider(): jest.Mocked<CacheProvider> {
     acquireLock: jest.fn(),
     releaseLock: jest.fn(),
     readCounter: jest.fn(),
-    incrementCounter: jest.fn(),
+    incrementCounter: jest.fn().mockResolvedValue(1),
   } as unknown as jest.Mocked<CacheProvider>;
 }
 
@@ -104,9 +104,11 @@ describe('DeleteCategoryService', () => {
     expect(categoryRepository.deleteIfUnreferenced).toHaveBeenCalledWith(
       'cat-1',
     );
-    expect(cacheProvider.delByPattern).toHaveBeenCalledWith(
-      'categories:list:ws-1:*',
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:category:ws-1',
+      expect.any(Number),
     );
+    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should refuse a system category before any write', async () => {
@@ -162,7 +164,7 @@ describe('DeleteCategoryService', () => {
       expect(result.value).toBeInstanceOf(CategoryInUseError);
       expect(result.value.message).toContain('2 transações');
     }
-    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
+    expect(cacheProvider.incrementCounter).not.toHaveBeenCalled();
   });
 
   it('should name budget allocations as the blocking reference', async () => {

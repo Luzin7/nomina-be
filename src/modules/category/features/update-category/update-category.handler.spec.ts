@@ -71,7 +71,7 @@ function makeCacheProvider(): jest.Mocked<CacheProvider> {
     acquireLock: jest.fn(),
     releaseLock: jest.fn(),
     readCounter: jest.fn(),
-    incrementCounter: jest.fn(),
+    incrementCounter: jest.fn().mockResolvedValue(1),
   } as unknown as jest.Mocked<CacheProvider>;
 }
 
@@ -149,7 +149,7 @@ describe('UpdateCategoryService', () => {
     }
     expect(systemCategory.name).toBe('Alimentação');
     expect(categoryRepository.update).not.toHaveBeenCalled();
-    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
+    expect(cacheProvider.incrementCounter).not.toHaveBeenCalled();
   });
 
   it('should refuse to hide a system category and change nothing', async () => {
@@ -244,9 +244,11 @@ describe('UpdateCategoryService', () => {
 
     await service.execute(makeRequest({ isHidden: true }));
 
-    expect(cacheProvider.delByPattern).toHaveBeenCalledWith(
-      'categories:list:ws-1:*',
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:category:ws-1',
+      expect.any(Number),
     );
+    expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
   });
 
   it('should bump the report generation when the patch hides a category', async () => {
@@ -265,7 +267,10 @@ describe('UpdateCategoryService', () => {
 
     await service.execute(makeRequest({ name: 'Feira' }));
 
-    expect(cacheProvider.incrementCounter).not.toHaveBeenCalled();
+    expect(cacheProvider.incrementCounter).not.toHaveBeenCalledWith(
+      'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
   });
 
   it('should rethrow an unexpected repository failure', async () => {

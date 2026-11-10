@@ -1,5 +1,4 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
-import { buildCategoryListInvalidationPattern } from '@modules/category/constants/cache-keys';
 import { Category } from '@modules/category/entities/Category';
 import {
   CategoryNameAlreadyExistsError,
@@ -8,6 +7,7 @@ import {
   SystemCategoryModificationError,
 } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { bumpCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { bumpReportGeneration } from '@shared/cache/report-cache';
@@ -55,9 +55,11 @@ export class UpdateCategoryService implements Service<
 
     try {
       const updated = await this.categoryRepository.update(category);
-      await this.cacheProvider.delByPattern(
-        buildCategoryListInvalidationPattern(workspaceId),
-      );
+      await bumpCategoryGeneration({
+        cache: this.cacheProvider,
+        workspaceId,
+        operation: 'update-category',
+      });
 
       if (isHidden !== undefined) {
         await bumpReportGeneration(this.cacheProvider, workspaceId);

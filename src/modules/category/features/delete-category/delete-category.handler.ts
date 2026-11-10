@@ -1,11 +1,11 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
-import { buildCategoryListInvalidationPattern } from '@modules/category/constants/cache-keys';
 import {
   CategoryInUseError,
   CategoryTargetNotFoundError,
   SystemCategoryModificationError,
 } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { bumpCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
@@ -36,9 +36,11 @@ export class DeleteCategoryService implements Service<Request, Error, void> {
     const result = await this.categoryRepository.deleteIfUnreferenced(id);
     if (!result.deleted) return left(new CategoryInUseError(result.references));
 
-    await this.cacheProvider.delByPattern(
-      buildCategoryListInvalidationPattern(workspaceId),
-    );
+    await bumpCategoryGeneration({
+      cache: this.cacheProvider,
+      workspaceId,
+      operation: 'delete-category',
+    });
 
     return right(undefined);
   }
