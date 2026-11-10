@@ -127,6 +127,25 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
     return Object.fromEntries(rows.map((row) => [row.categoryId, row.total]));
   }
 
+  async findCategoryParentMap(
+    workspaceId: string,
+  ): Promise<Record<string, string | null>> {
+    const rows = await this.drizzle.db
+      .select({
+        id: schema.categories.id,
+        parentId: schema.categories.parentId,
+      })
+      .from(schema.categories)
+      .where(
+        or(
+          eq(schema.categories.workspaceId, workspaceId),
+          isNull(schema.categories.workspaceId),
+        ),
+      );
+
+    return Object.fromEntries(rows.map((row) => [row.id, row.parentId]));
+  }
+
   async saveSnapshot(
     input: SaveBudgetSnapshotInput,
   ): Promise<SavedBudgetSnapshot> {
