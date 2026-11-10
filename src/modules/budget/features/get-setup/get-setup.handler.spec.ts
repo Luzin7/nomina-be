@@ -1,13 +1,21 @@
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { GetBudgetSetupService } from './get-setup.handler';
+
+const TIMEZONE = 'America/Sao_Paulo';
+const NOW = new Date('2026-11-09T12:00:00.000Z');
+const NOVEMBER_START = new Date('2026-11-01T03:00:00.000Z');
 
 describe('GetBudgetSetupService', () => {
   let service: GetBudgetSetupService;
   let repository: jest.Mocked<BudgetRepository>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
+  let dateProvider: DayJsDateProvider;
 
   beforeEach(() => {
     repository = {
-      resolveSnapshot: jest.fn(),
+      resolveSnapshot: jest.fn().mockResolvedValue(null),
       findCategoriesByIds: jest.fn(),
       findCompletedExpenseByCategory: jest.fn(),
       saveSnapshot: jest.fn(),
@@ -15,10 +23,21 @@ describe('GetBudgetSetupService', () => {
       findPresetCategories: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<BudgetRepository>;
 
-    service = new GetBudgetSetupService(repository);
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue(TIMEZONE),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
+
+    dateProvider = new DayJsDateProvider();
+    jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
+
+    service = new GetBudgetSetupService(
+      repository,
+      workspaceTimezone,
+      dateProvider,
+    );
   });
 
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => jest.restoreAllMocks());
 
   it('returns the active monthly income suggestion and the preset split', async () => {
     repository.findMonthlyIncomeSuggestion.mockResolvedValueOnce(850_000);
@@ -122,5 +141,35 @@ describe('GetBudgetSetupService', () => {
     expect(
       result.value.allocations.map((allocation) => allocation.categoryName),
     ).not.toContain('Investimentos');
+  });
+
+  it('presets the percentage mode when there is no snapshot', async () => {
+    const result = await service.execute({ workspaceId: 'ws-1' });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight()) return;
+    expect(result.value.mode).toBe('percentage');
+    expect(repository.resolveSnapshot).toHaveBeenCalledWith(
+      'ws-1',
+      NOVEMBER_START,
+    );
+  });
+
+  it('presets the mode of the current snapshot', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce({
+      id: 'budget-1',
+      workspaceId: 'ws-1',
+      effectiveFrom: NOVEMBER_START,
+      monthlyIncome: 100_000,
+      mode: 'fixed',
+      allocations: [],
+    });
+
+    const result = await service.execute({ workspaceId: 'ws-1' });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight()) return;
+    expect(result.value.mode).toBe('fixed');
+    expect(result.value.suggestedIncome).toBe(0);
   });
 });

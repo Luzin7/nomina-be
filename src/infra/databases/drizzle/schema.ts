@@ -1,4 +1,8 @@
-import { BalanceMovementCause } from '@constants/enums';
+import {
+  BalanceMovementCause,
+  BUDGET_MODE_DEFAULT,
+  type BudgetMode,
+} from '@constants/enums';
 import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import { sql } from 'drizzle-orm';
 import {
@@ -424,6 +428,10 @@ export const budgets = pgTable(
       mode: 'date',
     }).notNull(),
     monthlyIncome: bigint('monthly_income', { mode: 'number' }).notNull(),
+    mode: text('mode')
+      .$type<BudgetMode>()
+      .notNull()
+      .default(BUDGET_MODE_DEFAULT),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .defaultNow()
       .notNull(),

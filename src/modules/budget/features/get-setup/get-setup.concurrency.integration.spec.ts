@@ -2,6 +2,8 @@ import { TransactionType } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { BudgetRepositoryImplementation } from '@infra/databases/drizzle/repositories/budget.repository';
 import * as schema from '@infra/databases/drizzle/schema';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
   PostgreSqlContainer,
   StartedPostgreSqlContainer,
@@ -48,6 +50,10 @@ describe('budget setup allocation offer', () => {
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
     service = new GetBudgetSetupService(
       new BudgetRepositoryImplementation({ db } as unknown as DrizzleService),
+      {
+        execute: jest.fn().mockResolvedValue('UTC'),
+      } as unknown as GetWorkspaceTimezoneService,
+      new DayJsDateProvider(),
     );
   });
 

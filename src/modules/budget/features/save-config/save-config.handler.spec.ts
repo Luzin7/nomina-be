@@ -1,6 +1,6 @@
 import {
   BudgetRepository,
-  SaveBudgetAllocationInput,
+  SaveBudgetSnapshotInput,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
   BudgetCategoryNotFoundError,
@@ -11,6 +11,8 @@ import {
   HistoricalBudgetImmutableError,
   InvalidBudgetEffectiveDateError,
   InvalidBudgetPercentageSumError,
+  InvalidBudgetTargetError,
+  MixedBudgetModeFieldsError,
 } from '@modules/budget/errors';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
@@ -51,7 +53,7 @@ describe('SaveBudgetConfigService', () => {
   let repository: jest.Mocked<BudgetRepository>;
   let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
   let dateProvider: DayJsDateProvider;
-  let savedInputs: SaveBudgetAllocationInput[][];
+  let savedInputs: SaveBudgetSnapshotInput[];
 
   beforeEach(() => {
     savedInputs = [];
@@ -64,7 +66,7 @@ describe('SaveBudgetConfigService', () => {
         ),
       findCompletedExpenseByCategory: jest.fn(),
       saveSnapshot: jest.fn().mockImplementation(async (input) => {
-        savedInputs.push(input.allocations);
+        savedInputs.push(input);
         return { id: 'budget-1', effectiveFrom: input.effectiveFrom };
       }),
       findMonthlyIncomeSuggestion: jest.fn(),
@@ -210,7 +212,7 @@ describe('SaveBudgetConfigService', () => {
     if (!result.isRight()) return;
     expect(result.value.effectiveFrom).toEqual(NEXT_MONTH_START);
 
-    const saved = savedInputs[0];
+    const saved = savedInputs[0].allocations;
     expect(saved.map((allocation) => allocation.targetCents)).toEqual([
       3_300, 3_300, 3_400,
     ]);
@@ -261,6 +263,183 @@ describe('SaveBudgetConfigService', () => {
     expect(result.isLeft()).toBe(true);
     if (result.isLeft()) {
       expect(result.value).toBeInstanceOf(ForbiddenBudgetCategoryError);
+    }
+  });
+
+  it('persists fixed targets verbatim and derives the percentages', async () => {
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({
+        mode: 'fixed',
+        monthlyIncome: 100_000,
+        allocations: [
+          { categoryId: 'cat-1', targetCents: 30_000 },
+          { categoryId: 'cat-2', targetCents: 50_500 },
+        ],
+      }),
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight()) return;
+    expect(result.value.mode).toBe('fixed');
+    expect(result.value.monthlyIncomeCents).toBe(100_000);
+    expect(result.value.totalTargetCents).toBe(80_500);
+    expect(result.value.unallocatedIncomeCents).toBe(19_500);
+    expect(result.value.allocationState).toBe('under');
+
+    const saved = savedInputs[0];
+    expect(saved.mode).toBe('fixed');
+    expect(
+      saved.allocations.map((allocation) => allocation.targetCents),
+    ).toEqual([30_000, 50_500]);
+    expect(
+      saved.allocations.map((allocation) => allocation.percentageOfIncome),
+    ).toEqual([30, 51]);
+  });
+
+  it('accepts a fixed plan above the declared income', async () => {
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({
+        mode: 'fixed',
+        monthlyIncome: 100_000,
+        allocations: [
+          { categoryId: 'cat-1', targetCents: 70_000 },
+          { categoryId: 'cat-2', targetCents: 60_000 },
+        ],
+      }),
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight()) return;
+    expect(result.value.monthlyIncomeCents).toBe(100_000);
+    expect(result.value.totalTargetCents).toBe(130_000);
+    expect(result.value.monthlyIncomeCents).not.toBe(
+      result.value.totalTargetCents,
+    );
+    expect(result.value.unallocatedIncomeCents).toBe(0);
+    expect(result.value.allocationState).toBe('over');
+  });
+
+  it('accepts a fixed plan with all targets at zero', async () => {
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({
+        mode: 'fixed',
+        allocations: [{ categoryId: 'cat-1', targetCents: 0 }],
+      }),
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight()) return;
+    expect(result.value.totalTargetCents).toBe(0);
+    expect(result.value.unallocatedIncomeCents).toBe(10_000);
+    expect(result.value.allocationState).toBe('under');
+  });
+
+  it('rejects a percentage payload that also carries fixed targets', async () => {
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({
+        allocations: [
+          {
+            categoryId: 'cat-1',
+            percentageOfIncome: 100,
+            targetCents: 10_000,
+          },
+        ],
+      }),
+    });
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(MixedBudgetModeFieldsError);
+    }
+    expect(repository.saveSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('rejects a fixed payload that also carries percentages', async () => {
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({
+        mode: 'fixed',
+        allocations: [
+          {
+            categoryId: 'cat-1',
+            percentageOfIncome: 100,
+            targetCents: 10_000,
+          },
+        ],
+      }),
+    });
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(MixedBudgetModeFieldsError);
+    }
+    expect(repository.saveSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('rejects a fixed payload without targets', async () => {
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({
+        mode: 'fixed',
+        allocations: [{ categoryId: 'cat-1' }],
+      }),
+    });
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(MixedBudgetModeFieldsError);
+    }
+  });
+
+  it('rejects a percentage payload without percentages', async () => {
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({
+        allocations: [{ categoryId: 'cat-1' }],
+      }),
+    });
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(MixedBudgetModeFieldsError);
+    }
+  });
+
+  it.each([-1, 1.5])('rejects a target of %s cents', async (targetCents) => {
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({
+        mode: 'fixed',
+        allocations: [{ categoryId: 'cat-1', targetCents }],
+      }),
+    });
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(InvalidBudgetTargetError);
+    }
+    expect(repository.saveSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('rejects a duplicated category in fixed mode', async () => {
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({
+        mode: 'fixed',
+        allocations: [
+          { categoryId: 'cat-1', targetCents: 10_000 },
+          { categoryId: 'cat-1', targetCents: 20_000 },
+        ],
+      }),
+    });
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(DuplicateBudgetCategoryError);
     }
   });
 });

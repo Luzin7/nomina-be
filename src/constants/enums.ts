@@ -92,3 +92,9 @@ export enum RefreshTokenStatus {
   ROTATED = 'rotated',
   REVOKED = 'revoked',
 }
+
+export const BUDGET_MODES = ['percentage', 'fixed'] as const;
+
+export type BudgetMode = (typeof BUDGET_MODES)[number];
+
+export const BUDGET_MODE_DEFAULT: BudgetMode = 'percentage';

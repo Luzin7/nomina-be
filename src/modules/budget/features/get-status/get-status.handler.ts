@@ -1,4 +1,9 @@
+import { type BudgetMode } from '@constants/enums';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import {
+  resolveAllocationState,
+  type BudgetAllocationState,
+} from '@modules/budget/valueObjects/BudgetAllocationState';
 import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
@@ -20,6 +25,7 @@ export type BudgetStatusAllocation = {
   targetCents: number;
   spentCents: number;
   remainingCents: number;
+  percentageOfIncome: number;
   percentageUsed: number;
 };
 
@@ -34,12 +40,15 @@ export type BudgetStatusResponse =
   | { exists: false }
   | {
       exists: true;
-      monthlyIncome: number;
+      mode: BudgetMode;
+      monthlyIncomeCents: number;
       effectiveFrom: Date;
       allocations: BudgetStatusAllocation[];
       pillars: BudgetStatusPillar[];
       unallocatedSpent: number;
-      totalTarget: number;
+      totalTargetCents: number;
+      unallocatedIncomeCents: number;
+      allocationState: BudgetAllocationState;
       totalSpent: number;
       projection: MonthProjection | null;
     };
@@ -94,6 +103,10 @@ export class GetBudgetStatusService implements Service<
     const visibleAllocations = snapshot.allocations.filter(
       (allocation) => allocation.categoryName !== null,
     );
+    const totalTargetCents = snapshot.allocations.reduce(
+      (total, allocation) => total + allocation.targetCents,
+      0,
+    );
     const { spentByAllocation, unallocatedSpent } = attributeSpendToAllocations(
       expensesByCategory,
       categoryParentMap,
@@ -121,6 +134,7 @@ export class GetBudgetStatusService implements Service<
         targetCents: allocation.targetCents,
         spentCents,
         remainingCents: allocation.targetCents - spentCents,
+        percentageOfIncome: allocation.percentageOfIncome,
         percentageUsed:
           allocation.targetCents === 0
             ? 0
@@ -135,12 +149,21 @@ export class GetBudgetStatusService implements Service<
 
     return right({
       exists: true,
-      monthlyIncome: snapshot.monthlyIncome,
+      mode: snapshot.mode,
+      monthlyIncomeCents: snapshot.monthlyIncome,
       effectiveFrom: snapshot.effectiveFrom,
       allocations,
       pillars: [...pillars.values()],
       unallocatedSpent,
-      totalTarget: snapshot.monthlyIncome,
+      totalTargetCents,
+      unallocatedIncomeCents: Math.max(
+        0,
+        snapshot.monthlyIncome - totalTargetCents,
+      ),
+      allocationState: resolveAllocationState(
+        snapshot.monthlyIncome,
+        totalTargetCents,
+      ),
       totalSpent,
       projection: summary?.isRight() ? summary.value.projection : null,
     });

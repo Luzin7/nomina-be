@@ -4,12 +4,16 @@ import {
   ForbiddenBudgetCategoryError,
 } from '@modules/budget/errors';
 import { SaveBudgetSnapshotInput } from '@modules/budget/repositories/contracts/BudgetRepository';
-import { BudgetRepositoryImplementation } from './budget.repository';
+import {
+  BudgetRepositoryImplementation,
+  toBudgetSnapshot,
+} from './budget.repository';
 
 const INPUT: SaveBudgetSnapshotInput = {
   workspaceId: 'ws-1',
   effectiveFrom: new Date('2026-01-01T03:00:00.000Z'),
   monthlyIncome: 100_000,
+  mode: 'percentage',
   allocations: [
     {
       categoryId: 'cat-1',
@@ -73,5 +77,22 @@ describe('BudgetRepositoryImplementation.saveSnapshot', () => {
     await expect(repository.saveSnapshot(INPUT)).rejects.toBeInstanceOf(
       BudgetSnapshotConflictError,
     );
+  });
+});
+
+describe('toBudgetSnapshot', () => {
+  it('resolves a null mode as the default mode', () => {
+    const snapshot = toBudgetSnapshot(
+      {
+        id: 'budget-1',
+        workspaceId: INPUT.workspaceId,
+        effectiveFrom: INPUT.effectiveFrom,
+        monthlyIncome: INPUT.monthlyIncome,
+        mode: null,
+      },
+      [],
+    );
+
+    expect(snapshot.mode).toBe('percentage');
   });
 });

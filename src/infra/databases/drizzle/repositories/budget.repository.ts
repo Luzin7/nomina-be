@@ -1,6 +1,12 @@
-import { RecurrenceFrequency, TransactionType } from '@constants/enums';
+import {
+  BUDGET_MODE_DEFAULT,
+  type BudgetMode,
+  RecurrenceFrequency,
+  TransactionType,
+} from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import {
+  BudgetAllocationRecord,
   BudgetCategoryRef,
   BudgetRepository,
   BudgetSnapshot,
@@ -78,13 +84,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         asc(schema.budgetAllocations.categoryOrder),
       );
 
-    return {
-      id: snapshot.id,
-      workspaceId: snapshot.workspaceId,
-      effectiveFrom: snapshot.effectiveFrom,
-      monthlyIncome: snapshot.monthlyIncome,
-      allocations,
-    };
+    return toBudgetSnapshot(snapshot, allocations);
   }
 
   async findCategoriesByIds(
@@ -171,7 +171,10 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         const [saved] = existing
           ? await tx
               .update(schema.budgets)
-              .set({ monthlyIncome: input.monthlyIncome })
+              .set({
+                monthlyIncome: input.monthlyIncome,
+                mode: input.mode,
+              })
               .where(eq(schema.budgets.id, existing.id))
               .returning({
                 id: schema.budgets.id,
@@ -183,6 +186,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
                 workspaceId: input.workspaceId,
                 effectiveFrom: input.effectiveFrom,
                 monthlyIncome: input.monthlyIncome,
+                mode: input.mode,
               })
               .returning({
                 id: schema.budgets.id,
@@ -262,6 +266,24 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
       )
       .orderBy(asc(schema.categories.name));
   }
+}
+
+type BudgetSnapshotRow = Omit<BudgetSnapshot, 'mode' | 'allocations'> & {
+  mode: BudgetMode | null;
+};
+
+export function toBudgetSnapshot(
+  row: BudgetSnapshotRow,
+  allocations: BudgetAllocationRecord[],
+): BudgetSnapshot {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    effectiveFrom: row.effectiveFrom,
+    monthlyIncome: row.monthlyIncome,
+    mode: row.mode ?? BUDGET_MODE_DEFAULT,
+    allocations,
+  };
 }
 
 async function assertCategoriesBelongToWorkspace(

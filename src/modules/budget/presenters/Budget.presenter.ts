@@ -1,6 +1,7 @@
 import { toHTTPProjection } from '@modules/report/presenters/MonthProjection.presenter';
 import { BudgetStatusResponse } from '../features/get-status/get-status.handler';
 import { BudgetSetupResponse } from '../features/get-setup/get-setup.handler';
+import { SaveBudgetConfigResponse } from '../features/save-config/save-config.handler';
 
 export class BudgetPresenter {
   static toStatus(response: BudgetStatusResponse) {
@@ -8,7 +9,8 @@ export class BudgetPresenter {
 
     return {
       exists: true as const,
-      monthlyIncome: response.monthlyIncome,
+      mode: response.mode,
+      monthlyIncomeCents: response.monthlyIncomeCents,
       effectiveFrom: response.effectiveFrom,
       allocations: response.allocations.map((allocation) => ({
         categoryId: allocation.categoryId,
@@ -17,6 +19,7 @@ export class BudgetPresenter {
         targetCents: allocation.targetCents,
         spentCents: allocation.spentCents,
         remainingCents: allocation.remainingCents,
+        percentageOfIncome: allocation.percentageOfIncome,
         percentageUsed: allocation.percentageUsed,
       })),
       pillars: response.pillars.map((pillar) => ({
@@ -26,7 +29,9 @@ export class BudgetPresenter {
         percentage: pillar.percentage,
       })),
       unallocatedSpent: response.unallocatedSpent,
-      totalTarget: response.totalTarget,
+      totalTargetCents: response.totalTargetCents,
+      unallocatedIncomeCents: response.unallocatedIncomeCents,
+      allocationState: response.allocationState,
       totalSpent: response.totalSpent,
       projection:
         response.projection === null
@@ -35,12 +40,21 @@ export class BudgetPresenter {
     };
   }
 
-  static toConfig(response: { id: string; effectiveFrom: Date }) {
-    return { id: response.id, effectiveFrom: response.effectiveFrom };
+  static toConfig(response: SaveBudgetConfigResponse) {
+    return {
+      id: response.id,
+      effectiveFrom: response.effectiveFrom,
+      mode: response.mode,
+      monthlyIncomeCents: response.monthlyIncomeCents,
+      totalTargetCents: response.totalTargetCents,
+      unallocatedIncomeCents: response.unallocatedIncomeCents,
+      allocationState: response.allocationState,
+    };
   }
 
   static toSetup(response: BudgetSetupResponse) {
     return {
+      mode: response.mode,
       suggestedIncome: response.suggestedIncome,
       allocations: response.allocations.map((allocation) => ({
         categoryId: allocation.categoryId,

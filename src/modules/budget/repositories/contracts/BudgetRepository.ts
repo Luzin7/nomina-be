@@ -1,3 +1,5 @@
+import { type BudgetMode } from '@constants/enums';
+
 export type BudgetCategoryRef = {
   id: string;
   name: string;
@@ -20,6 +22,7 @@ export type BudgetSnapshot = {
   workspaceId: string;
   effectiveFrom: Date;
   monthlyIncome: number;
+  mode: BudgetMode;
   allocations: BudgetAllocationRecord[];
 };
 
@@ -32,6 +35,7 @@ export type SaveBudgetSnapshotInput = {
   workspaceId: string;
   effectiveFrom: Date;
   monthlyIncome: number;
+  mode: BudgetMode;
   allocations: SaveBudgetAllocationInput[];
 };
 

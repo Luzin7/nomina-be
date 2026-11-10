@@ -27,7 +27,8 @@ const PROJECTION: MonthProjection = {
 function makeStatus(projection: MonthProjection | null): BudgetStatusResponse {
   return {
     exists: true,
-    monthlyIncome: 850_000,
+    mode: 'percentage',
+    monthlyIncomeCents: 850_000,
     effectiveFrom: new Date('2026-11-01T03:00:00.000Z'),
     allocations: [
       {
@@ -37,6 +38,7 @@ function makeStatus(projection: MonthProjection | null): BudgetStatusResponse {
         targetCents: 500_000,
         spentCents: 200_000,
         remainingCents: 300_000,
+        percentageOfIncome: 59,
         percentageUsed: 40,
       },
     ],
@@ -49,7 +51,9 @@ function makeStatus(projection: MonthProjection | null): BudgetStatusResponse {
       },
     ],
     unallocatedSpent: 0,
-    totalTarget: 850_000,
+    totalTargetCents: 850_000,
+    unallocatedIncomeCents: 0,
+    allocationState: 'balanced',
     totalSpent: 200_000,
     projection,
   };
@@ -82,5 +86,43 @@ describe('BudgetPresenter', () => {
 
   it('keeps a null projection null', () => {
     expect(BudgetPresenter.toStatus(makeStatus(null)).projection).toBeNull();
+  });
+
+  it('exposes the declared income and the plan as separate fields', () => {
+    const status = BudgetPresenter.toStatus(makeStatus(null));
+
+    expect(status).toMatchObject({
+      mode: 'percentage',
+      monthlyIncomeCents: 850_000,
+      totalTargetCents: 850_000,
+      unallocatedIncomeCents: 0,
+      allocationState: 'balanced',
+    });
+    if (!status.exists) return;
+    expect(status.allocations[0].percentageOfIncome).toBe(59);
+    expect('monthlyIncome' in status).toBe(false);
+    expect('totalTarget' in status).toBe(false);
+  });
+
+  it('returns the saved config without echoing the allocations', () => {
+    const config = BudgetPresenter.toConfig({
+      id: 'budget-1',
+      effectiveFrom: new Date('2026-12-01T03:00:00.000Z'),
+      mode: 'fixed',
+      monthlyIncomeCents: 100_000,
+      totalTargetCents: 80_500,
+      unallocatedIncomeCents: 19_500,
+      allocationState: 'under',
+    });
+
+    expect(config).toEqual({
+      id: 'budget-1',
+      effectiveFrom: new Date('2026-12-01T03:00:00.000Z'),
+      mode: 'fixed',
+      monthlyIncomeCents: 100_000,
+      totalTargetCents: 80_500,
+      unallocatedIncomeCents: 19_500,
+      allocationState: 'under',
+    });
   });
 });
