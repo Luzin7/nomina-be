@@ -11,6 +11,7 @@ import {
   BudgetRepository,
   BudgetSnapshot,
   PresetCategory,
+  ResolvedBudgetSnapshot,
   SavedBudgetSnapshot,
   SaveBudgetSnapshotInput,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
@@ -85,6 +86,54 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
       );
 
     return toBudgetSnapshot(snapshot, allocations);
+  }
+
+  async resolveSnapshots(
+    workspaceId: string,
+    monthStarts: Date[],
+  ): Promise<ResolvedBudgetSnapshot[]> {
+    if (monthStarts.length === 0) return [];
+
+    const latestMonthStart = monthStarts.reduce(
+      (latest, monthStart) =>
+        monthStart.getTime() > latest.getTime() ? monthStart : latest,
+      monthStarts[0],
+    );
+    const rows = await this.drizzle.db
+      .select({
+        effectiveFrom: schema.budgets.effectiveFrom,
+        monthlyIncome: schema.budgets.monthlyIncome,
+        mode: schema.budgets.mode,
+        targetCents: sql<number>`COALESCE((
+          SELECT SUM(${schema.budgetAllocations.targetCents})
+          FROM ${schema.budgetAllocations}
+          WHERE ${schema.budgetAllocations.budgetId} = ${schema.budgets.id}
+        ), 0)`.mapWith(Number),
+      })
+      .from(schema.budgets)
+      .where(
+        and(
+          eq(schema.budgets.workspaceId, workspaceId),
+          lte(schema.budgets.effectiveFrom, latestMonthStart),
+        ),
+      )
+      .orderBy(desc(schema.budgets.effectiveFrom));
+
+    return monthStarts.map((monthStart) => {
+      const snapshot = pickApplicableSnapshot(rows, monthStart);
+
+      return {
+        monthStart,
+        snapshot:
+          snapshot === null
+            ? null
+            : {
+                monthlyIncomeCents: snapshot.monthlyIncome,
+                targetCents: snapshot.targetCents,
+                mode: snapshot.mode ?? BUDGET_MODE_DEFAULT,
+              },
+      };
+    });
   }
 
   async findCategoriesByIds(

@@ -44,6 +44,17 @@ export type SavedBudgetSnapshot = {
   effectiveFrom: Date;
 };
 
+export type BudgetSnapshotTarget = {
+  monthlyIncomeCents: number;
+  targetCents: number;
+  mode: BudgetMode;
+};
+
+export type ResolvedBudgetSnapshot = {
+  monthStart: Date;
+  snapshot: BudgetSnapshotTarget | null;
+};
+
 export type PresetCategory = {
   id: string;
   name: string;
@@ -54,6 +65,11 @@ export abstract class BudgetRepository {
     workspaceId: string,
     monthStart: Date,
   ): Promise<BudgetSnapshot | null>;
+
+  abstract resolveSnapshots(
+    workspaceId: string,
+    monthStarts: Date[],
+  ): Promise<ResolvedBudgetSnapshot[]>;
 
   abstract findCategoriesByIds(
     categoryIds: string[],

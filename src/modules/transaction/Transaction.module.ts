@@ -21,6 +21,8 @@ import { ListRecurringTransactionsController } from './features/list-recurring-t
 import { ListRecurringTransactionsService } from './features/list-recurring-transactions/list-recurring-transactions.service';
 import { ListTransactionController } from './features/list-transaction/list-transaction.controller';
 import { ListTransactionsService } from './features/list-transaction/list-transaction.service';
+import { RecurringSummaryController } from './features/recurring-summary/recurring-summary.controller';
+import { RecurringSummaryService } from './features/recurring-summary/recurring-summary.service';
 import { SetTransactionStatusController } from './features/set-transaction-status/set-transaction-status.controller';
 import { SetTransactionStatusService } from './features/set-transaction-status/set-transaction-status.service';
 import { AcceptRecurringSuggestionController } from './features/recurring-suggestions/accept-recurring-suggestion.controller';
@@ -62,6 +64,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     SettleCardInstallmentsJobController,
     UpdateRecurringTransactionController,
     DeleteRecurringTransactionController,
+    RecurringSummaryController,
     FindRecurringTransactionController,
     ToggleActiveRecurringTransactionController,
     ListRecurringSuggestionsController,
@@ -83,6 +86,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     DeleteRecurringTransactionService,
     ListRecurringTransactionsService,
     FindRecurringTransactionService,
+    RecurringSummaryService,
     ToggleActiveRecurringTransactionService,
     ListRecurringSuggestionsService,
     AcceptRecurringSuggestionService,

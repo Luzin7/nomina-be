@@ -4,6 +4,8 @@ import { RecurringTransaction } from '@modules/transaction/entities/RecurringTra
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
   FindManyRecurringByWorkspaceQuery,
+  FindSummaryRulesQuery,
+  RecurringSummaryRule,
   RecurringTransactionRepository,
 } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { Injectable, Logger } from '@nestjs/common';
@@ -15,17 +17,21 @@ import {
   eq,
   gt,
   gte,
+  inArray,
   isNotNull,
   isNull,
   lt,
   lte,
   or,
+  sql,
 } from 'drizzle-orm';
 import { RecurringTransactionMapper } from '../mappers/recurring-transaction.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
+import { installmentPlanExhaustedAt } from './installment-position';
 
 const MIN_INSTALLMENTS_FOR_PLAN = 2;
+const RECURRING_TYPES = ['INCOME', 'EXPENSE'];
 
 @Injectable()
 export class RecurringTransactionRepositoryImplementation implements RecurringTransactionRepository {
@@ -219,5 +225,76 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
 
       return insertedCount;
     });
+  }
+
+  async findSummaryRules({
+    workspaceId,
+    todayStart,
+    timezone,
+  }: FindSummaryRulesQuery): Promise<RecurringSummaryRule[]> {
+    const rule = schema.recurringTransactions;
+    const today = sql`${todayStart.toISOString()}::timestamptz`;
+
+    const rows = await this.drizzle.db
+      .select({
+        id: rule.id,
+        title: rule.title,
+        type: rule.type,
+        amount: rule.amount,
+        frequency: rule.frequency,
+        interval: rule.interval,
+        installmentCount: rule.installmentCount,
+        startDate: rule.startDate,
+        endDate: rule.endDate,
+        active: rule.active,
+        exhausted: sql<boolean>`(
+          (${rule.endDate} IS NOT NULL AND ${rule.endDate} < ${today})
+          OR (
+            ${rule.endDate} IS NULL
+            AND ${rule.installmentCount} IS NOT NULL
+            AND ${installmentPlanExhaustedAt(today, timezone)}
+          )
+        )`,
+      })
+      .from(rule)
+      .where(
+        and(
+          eq(rule.workspaceId, workspaceId),
+          inArray(rule.type, RECURRING_TYPES),
+        ),
+      );
+
+    return rows.map((row) => ({
+      ...row,
+      type: row.type as RecurringSummaryRule['type'],
+      frequency: row.frequency as RecurringSummaryRule['frequency'],
+    }));
+  }
+
+  async findCompletedRecurringExpense(
+    workspaceId: string,
+    start: Date,
+    end: Date,
+  ): Promise<number> {
+    const [row] = await this.drizzle.db
+      .select({
+        total:
+          sql<number>`COALESCE(SUM(${schema.transactions.amount}), 0)`.mapWith(
+            Number,
+          ),
+      })
+      .from(schema.transactions)
+      .where(
+        and(
+          eq(schema.transactions.workspaceId, workspaceId),
+          eq(schema.transactions.status, 'COMPLETED'),
+          eq(schema.transactions.type, 'EXPENSE'),
+          isNotNull(schema.transactions.recurringId),
+          gte(schema.transactions.date, start),
+          lte(schema.transactions.date, end),
+        ),
+      );
+
+    return row?.total ?? 0;
   }
 }
