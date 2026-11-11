@@ -1,8 +1,12 @@
+import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
 import { BudgetPresenter } from '@modules/budget/presenters/Budget.presenter';
 import {
   BudgetSnapshot,
   BudgetRepository,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
+import { SaveCardCycleBudgetService } from '@modules/card-cycle/features/save-card-cycle-budget/save-card-cycle-budget.handler';
+import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { MonthSummary } from '@modules/report/valueObjects/MonthSummary';
@@ -663,5 +667,69 @@ describe('GetBudgetStatusService', () => {
     expect(result.value.allocations).toHaveLength(2);
     expect(result.value.totalTargetCents).toBe(125_000);
     expect(result.value.allocationState).toBe('over');
+  });
+
+  it('keeps every budget figure unchanged after a card cycle limit is saved', async () => {
+    repository.resolveSnapshot.mockResolvedValue(makeSnapshot());
+    repository.findCompletedExpenseByCategory.mockResolvedValue({
+      'cat-1': 10_000,
+    });
+
+    const before = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    const saveCardCycleBudget = new SaveCardCycleBudgetService(
+      {
+        findById: jest.fn().mockResolvedValue(makeCreditCard()),
+      } as unknown as jest.Mocked<AccountRepository>,
+      {
+        materializePeriod: jest.fn(),
+        findPeriod: jest.fn(),
+        findApplicableBudget: jest.fn(),
+        saveBudget: jest.fn().mockResolvedValue({
+          id: 'card-cycle-budget-1',
+          workspaceId: 'ws-1',
+          accountId: 'acc-1',
+          effectiveFrom: '2026-12-15',
+          limitCents: 250_000,
+        }),
+        listPeriods: jest.fn(),
+        sumCycleSpend: jest.fn(),
+      } as unknown as jest.Mocked<CardCycleRepository>,
+      dateProvider,
+    );
+    const saved = await saveCardCycleBudget.execute({
+      workspaceId: 'ws-1',
+      accountId: 'acc-1',
+      effectiveFrom: '2026-12-15',
+      limitCents: 250_000,
+    });
+
+    const after = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(saved.isRight()).toBe(true);
+    expect(after.isRight() && after.value).toMatchObject({
+      exists: true,
+      totalTargetCents: 100_000,
+      totalSpent: 10_000,
+      unallocatedSpent: 0,
+      allocationState: 'balanced',
+      allocations: [
+        { categoryId: 'cat-1', spentCents: 10_000, remainingCents: 50_000 },
+        { categoryId: 'cat-2', spentCents: 0, remainingCents: 40_000 },
+      ],
+    });
+    expect(after.isRight() && after.value).toEqual(
+      before.isRight() && before.value,
+    );
   });
 });

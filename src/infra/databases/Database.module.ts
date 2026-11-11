@@ -1,5 +1,6 @@
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
@@ -23,6 +24,7 @@ import { DrizzleService } from './drizzle/drizzle.service';
 import { AccountRepositoryImplementation } from './drizzle/repositories/account.repository';
 import { AuthSessionRepositoryImplementation } from './drizzle/repositories/auth-session.repository';
 import { BudgetRepositoryImplementation } from './drizzle/repositories/budget.repository';
+import { CardCycleRepositoryImplementation } from './drizzle/repositories/card-cycle.repository';
 import { CategoryRepositoryImplementation } from './drizzle/repositories/category.repository';
 import { MonthProjectionRepositoryImplementation } from './drizzle/repositories/month-projection.repository';
 import { RecurringSuggestionRepositoryImplementation } from './drizzle/repositories/recurring-suggestion.repository';
@@ -99,6 +101,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: SubscriptionRepositoryImplementation,
     },
     {
+      provide: CardCycleRepository,
+      useClass: CardCycleRepositoryImplementation,
+    },
+    {
       provide: ReportRepository,
       useClass: ReportRepositoryImplementation,
     },
@@ -118,6 +124,7 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     AccountRepository,
     CategoryRepository,
     BudgetRepository,
+    CardCycleRepository,
     SubscriptionRepository,
     ReportRepository,
   ],
