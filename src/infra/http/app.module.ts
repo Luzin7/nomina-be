@@ -2,6 +2,7 @@ import { AccountModule } from '@modules/account/Account.module';
 import { BudgetModule } from '@modules/budget/Budget.module';
 import { CardCycleModule } from '@modules/card-cycle/CardCycle.module';
 import { CategoryModule } from '@modules/category/Category.module';
+import { GoalModule } from '@modules/goal/Goal.module';
 import { ReportModule } from '@modules/report/Report.module';
 import { SubscriptionModule } from '@modules/subscription/Subscription.module';
 import { TransactionModule } from '@modules/transaction/Transaction.module';
@@ -48,6 +49,7 @@ import { buildRateLimitOptions } from './throttling/rate-limit.options';
     BudgetModule,
     CardCycleModule,
     SubscriptionModule,
+    GoalModule,
   ],
   providers: [
     {

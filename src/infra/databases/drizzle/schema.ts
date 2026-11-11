@@ -9,6 +9,7 @@ import {
   AnyPgColumn,
   bigint,
   boolean,
+  check,
   index,
   integer,
   pgTable,
@@ -495,6 +496,65 @@ export const balanceMovements = pgTable(
     uniqueIndex('ux_balance_movements_opening')
       .on(table.accountId)
       .where(sql`${table.cause} = ${sql.raw(OPENING_CAUSE_LITERAL)}`),
+  ],
+);
+
+// --------------------------------------------------------
+// OBJETIVOS
+// --------------------------------------------------------
+
+export const goals = pgTable(
+  'goals',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    targetCents: bigint('target_cents', { mode: 'number' })
+      .default(0)
+      .notNull(),
+    currentCents: bigint('current_cents', { mode: 'number' })
+      .default(0)
+      .notNull(),
+    monthlyAporteCents: bigint('monthly_aporte_cents', { mode: 'number' })
+      .default(0)
+      .notNull(),
+    linkedAccountId: text('linked_account_id').references(() => accounts.id, {
+      onDelete: 'set null',
+    }),
+    categoryId: text('category_id').references(() => categories.id, {
+      onDelete: 'set null',
+    }),
+    isEmergency: boolean('is_emergency').default(false).notNull(),
+    isSystem: boolean('is_system').default(false).notNull(),
+    dismissedAt: timestamp('dismissed_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_goal_ws_emergency')
+      .on(table.workspaceId)
+      .where(sql`${table.isEmergency}`),
+    index('idx_goal_ws').on(table.workspaceId),
+    check('chk_goal_target_cents_non_negative', sql`${table.targetCents} >= 0`),
+    check(
+      'chk_goal_current_cents_non_negative',
+      sql`${table.currentCents} >= 0`,
+    ),
+    check(
+      'chk_goal_monthly_aporte_cents_non_negative',
+      sql`${table.monthlyAporteCents} >= 0`,
+    ),
   ],
 );
 
