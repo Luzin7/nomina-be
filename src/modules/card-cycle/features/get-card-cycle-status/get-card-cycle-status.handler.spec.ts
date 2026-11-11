@@ -11,17 +11,13 @@ import {
   CardCycleBudgetRecord,
   CardCyclePeriodRecord,
   CardCycleRepository,
+  MaterializeCardCyclePeriodInput,
 } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { GetCardCycleStatusService } from './get-card-cycle-status.handler';
 
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const SAO_PAULO = 'America/Sao_Paulo';
-const HIDDEN_CATEGORY_CHARGE = 60_000;
-const OUTSIDE_BUDGET_MONTH_CHARGE = 40_000;
-const CLOSING_DAY_CHARGE = 25_000;
-const CYCLE_SPEND =
-  HIDDEN_CATEGORY_CHARGE + OUTSIDE_BUDGET_MONTH_CHARGE + CLOSING_DAY_CHARGE;
 
 type LedgerRow = {
   accountId: string;
@@ -30,16 +26,6 @@ type LedgerRow = {
   date: Date;
   type: TransactionType;
   status: TransactionStatus;
-};
-
-type CalendarBudgetConditions = {
-  hiddenCategoryIds: string[];
-  monthWindow: { start: string; end: string };
-  plan: {
-    monthlyIncomeCents: number;
-    totalTargetCents: number;
-    allocationState: string;
-  };
 };
 
 function makePeriod(
@@ -59,13 +45,17 @@ function makePeriod(
   };
 }
 
-function makeBudget(limitCents: number): CardCycleBudgetRecord {
+function makeBudget(
+  limitCents: number,
+  overrides: Partial<CardCycleBudgetRecord> = {},
+): CardCycleBudgetRecord {
   return {
     id: 'budget-1',
     workspaceId: 'ws-1',
     accountId: 'acc-1',
     effectiveFrom: '2026-12-28',
     limitCents,
+    ...overrides,
   };
 }
 
@@ -302,122 +292,15 @@ describe('GetCardCycleStatusService', () => {
     expect(cardCycleRepository.materializePeriod).not.toHaveBeenCalled();
   });
 
-  it('keeps cycle spend and available invariant under calendar budget conditions', async () => {
-    const budgetConditions: CalendarBudgetConditions = {
-      hiddenCategoryIds: ['cat-hidden'],
-      monthWindow: { start: '2026-11-01', end: '2026-11-30' },
-      plan: {
-        monthlyIncomeCents: 500_000,
-        totalTargetCents: 620_000,
-        allocationState: 'over',
-      },
-    };
-    const ledger: LedgerRow[] = [
-      {
-        accountId: 'acc-1',
-        categoryId: budgetConditions.hiddenCategoryIds[0],
-        amount: HIDDEN_CATEGORY_CHARGE,
-        date: saoPauloNoonOf('2026-11-25'),
-        type: TransactionType.EXPENSE,
-        status: TransactionStatus.COMPLETED,
-      },
-      {
-        accountId: 'acc-1',
-        categoryId: 'cat-1',
-        amount: OUTSIDE_BUDGET_MONTH_CHARGE,
-        date: saoPauloNoonOf('2026-12-01'),
-        type: TransactionType.EXPENSE,
-        status: TransactionStatus.COMPLETED,
-      },
-      {
-        accountId: 'acc-1',
-        categoryId: 'cat-1',
-        amount: CLOSING_DAY_CHARGE,
-        date: new Date('2026-12-22T02:50:00.000Z'),
-        type: TransactionType.EXPENSE,
-        status: TransactionStatus.COMPLETED,
-      },
-      {
-        accountId: 'acc-1',
-        categoryId: 'cat-1',
-        amount: 15_000,
-        date: saoPauloNoonOf('2026-11-28'),
-        type: TransactionType.EXPENSE,
-        status: TransactionStatus.PENDING,
-      },
-      {
-        accountId: 'acc-1',
-        categoryId: 'cat-1',
-        amount: 25_000,
-        date: saoPauloNoonOf('2026-11-28'),
-        type: TransactionType.TRANSFER,
-        status: TransactionStatus.COMPLETED,
-      },
-      {
-        accountId: 'acc-1',
-        categoryId: 'cat-1',
-        amount: 30_000,
-        date: saoPauloNoonOf('2026-12-23'),
-        type: TransactionType.EXPENSE,
-        status: TransactionStatus.COMPLETED,
-      },
-      {
-        accountId: 'acc-2',
-        categoryId: 'cat-1',
-        amount: 10_000,
-        date: saoPauloNoonOf('2026-11-28'),
-        type: TransactionType.EXPENSE,
-        status: TransactionStatus.COMPLETED,
-      },
-    ];
-    const withoutLimit = makeStatusService(
-      makeLedgerRepository(ledger, []),
-      dateProvider,
-    );
-    const withLimit = makeStatusService(
-      makeLedgerRepository(ledger, [makeBudget(250_000)]),
-      dateProvider,
-    );
-
-    const noLimit = await withoutLimit.execute({
-      workspaceId: 'ws-1',
-      accountId: 'acc-1',
-      dueDate: '2026-12-28',
-    });
-    const limited = await withLimit.execute({
-      workspaceId: 'ws-1',
-      accountId: 'acc-1',
-      dueDate: '2026-12-28',
-    });
-
-    expect(budgetConditions.hiddenCategoryIds).toContain(ledger[0].categoryId);
-    expect(
-      localDateOf(ledger[1].date, SAO_PAULO) > budgetConditions.monthWindow.end,
-    ).toBe(true);
-    expect(budgetConditions.plan.totalTargetCents).toBeGreaterThan(
-      budgetConditions.plan.monthlyIncomeCents,
-    );
-    expect(noLimit.isRight() && noLimit.value).toMatchObject({
-      cycleSpendCents: CYCLE_SPEND,
-      limitCents: null,
-      availableCents: null,
-    });
-    expect(limited.isRight() && limited.value).toMatchObject({
-      cycleSpendCents: CYCLE_SPEND,
-      limitCents: 250_000,
-      availableCents: 125_000,
-    });
-  });
-
-  it('serves the window recomputed from the changed due day, not the stored one', async () => {
-    const stalePeriod = makePeriod({
-      id: 'period-old',
+  it('serves the stored bounds and the saved limit of a frozen due date after the due day changes', async () => {
+    const frozenPeriod = makePeriod({
+      id: 'period-frozen',
       dueDate: '2026-11-28',
       periodStart: '2026-10-22',
       periodEnd: '2026-11-21',
       dueDay: 28,
     });
-    const storedPeriods: CardCyclePeriodRecord[] = [stalePeriod];
+    const storedPeriods: CardCyclePeriodRecord[] = [frozenPeriod];
     const ledger: LedgerRow[] = [
       {
         accountId: 'acc-1',
@@ -443,53 +326,39 @@ describe('GetCardCycleStatusService', () => {
         type: TransactionType.EXPENSE,
         status: TransactionStatus.COMPLETED,
       },
-      {
-        accountId: 'acc-1',
-        categoryId: 'cat-1',
-        amount: 15_000,
-        date: saoPauloNoonOf('2026-12-03'),
-        type: TransactionType.EXPENSE,
-        status: TransactionStatus.COMPLETED,
-      },
     ];
-    const cardCycleRepository = makeLedgerRepository(ledger, []);
-    cardCycleRepository.materializePeriod = async (input) => {
-      const stored = storedPeriods.find(
-        (period) => period.dueDate === input.window.dueDate,
-      );
-      if (stored) return stored;
-
-      const created = makePeriod({ id: 'period-new', ...input.window });
-      storedPeriods.push(created);
-      return created;
-    };
-    const changedDueDay = makeStatusService(
-      cardCycleRepository,
-      dateProvider,
-      { dueDay: 10 },
+    const cardCycleRepository = makeLedgerRepository(ledger, [
+      makeBudget(200_000, { effectiveFrom: '2026-11-28' }),
+    ]);
+    cardCycleRepository.findPeriod = async (
+      _workspaceId,
+      _accountId,
+      dueDate,
+    ) => storedPeriods.find((period) => period.dueDate === dueDate) ?? null;
+    cardCycleRepository.materializePeriod = jest.fn(
+      async (input: MaterializeCardCyclePeriodInput) =>
+        makePeriod({ id: 'period-new', ...input.window }),
     );
+    const changedDueDay = makeStatusService(cardCycleRepository, dateProvider, {
+      dueDay: 10,
+    });
 
     const result = await changedDueDay.execute({
       workspaceId: 'ws-1',
       accountId: 'acc-1',
+      dueDate: '2026-11-28',
     });
 
     expect(result.isRight()).toBe(true);
     if (!result.isRight()) return;
     expect(result.value).toMatchObject({
-      dueDate: '2026-12-10',
-      periodStart: '2026-11-04',
-      periodEnd: '2026-12-03',
-      cycleSpendCents: 80_000,
-      availableCents: null,
+      dueDate: '2026-11-28',
+      periodStart: '2026-10-22',
+      periodEnd: '2026-11-21',
+      limitCents: 200_000,
+      cycleSpendCents: 70_000,
+      availableCents: 130_000,
     });
-    expect(storedPeriods).toHaveLength(2);
-    expect(storedPeriods[0]).toEqual(stalePeriod);
-    expect(storedPeriods[1]).toMatchObject({
-      dueDate: '2026-12-10',
-      periodStart: '2026-11-04',
-      periodEnd: '2026-12-03',
-      dueDay: 10,
-    });
+    expect(cardCycleRepository.materializePeriod).not.toHaveBeenCalled();
   });
 });

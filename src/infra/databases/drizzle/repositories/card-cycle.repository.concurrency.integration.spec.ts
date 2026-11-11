@@ -122,11 +122,12 @@ describe('CardCycleRepositoryImplementation against a real postgres', () => {
     date: Date,
     type: TransactionType,
     status: string,
+    transactionCategoryId: string = categoryId,
   ): Promise<void> {
     await db.insert(schema.transactions).values({
       workspaceId,
       accountId,
-      categoryId,
+      categoryId: transactionCategoryId,
       title: 'Compra',
       amount,
       date,
@@ -223,6 +224,36 @@ describe('CardCycleRepositoryImplementation against a real postgres', () => {
       expect(next.periodStart).toBe('2026-12-04');
       expect(next.periodEnd).toBe('2027-01-03');
       expect(await periodCount()).toBe(2);
+    });
+
+    it('keeps the stored bounds when a conflicting window targets the same due date', async () => {
+      const stored = await repository.materializePeriod(
+        materializeInput(
+          CardCycleWindow.create({
+            dueDate: '2027-01-28',
+            dueDay: 28,
+            closingDaysBeforeDue: 7,
+          }),
+        ),
+      );
+
+      const conflicting = await repository.materializePeriod({
+        workspaceId,
+        accountId,
+        window: {
+          dueDate: '2027-01-28',
+          periodStart: '2026-12-04',
+          periodEnd: '2027-01-03',
+          dueDay: 10,
+          closingDaysBeforeDue: 7,
+        },
+      });
+
+      expect(conflicting).toEqual(stored);
+      expect(conflicting.periodStart).toBe('2026-12-22');
+      expect(conflicting.periodEnd).toBe('2027-01-21');
+      expect(conflicting.dueDay).toBe(28);
+      expect(await periodCount()).toBe(1);
     });
   });
 
@@ -371,6 +402,42 @@ describe('CardCycleRepositoryImplementation against a real postgres', () => {
       );
 
       expect(await spend()).toBe(30_000);
+    });
+
+    it('keeps the cycle figure unchanged by a hidden category and a saved limit', async () => {
+      const hiddenCategoryId = randomUUID();
+      await db.insert(schema.categories).values({
+        id: hiddenCategoryId,
+        workspaceId,
+        name: 'Presente',
+        type: TransactionType.EXPENSE,
+        isHidden: true,
+      });
+      await insertTransaction(
+        10_000,
+        new Date('2026-12-01T15:00:00.000Z'),
+        TransactionType.EXPENSE,
+        'COMPLETED',
+      );
+      await insertTransaction(
+        20_000,
+        new Date('2026-12-10T15:00:00.000Z'),
+        TransactionType.EXPENSE,
+        'COMPLETED',
+        hiddenCategoryId,
+      );
+
+      const beforeLimit = await spend();
+
+      await repository.saveBudget({
+        workspaceId,
+        accountId,
+        effectiveFrom: '2026-12-28',
+        limitCents: 500_000,
+      });
+
+      expect(beforeLimit).toBe(30_000);
+      expect(await spend()).toBe(beforeLimit);
     });
 
     it('returns zero when nothing was spent in the window', async () => {

@@ -1,5 +1,6 @@
 import { TransactionStatus, TransactionType } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { MissingCardCyclePeriodError } from '../errors/MissingCardCyclePeriodError';
 import { CardCycleBudgetExistsError } from '@modules/card-cycle/errors';
 import {
   CardCycleBudgetRecord,
@@ -51,9 +52,11 @@ export class CardCycleRepositoryImplementation implements CardCycleRepository {
 
     if (existing) return existing;
 
-    throw new Error(
-      'Dados inconsistentes: período do ciclo ausente após a materialização.',
-    );
+    throw new MissingCardCyclePeriodError({
+      workspaceId: input.workspaceId,
+      accountId: input.accountId,
+      dueDate: input.window.dueDate,
+    });
   }
 
   async findPeriod(

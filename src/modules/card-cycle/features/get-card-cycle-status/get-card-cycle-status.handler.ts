@@ -9,7 +9,10 @@ import {
   PlainDate,
 } from '@modules/account/valueObjects/InvoiceCalendar';
 import { CardCycleNotConfiguredError } from '@modules/card-cycle/errors';
-import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
+import {
+  CardCyclePeriodRecord,
+  CardCycleRepository,
+} from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { CardCycleWindow } from '@modules/card-cycle/valueObjects/CardCycleWindow';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
@@ -40,6 +43,13 @@ type ResolveWindowInput = {
   timezone: string;
 };
 
+type ResolvePeriodInput = {
+  workspaceId: string;
+  account: CreditCard;
+  dueDay: number;
+  dueDate: PlainDate | undefined;
+};
+
 @Injectable()
 export class GetCardCycleStatusService implements Service<
   Request,
@@ -67,16 +77,11 @@ export class GetCardCycleStatusService implements Service<
     const dueDay: number | null = account.dueDay;
     if (dueDay === null) return left(new CardCycleNotConfiguredError());
 
-    const window = this.resolveWindow({
-      dueDate: request.dueDate,
-      dueDay,
-      closingDaysBeforeDue: account.closingDaysBeforeDue,
-      timezone: account.timezone,
-    });
-    const period = await this.cardCycleRepository.materializePeriod({
+    const period = await this.resolvePeriod({
       workspaceId: request.workspaceId,
-      accountId: account.id,
-      window: window.toRecord(),
+      account,
+      dueDay,
+      dueDate: request.dueDate,
     });
     const [budget, cycleSpendCents] = await Promise.all([
       this.cardCycleRepository.findApplicableBudget(
@@ -103,6 +108,36 @@ export class GetCardCycleStatusService implements Service<
       cycleSpendCents,
       availableCents: limitCents === null ? null : limitCents - cycleSpendCents,
       materializedAt: period.materializedAt,
+    });
+  }
+
+  private async resolvePeriod({
+    workspaceId,
+    account,
+    dueDay,
+    dueDate,
+  }: ResolvePeriodInput): Promise<CardCyclePeriodRecord> {
+    if (dueDate) {
+      const stored = await this.cardCycleRepository.findPeriod(
+        workspaceId,
+        account.id,
+        dueDate,
+      );
+
+      if (stored) return stored;
+    }
+
+    const window = this.resolveWindow({
+      dueDate,
+      dueDay,
+      closingDaysBeforeDue: account.closingDaysBeforeDue,
+      timezone: account.timezone,
+    });
+
+    return this.cardCycleRepository.materializePeriod({
+      workspaceId,
+      accountId: account.id,
+      window: window.toRecord(),
     });
   }
 
