@@ -127,6 +127,13 @@
       "when": 1794405944782,
       "tag": "0032_loud_random",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794422740824,
+      "tag": "0033_cooing_vector",
+      "breakpoints": true
     }
   ]
 }

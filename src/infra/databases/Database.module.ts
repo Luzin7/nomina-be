@@ -2,6 +2,7 @@ import { AccountRepository } from '@modules/account/repositories/contracts/Accou
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
 import { SubscriptionRepository } from '@modules/subscription/repositories/contracts/SubscriptionRepository';
@@ -26,6 +27,7 @@ import { AuthSessionRepositoryImplementation } from './drizzle/repositories/auth
 import { BudgetRepositoryImplementation } from './drizzle/repositories/budget.repository';
 import { CardCycleRepositoryImplementation } from './drizzle/repositories/card-cycle.repository';
 import { CategoryRepositoryImplementation } from './drizzle/repositories/category.repository';
+import { GoalRepositoryImplementation } from './drizzle/repositories/goal.repository';
 import { MonthProjectionRepositoryImplementation } from './drizzle/repositories/month-projection.repository';
 import { RecurringSuggestionRepositoryImplementation } from './drizzle/repositories/recurring-suggestion.repository';
 import { RecurringTransactionRepositoryImplementation } from './drizzle/repositories/recurring-transaction.repository';
@@ -93,6 +95,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: CategoryRepositoryImplementation,
     },
     {
+      provide: GoalRepository,
+      useClass: GoalRepositoryImplementation,
+    },
+    {
       provide: BudgetRepository,
       useClass: BudgetRepositoryImplementation,
     },
@@ -123,6 +129,7 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     RecurringSuggestionRepository,
     AccountRepository,
     CategoryRepository,
+    GoalRepository,
     BudgetRepository,
     CardCycleRepository,
     SubscriptionRepository,
