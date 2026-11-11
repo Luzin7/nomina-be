@@ -57,6 +57,7 @@ const makeLedgerMonth = (
   overrides: Partial<LedgerMonth> = {},
 ): LedgerMonth => ({
   key,
+  totalIncome: 0,
   totalExpense: 0,
   pending: { totalIncome: 0, totalExpense: 0 },
   plainExpenses: [],

@@ -71,6 +71,8 @@ describe('UpdateRecurringTransactionService', () => {
       createGeneratedTransactions: jest
         .fn()
         .mockImplementation(async (transactions) => transactions.length),
+      findSummaryRules: jest.fn(),
+      findCompletedRecurringExpense: jest.fn(),
     } as jest.Mocked<RecurringTransactionRepository>;
 
     accountRepository = {

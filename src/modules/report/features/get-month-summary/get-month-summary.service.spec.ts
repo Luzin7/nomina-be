@@ -239,6 +239,7 @@ describe('FindMonthSummaryService', () => {
     it('should use 28 days in February', async () => {
       const activeMonth = (key: string) => ({
         key,
+        totalIncome: 0,
         totalExpense: 0,
         pending: { totalIncome: 0, totalExpense: 0 },
         plainExpenses: [10, 11, 12, 13, 14, 28].map((day) => ({

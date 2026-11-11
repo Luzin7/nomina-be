@@ -17,6 +17,7 @@ export type PlainExpense = {
 
 export type LedgerMonth = {
   key: string;
+  totalIncome: number;
   totalExpense: number;
   pending: PeriodTotals;
   plainExpenses: PlainExpense[];

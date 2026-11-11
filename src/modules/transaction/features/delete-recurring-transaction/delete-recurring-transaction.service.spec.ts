@@ -20,6 +20,8 @@ describe('DeleteRecurringTransactionService', () => {
       findNeedingGenerationByWorkspaceId: jest.fn(),
       listNeedingGeneration: jest.fn(),
       createGeneratedTransactions: jest.fn(),
+      findSummaryRules: jest.fn(),
+      findCompletedRecurringExpense: jest.fn(),
     } as jest.Mocked<RecurringTransactionRepository>;
 
     cacheProvider = {
