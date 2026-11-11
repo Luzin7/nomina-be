@@ -516,3 +516,62 @@ export const subscriptions = pgTable('subscriptions', {
     mode: 'date',
   }).notNull(),
 });
+
+export const cardCyclePeriods = pgTable(
+  'card_cycle_periods',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    dueDate: text('due_date').notNull(),
+    periodStart: text('period_start').notNull(),
+    periodEnd: text('period_end').notNull(),
+    dueDay: integer('due_day').notNull(),
+    closingDaysBeforeDue: integer('closing_days_before_due').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_card_cycle_period_account_due').on(
+      table.accountId,
+      table.dueDate,
+    ),
+    index('idx_card_cycle_period_ws_account').on(
+      table.workspaceId,
+      table.accountId,
+    ),
+  ],
+);
+
+export const cardCycleBudgets = pgTable(
+  'card_cycle_budgets',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    effectiveFrom: text('effective_from').notNull(),
+    limitCents: bigint('limit_cents', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_card_cycle_budget_account_effective').on(
+      table.accountId,
+      table.effectiveFrom,
+    ),
+  ],
+);
