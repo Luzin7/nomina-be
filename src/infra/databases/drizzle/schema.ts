@@ -15,6 +15,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
@@ -202,6 +203,14 @@ export const accounts = pgTable(
       .notNull(),
     dueDay: integer('due_day'),
     creditLimit: bigint('credit_limit', { mode: 'number' }),
+    autoPayEnabled: boolean('auto_pay_enabled').default(false).notNull(),
+    autoPayConfirmedAt: timestamp('auto_pay_confirmed_at', {
+      withTimezone: true,
+    }),
+    autoPaySourceAccountId: text('auto_pay_source_account_id').references(
+      (): AnyPgColumn => accounts.id,
+      { onDelete: 'set null' },
+    ),
   },
   (table) => [
     index('idx_account_ws').on(table.workspaceId),
@@ -350,6 +359,37 @@ export const transactions = pgTable(
       table.recurringId,
       table.date,
     ),
+  ],
+);
+
+export const cardInvoiceSettlements = pgTable(
+  'card_invoice_settlements',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    cardAccountId: text('card_account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    invoicePeriodMonth: integer('invoice_period_month').notNull(),
+    invoicePeriodYear: integer('invoice_period_year').notNull(),
+    transactionId: text('transaction_id').references(() => transactions.id, {
+      onDelete: 'cascade',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('unq_card_invoice_settlement').on(
+      table.cardAccountId,
+      table.invoicePeriodMonth,
+      table.invoicePeriodYear,
+    ),
+    index('idx_card_invoice_settlement_ws').on(table.workspaceId),
   ],
 );
 

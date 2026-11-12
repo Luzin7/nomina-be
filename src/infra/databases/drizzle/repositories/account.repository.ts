@@ -1,4 +1,5 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import {
   AccountListItem,
@@ -84,6 +85,18 @@ export class AccountRepositoryImplementation implements AccountRepository {
       .returning();
 
     return AccountMapper.toDomain(updatedAccount);
+  }
+
+  async updateAutoPay(card: CreditCard): Promise<void> {
+    await this.drizzle.db
+      .update(schema.accounts)
+      .set(AccountMapper.toAutoPayUpdatePayload(card))
+      .where(
+        and(
+          eq(schema.accounts.id, card.id),
+          eq(schema.accounts.workspaceId, card.workspaceId),
+        ),
+      );
   }
 
   async delete(accountId: string): Promise<void> {

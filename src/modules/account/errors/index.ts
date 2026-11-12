@@ -76,3 +76,23 @@ export class PaymentExceedsInvoiceBalanceError extends BusinessRuleDomainError {
     super('O pagamento não pode exceder o valor da fatura atual.');
   }
 }
+
+export class AutopayRequiresCreditCardError extends ConflictDomainError {
+  constructor() {
+    super(
+      'O pagamento automático só pode ser configurado em cartões de crédito.',
+    );
+  }
+}
+
+export class AutopayInvalidSourceAccountError extends BusinessRuleDomainError {
+  constructor(reason: string) {
+    super(`Conta de origem inválida para o pagamento automático: ${reason}`);
+  }
+}
+
+export class AutopayConfigurationError extends BusinessRuleDomainError {
+  constructor(reason: string) {
+    super(`Pagamento automático não pode ser ativado: ${reason}`);
+  }
+}

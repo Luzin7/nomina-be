@@ -1,3 +1,4 @@
+import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 
 export type AccountListItem = {
@@ -19,6 +20,7 @@ export abstract class AccountRepository {
 
   abstract findById(accountId: string): Promise<AnyAccount | null>;
   abstract update(account: AnyAccount): Promise<AnyAccount>;
+  abstract updateAutoPay(card: CreditCard): Promise<void>;
   abstract delete(accountId: string): Promise<void>;
 
   abstract findManyByWorkspaceId(
