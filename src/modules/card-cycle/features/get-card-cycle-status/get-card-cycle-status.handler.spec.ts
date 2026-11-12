@@ -68,7 +68,11 @@ function makeCardWithoutDueDay(): CreditCard {
       balance: 0n,
       creditLimit: 500_000n,
       closingDaysBeforeDue: 7,
-      dueDay: null as unknown as number,
+      dueDay: null,
+      autoPayEnabled: false,
+      autoPayConfirmedAt: null,
+      autoPayEnabledAt: null,
+      autoPaySourceAccountId: null,
     },
     'acc-1',
   );

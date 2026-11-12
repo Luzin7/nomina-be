@@ -17,6 +17,10 @@ function makeRow(overrides: Partial<AccountRow> = {}): AccountRow {
     closingDaysBeforeDue: 7,
     dueDay: null,
     creditLimit: null,
+    autoPayEnabled: false,
+    autoPayConfirmedAt: null,
+    autoPayEnabledAt: null,
+    autoPaySourceAccountId: null,
     ...overrides,
   };
 }

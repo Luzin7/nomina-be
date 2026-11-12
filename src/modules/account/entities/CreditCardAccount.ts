@@ -4,6 +4,7 @@ import {
   isValidDueDay,
 } from '@constants/enums';
 import {
+  AutopayConfigurationError,
   CreditLimitExceededError,
   InvalidClosingDaysBeforeDueError,
   InvalidDueDayError,
@@ -17,8 +18,31 @@ export interface CreditCardProps extends BaseAccountProps {
   balance: bigint;
   creditLimit: bigint | null;
   closingDaysBeforeDue: number;
-  dueDay: number;
+  dueDay: number | null;
+  autoPayEnabled: boolean;
+  autoPayConfirmedAt: Date | null;
+  autoPayEnabledAt: Date | null;
+  autoPaySourceAccountId: string | null;
 }
+
+type CreditCardCreateProps = Omit<
+  CreditCardProps,
+  | 'balance'
+  | 'autoPayEnabled'
+  | 'autoPayConfirmedAt'
+  | 'autoPayEnabledAt'
+  | 'autoPaySourceAccountId'
+> &
+  Partial<
+    Pick<
+      CreditCardProps,
+      | 'balance'
+      | 'autoPayEnabled'
+      | 'autoPayConfirmedAt'
+      | 'autoPayEnabledAt'
+      | 'autoPaySourceAccountId'
+    >
+  >;
 
 export class CreditCard extends BaseAccount<CreditCardProps> {
   private constructor(props: CreditCardProps, id?: string) {
@@ -26,7 +50,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
   }
 
   static create(
-    props: Omit<CreditCardProps, 'balance'> & { balance?: bigint },
+    props: CreditCardCreateProps,
     id?: string,
   ): Either<Error, CreditCard> {
     if (props.creditLimit !== null && props.creditLimit <= 0n) {
@@ -39,7 +63,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     if (!isValidClosingDaysBeforeDue(props.closingDaysBeforeDue)) {
       return left(new InvalidClosingDaysBeforeDueError());
     }
-    if (!isValidDueDay(props.dueDay)) {
+    if (props.dueDay !== null && !isValidDueDay(props.dueDay)) {
       return left(new InvalidDueDayError());
     }
 
@@ -50,6 +74,10 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
           creditLimit: props.creditLimit ?? null,
           closingDaysBeforeDue: props.closingDaysBeforeDue,
           balance: props.balance ?? 0n,
+          autoPayEnabled: props.autoPayEnabled ?? false,
+          autoPayConfirmedAt: props.autoPayConfirmedAt ?? null,
+          autoPayEnabledAt: props.autoPayEnabledAt ?? null,
+          autoPaySourceAccountId: props.autoPaySourceAccountId ?? null,
         },
         id,
       ),
@@ -68,8 +96,24 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     return this.props.closingDaysBeforeDue;
   }
 
-  get dueDay(): number {
+  get dueDay(): number | null {
     return this.props.dueDay;
+  }
+
+  get autoPayEnabled(): boolean {
+    return this.props.autoPayEnabled;
+  }
+
+  get autoPayConfirmedAt(): Date | null {
+    return this.props.autoPayConfirmedAt;
+  }
+
+  get autoPayEnabledAt(): Date | null {
+    return this.props.autoPayEnabledAt;
+  }
+
+  get autoPaySourceAccountId(): string | null {
+    return this.props.autoPaySourceAccountId;
   }
 
   get type(): string {
@@ -165,6 +209,38 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     this.props.closingDaysBeforeDue = closingDaysBeforeDue;
     this.props.dueDay = dueDay;
     return right(undefined);
+  }
+
+  public enableAutoPay(
+    sourceAccountId: string | null,
+    now: Date,
+  ): Either<Error, void> {
+    if (!sourceAccountId) {
+      return left(
+        new AutopayConfigurationError('informe a conta que paga a fatura.'),
+      );
+    }
+    if (
+      this.props.dueDay === null ||
+      !isValidDueDay(this.props.dueDay) ||
+      !isValidClosingDaysBeforeDue(this.props.closingDaysBeforeDue)
+    ) {
+      return left(
+        new AutopayConfigurationError(
+          'defina o dia de vencimento e o fechamento da fatura.',
+        ),
+      );
+    }
+
+    this.props.autoPayEnabled = true;
+    this.props.autoPaySourceAccountId = sourceAccountId;
+    this.props.autoPayConfirmedAt ??= now;
+    this.props.autoPayEnabledAt = now;
+    return right(undefined);
+  }
+
+  public disableAutoPay(): void {
+    this.props.autoPayEnabled = false;
   }
 
   public adjustLimit(newLimit: bigint | null): Either<Error, void> {

@@ -1,3 +1,4 @@
+import { AccountModule } from '@modules/account/Account.module';
 import { DatabaseModule } from '@infra/databases/Database.module';
 import { UserModule } from '@modules/user/User.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
@@ -39,6 +40,8 @@ import { UpdateRecurringTransactionController } from './features/update-recurrin
 import { UpdateRecurringTransactionService } from './features/update-recurring-transaction/update-recurring-transaction.service';
 import { UpdateTransactionController } from './features/update-transaction/update-transaction.controller';
 import { UpdateTransactionService } from './features/update-transaction/update-transaction.service';
+import { AutoPayCardInvoicesJobController } from './jobs/auto-pay-card-invoices/auto-pay-card-invoices.controller';
+import { AutoPayCardInvoicesJobService } from './jobs/auto-pay-card-invoices/auto-pay-card-invoices.service';
 import { GenerateRecurringTransactionsJobController } from './jobs/generate-recurring-transactions/generate-recurring-transactions.controller';
 import { GenerateRecurringTransactionsJobService } from './jobs/generate-recurring-transactions/generate-recurring-transactions.service';
 import { ReconcileBalancesJobController } from './jobs/reconcile-balances/reconcile-balances.controller';
@@ -62,6 +65,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     GenerateRecurringTransactionsJobController,
     ReconcileBalancesJobController,
     SettleCardInstallmentsJobController,
+    AutoPayCardInvoicesJobController,
     UpdateRecurringTransactionController,
     DeleteRecurringTransactionController,
     RecurringSummaryController,
@@ -72,7 +76,13 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     DismissRecurringSuggestionController,
     MarkRecurringSuggestionsShownController,
   ],
-  imports: [DatabaseModule, UserModule, WorkspaceModule, DateModule],
+  imports: [
+    DatabaseModule,
+    UserModule,
+    WorkspaceModule,
+    DateModule,
+    AccountModule,
+  ],
   providers: [
     CreateTransactionService,
     DeleteTransactionService,
@@ -99,6 +109,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     GenerateRecurringTransactionsJobService,
     ReconcileBalancesJobService,
     SettleCardInstallmentsJobService,
+    AutoPayCardInvoicesJobService,
   ],
 })
 export class TransactionModule {}

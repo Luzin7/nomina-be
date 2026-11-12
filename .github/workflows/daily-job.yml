@@ -23,6 +23,12 @@ jobs:
             -H "x-api-key: ${{ secrets.CRON_API_KEY }}" \
             https://nomina-be-qico.onrender.com/api/v1/internal/settle-card-installments
 
+      - name: Auto-pay card invoices
+        run: |
+          curl -fsS --max-time 40 -X POST \
+            -H "x-api-key: ${{ secrets.CRON_API_KEY }}" \
+            https://nomina-be-qico.onrender.com/api/v1/internal/auto-pay-card-invoices
+
       - name: Reconcile balances
         if: always()
         run: |

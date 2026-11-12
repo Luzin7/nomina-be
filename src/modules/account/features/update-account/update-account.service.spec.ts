@@ -43,7 +43,11 @@ function makeAccount(
   return result.value;
 }
 
-function makeCreditCard(workspaceId = 'ws-1', id = 'acc-1') {
+function makeCreditCard(
+  workspaceId = 'ws-1',
+  id = 'acc-1',
+  dueDay: number | null = 20,
+) {
   const result = CreditCard.create(
     {
       workspaceId,
@@ -51,7 +55,7 @@ function makeCreditCard(workspaceId = 'ws-1', id = 'acc-1') {
       timezone: 'America/Sao_Paulo',
       creditLimit: 500000n,
       closingDaysBeforeDue: 10,
-      dueDay: 20,
+      dueDay,
     },
     id,
   );
@@ -74,6 +78,7 @@ describe('UpdateAccountService', () => {
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
     service = new UpdateAccountService(accountRepository);
@@ -178,5 +183,19 @@ describe('UpdateAccountService', () => {
       expect(card.creditLimit).toBe(900000n);
       expect(accountRepository.update).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('should configure the cycle of a card without dueDay', async () => {
+    const card = makeCreditCard('ws-1', 'acc-1', null);
+    accountRepository.findById.mockResolvedValue(card);
+    accountRepository.update.mockImplementation(async (a) => a);
+
+    const result = await service.execute(
+      makeRequest({ closingDaysBeforeDue: 5, dueDay: 12 }),
+    );
+
+    expect(result.isRight()).toBe(true);
+    expect(card.dueDay).toBe(12);
+    expect(card.closingDaysBeforeDue).toBe(5);
   });
 });

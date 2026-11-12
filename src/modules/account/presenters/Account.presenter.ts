@@ -28,6 +28,10 @@ export class AccountPresenter {
           account.availableLimit === null
             ? null
             : MoneyUtils.centsToDecimal(Number(account.availableLimit)),
+        autoPayEnabled: account.autoPayEnabled,
+        autoPaySourceAccountId: account.autoPaySourceAccountId,
+        autoPayConfirmedAt: account.autoPayConfirmedAt?.toISOString() ?? null,
+        autoPayEnabledAt: account.autoPayEnabledAt?.toISOString() ?? null,
       };
     }
 
@@ -44,6 +48,16 @@ export class AccountPresenter {
       balanceUpdatedAt: balanceUpdatedAt
         ? balanceUpdatedAt.toISOString()
         : null,
+    };
+  }
+
+  static toAutopayHTTP(card: CreditCard) {
+    return {
+      accountId: card.id,
+      autoPayEnabled: card.autoPayEnabled,
+      autoPayConfirmedAt: card.autoPayConfirmedAt?.toISOString() ?? null,
+      autoPayEnabledAt: card.autoPayEnabledAt?.toISOString() ?? null,
+      autoPaySourceAccountId: card.autoPaySourceAccountId,
     };
   }
 }

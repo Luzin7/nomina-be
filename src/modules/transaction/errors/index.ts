@@ -186,6 +186,35 @@ export class CardInstallmentSettlementFailedError extends DomainError {
   }
 }
 
+export class CardInvoiceAutopayFailedError extends DomainError {
+  constructor(failedCount: number, processedCount: number) {
+    super(
+      `Falha ao registrar pagamento automático de fatura: ${failedCount} de ${processedCount} falharam.`,
+    );
+  }
+}
+
+export interface CardInvoiceAutopayFailureProps {
+  step: string;
+  cause: unknown;
+  amount?: bigint;
+}
+
+export class CardInvoiceAutopayFailureError extends DomainError {
+  readonly step: string;
+  readonly cause: unknown;
+  readonly amount?: bigint;
+
+  constructor({ step, cause, amount }: CardInvoiceAutopayFailureProps) {
+    super(
+      `Pagamento automático de fatura falhou em ${step}: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    this.step = step;
+    this.cause = cause;
+    this.amount = amount;
+  }
+}
+
 export class UnknownRecurrenceFrequencyError extends DomainError {
   constructor(frequency: string) {
     super(`Frequência de recorrência desconhecida: ${frequency}`);
