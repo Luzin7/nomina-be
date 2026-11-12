@@ -23,6 +23,11 @@ export abstract class CategoryRepository {
 
   abstract findById(id: string): Promise<Category | null>;
 
+  abstract findVisibleById(
+    id: string,
+    workspaceId: string,
+  ): Promise<Category | null>;
+
   abstract countByWorkspaceId(workspaceId: string): Promise<number>;
   abstract findUniqueByAttributes(
     name: string,
@@ -52,6 +57,7 @@ export abstract class CategoryRepository {
 
   abstract deleteIfUnreferenced(
     categoryId: string,
+    workspaceId: string,
   ): Promise<CategoryDeleteResult>;
 
   abstract reassignChildren(

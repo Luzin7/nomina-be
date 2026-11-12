@@ -52,6 +52,7 @@ function makeRepository(): jest.Mocked<CategoryRepository> {
     update: jest.fn(),
     delete: jest.fn(),
     findById: jest.fn(),
+    findVisibleById: jest.fn(),
     countByWorkspaceId: jest.fn(),
     findUniqueByAttributes: jest.fn(),
     findManyByWorkspaceId: jest.fn(),

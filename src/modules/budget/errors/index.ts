@@ -30,6 +30,14 @@ export class BudgetCategoryNotFoundError extends BusinessRuleDomainError {
   }
 }
 
+export class HiddenBudgetCategoryError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'Categorias ocultas só podem permanecer em um orçamento que já as aloca.',
+    );
+  }
+}
+
 export class HistoricalBudgetImmutableError extends BusinessRuleDomainError {
   constructor() {
     super('Não é possível alterar o orçamento de um mês passado.');

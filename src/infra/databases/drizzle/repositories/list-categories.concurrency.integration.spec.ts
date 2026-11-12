@@ -1,28 +1,28 @@
-import { TransactionType } from "@constants/enums";
-import { DRIZZLE_TOKEN } from "@infra/databases/drizzle/drizzle.provider";
-import { DrizzleService } from "@infra/databases/drizzle/drizzle.service";
-import * as schema from "@infra/databases/drizzle/schema";
-import { Test, TestingModule } from "@nestjs/testing";
+import { TransactionType } from '@constants/enums';
+import { DRIZZLE_TOKEN } from '@infra/databases/drizzle/drizzle.provider';
+import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import * as schema from '@infra/databases/drizzle/schema';
+import { Test, TestingModule } from '@nestjs/testing';
 import {
   PostgreSqlContainer,
   StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
-import { resolve } from "node:path";
-import postgres from "postgres";
-import { CategoryRepositoryImplementation } from "./category.repository";
+} from '@testcontainers/postgresql';
+import { sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import { resolve } from 'node:path';
+import postgres from 'postgres';
+import { CategoryRepositoryImplementation } from './category.repository';
 
-const MIGRATIONS_FOLDER = resolve(__dirname, "../../../../../drizzle");
+const MIGRATIONS_FOLDER = resolve(__dirname, '../../../../../drizzle');
 
 jest.setTimeout(180_000);
 
-describe("category list visibility against a real postgres", () => {
+describe('category list visibility against a real postgres', () => {
   let container: StartedPostgreSqlContainer;
   let queryClient: postgres.Sql;
   let moduleRef: TestingModule;
-  let db: DrizzleService["db"];
+  let db: DrizzleService['db'];
   let repository: CategoryRepositoryImplementation;
   let workspaceId: string;
   let rootId: string;
@@ -30,7 +30,7 @@ describe("category list visibility against a real postgres", () => {
   let hiddenId: string;
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer("postgres:16-alpine")
+    container = await new PostgreSqlContainer('postgres:16-alpine')
       .withStartupTimeout(120_000)
       .start();
     queryClient = postgres(container.getConnectionUri(), {
@@ -65,7 +65,7 @@ describe("category list visibility against a real postgres", () => {
 
     const [workspace] = await db
       .insert(schema.workspaces)
-      .values({ name: "Workspace" })
+      .values({ name: 'Workspace' })
       .returning({ id: schema.workspaces.id });
     workspaceId = workspace.id;
 
@@ -73,7 +73,7 @@ describe("category list visibility against a real postgres", () => {
       .insert(schema.categories)
       .values({
         workspaceId,
-        name: "Alimentação",
+        name: 'Alimentação',
         type: TransactionType.EXPENSE,
       })
       .returning({ id: schema.categories.id });
@@ -83,7 +83,7 @@ describe("category list visibility against a real postgres", () => {
       .insert(schema.categories)
       .values({
         workspaceId,
-        name: "Mercado",
+        name: 'Mercado',
         type: TransactionType.EXPENSE,
         parentId: rootId,
       })
@@ -94,7 +94,7 @@ describe("category list visibility against a real postgres", () => {
       .insert(schema.categories)
       .values({
         workspaceId,
-        name: "Lazer",
+        name: 'Lazer',
         type: TransactionType.EXPENSE,
         isHidden: true,
       })
@@ -102,10 +102,10 @@ describe("category list visibility against a real postgres", () => {
     hiddenId = hidden.id;
   });
 
-  it("should leave hidden rows out of the visible list and keep the count aligned", async () => {
+  it('excludes hidden rows from list and count', async () => {
     const { categories, total } = await repository.findManyByWorkspaceId(
       workspaceId,
-      { visibility: "visible" },
+      { visibility: 'visible' },
     );
 
     expect(categories.map((category) => category.id).sort()).toEqual(
@@ -114,10 +114,10 @@ describe("category list visibility against a real postgres", () => {
     expect(total).toBe(2);
   });
 
-  it("should return every row with isHidden mapped when visibility is all", async () => {
+  it('returns all rows with isHidden mapped', async () => {
     const { categories, total } = await repository.findManyByWorkspaceId(
       workspaceId,
-      { visibility: "all" },
+      { visibility: 'all' },
     );
 
     expect(categories.map((category) => category.id).sort()).toEqual(

@@ -101,6 +101,7 @@ describe('UpdateRecurringTransactionService', () => {
       findManyByIds: jest.fn(),
       countBudgetAllocations: jest.fn(),
       countRecurringTransactions: jest.fn(),
+      findVisibleById: jest.fn(),
       deleteIfUnreferenced: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 

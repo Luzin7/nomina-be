@@ -1,5 +1,6 @@
 import { AccountType, TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
@@ -10,6 +11,7 @@ import { CategoryRepository } from '@modules/category/repositories/contracts/Cat
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { CreditCardTransferNotAllowedError } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { UnprocessableEntityException } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -83,6 +85,7 @@ describe('CreateTransactionService', () => {
       findManyByIds: jest.fn(),
       countBudgetAllocations: jest.fn(),
       countRecurringTransactions: jest.fn(),
+      findVisibleById: jest.fn(),
       deleteIfUnreferenced: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
@@ -167,6 +170,9 @@ describe('CreateTransactionService', () => {
 
     expect(result.isLeft()).toBe(true);
     expect(result.value).toBeInstanceOf(CategoryNotFoundError);
+    expect(() => ErrorPresenter.toHTTP(result.value as Error)).toThrow(
+      UnprocessableEntityException,
+    );
   });
 
   it('should return left(UnauthorizedError) when account belongs to different workspace', async () => {

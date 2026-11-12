@@ -39,15 +39,14 @@ export class UpdateCategoryService implements Service<
       return left(new EmptyCategoryUpdateError());
     }
 
-    const category = await this.categoryRepository.findById(id);
+    const category = await this.categoryRepository.findVisibleById(
+      id,
+      workspaceId,
+    );
     if (!category) return left(new CategoryTargetNotFoundError());
 
     if (category.isSystemCategory) {
       return left(new SystemCategoryModificationError());
-    }
-
-    if (category.workspaceId !== workspaceId) {
-      return left(new CategoryTargetNotFoundError());
     }
 
     const changeError = this.applyChanges(category, name, isHidden);

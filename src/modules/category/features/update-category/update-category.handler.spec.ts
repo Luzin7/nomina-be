@@ -1,5 +1,6 @@
 import { TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
 import { Category } from '@modules/category/entities/Category';
 import {
   CategoryNameAlreadyExistsError,
@@ -9,6 +10,7 @@ import {
   SystemCategoryModificationError,
 } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { NotFoundException } from '@nestjs/common';
 import { UpdateCategoryPipe } from './update-category.dto';
 import { UpdateCategoryService } from './update-category.handler';
 
@@ -48,6 +50,7 @@ function makeRepository(): jest.Mocked<CategoryRepository> {
     update: jest.fn(),
     delete: jest.fn(),
     findById: jest.fn(),
+    findVisibleById: jest.fn(),
     countByWorkspaceId: jest.fn(),
     findUniqueByAttributes: jest.fn(),
     findManyByWorkspaceId: jest.fn(),
@@ -96,11 +99,13 @@ describe('UpdateCategoryService', () => {
     if (result.isLeft()) {
       expect(result.value).toBeInstanceOf(EmptyCategoryUpdateError);
     }
-    expect(categoryRepository.findById).not.toHaveBeenCalled();
+    expect(categoryRepository.findVisibleById).not.toHaveBeenCalled();
   });
 
   it('should rename a workspace category', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
 
     const result = await service.execute(makeRequest({ name: 'Feira' }));
 
@@ -109,7 +114,7 @@ describe('UpdateCategoryService', () => {
   });
 
   it('should keep type, parentId and workspaceId on rename', async () => {
-    categoryRepository.findById.mockResolvedValue(
+    categoryRepository.findVisibleById.mockResolvedValue(
       makeCategory({ parentId: 'cat-root', workspaceId: 'ws-1' }, 'cat-1'),
     );
 
@@ -137,7 +142,7 @@ describe('UpdateCategoryService', () => {
       { workspaceId: null, isSystemCategory: true, name: 'Alimentação' },
       'cat-system',
     );
-    categoryRepository.findById.mockResolvedValue(systemCategory);
+    categoryRepository.findVisibleById.mockResolvedValue(systemCategory);
 
     const result = await service.execute(
       makeRequest({ id: 'cat-system', name: 'Outra' }),
@@ -157,7 +162,7 @@ describe('UpdateCategoryService', () => {
       { workspaceId: null, isSystemCategory: true },
       'cat-system',
     );
-    categoryRepository.findById.mockResolvedValue(systemCategory);
+    categoryRepository.findVisibleById.mockResolvedValue(systemCategory);
 
     const result = await service.execute(
       makeRequest({ id: 'cat-system', isHidden: true }),
@@ -169,20 +174,21 @@ describe('UpdateCategoryService', () => {
   });
 
   it('should return not found for a missing category', async () => {
-    categoryRepository.findById.mockResolvedValue(null);
+    categoryRepository.findVisibleById.mockResolvedValue(null);
 
     const result = await service.execute(makeRequest({ name: 'Feira' }));
 
     expect(result.isLeft()).toBe(true);
     if (result.isLeft())
       expect(result.value).toBeInstanceOf(CategoryTargetNotFoundError);
+    expect(() => ErrorPresenter.toHTTP(result.value as Error)).toThrow(
+      NotFoundException,
+    );
     expect(categoryRepository.update).not.toHaveBeenCalled();
   });
 
   it('should return not found for a category of another workspace', async () => {
-    categoryRepository.findById.mockResolvedValue(
-      makeCategory({ workspaceId: 'ws-2' }, 'cat-foreign'),
-    );
+    categoryRepository.findVisibleById.mockResolvedValue(null);
 
     const result = await service.execute(
       makeRequest({ id: 'cat-foreign', name: 'Feira' }),
@@ -191,14 +197,20 @@ describe('UpdateCategoryService', () => {
     expect(result.isLeft()).toBe(true);
     if (result.isLeft())
       expect(result.value).toBeInstanceOf(CategoryTargetNotFoundError);
+    expect(categoryRepository.findVisibleById).toHaveBeenCalledWith(
+      'cat-foreign',
+      'ws-1',
+    );
     expect(categoryRepository.update).not.toHaveBeenCalled();
   });
 
   it('should keep hiding idempotent', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
 
     const first = await service.execute(makeRequest({ isHidden: true }));
-    categoryRepository.findById.mockResolvedValue(
+    categoryRepository.findVisibleById.mockResolvedValue(
       makeCategory({ isHidden: true }, 'cat-1'),
     );
     const second = await service.execute(makeRequest({ isHidden: true }));
@@ -214,7 +226,9 @@ describe('UpdateCategoryService', () => {
   });
 
   it('should map a duplicate name to a conflict', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
     categoryRepository.update.mockRejectedValue(
       new CategoryNameAlreadyExistsError(),
     );
@@ -228,7 +242,9 @@ describe('UpdateCategoryService', () => {
   });
 
   it('should reject a blank name before writing', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
 
     const result = await service.execute(makeRequest({ name: '   ' }));
 
@@ -240,7 +256,9 @@ describe('UpdateCategoryService', () => {
   });
 
   it('should invalidate the category list after the write', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
 
     await service.execute(makeRequest({ isHidden: true }));
 
@@ -252,7 +270,9 @@ describe('UpdateCategoryService', () => {
   });
 
   it('should bump the report generation when the patch hides a category', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
 
     await service.execute(makeRequest({ isHidden: true }));
 
@@ -263,7 +283,9 @@ describe('UpdateCategoryService', () => {
   });
 
   it('should keep the report generation on a name-only patch', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
 
     await service.execute(makeRequest({ name: 'Feira' }));
 
@@ -274,7 +296,9 @@ describe('UpdateCategoryService', () => {
   });
 
   it('should rethrow an unexpected repository failure', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
     const failure = new Error('connection lost');
     categoryRepository.update.mockRejectedValue(failure);
 

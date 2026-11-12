@@ -1,4 +1,4 @@
-import { BUDGET_MODES } from '@constants/enums';
+import { BUDGET_MODE_DEFAULT, BUDGET_MODES } from '@constants/enums';
 import { ZodValidationPipe } from '@shared/pipes/ZodValidation';
 import { z } from 'zod';
 
@@ -12,7 +12,7 @@ const allocationSchema = z.object({
 });
 
 const saveBudgetConfigSchema = z.object({
-  mode: z.enum(BUDGET_MODES).optional(),
+  mode: z.enum(BUDGET_MODES).default(BUDGET_MODE_DEFAULT),
   monthlyIncome: z.coerce
     .number()
     .int()

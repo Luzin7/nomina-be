@@ -173,7 +173,10 @@ describe('category delete against a real postgres', () => {
   it('should delete a category nothing references', async () => {
     const categoryId = await seedCategory();
 
-    const result = await repository.deleteIfUnreferenced(categoryId);
+    const result = await repository.deleteIfUnreferenced(
+      categoryId,
+      workspaceId,
+    );
 
     expect(result).toEqual({ deleted: true });
     expect(await repository.findById(categoryId)).toBeNull();
@@ -184,7 +187,10 @@ describe('category delete against a real postgres', () => {
     await seedTransaction(categoryId);
     await seedTransaction(categoryId);
 
-    const result = await repository.deleteIfUnreferenced(categoryId);
+    const result = await repository.deleteIfUnreferenced(
+      categoryId,
+      workspaceId,
+    );
 
     expect(result).toEqual({
       deleted: false,
@@ -202,7 +208,10 @@ describe('category delete against a real postgres', () => {
     const categoryId = await seedCategory();
     await seedAllocation(categoryId);
 
-    const result = await repository.deleteIfUnreferenced(categoryId);
+    const result = await repository.deleteIfUnreferenced(
+      categoryId,
+      workspaceId,
+    );
 
     expect(result).toEqual({
       deleted: false,
@@ -219,7 +228,10 @@ describe('category delete against a real postgres', () => {
     const categoryId = await seedCategory();
     await seedRecurringRule(categoryId);
 
-    const result = await repository.deleteIfUnreferenced(categoryId);
+    const result = await repository.deleteIfUnreferenced(
+      categoryId,
+      workspaceId,
+    );
 
     expect(result).toEqual({
       deleted: false,
@@ -241,7 +253,7 @@ describe('category delete against a real postgres', () => {
       parentId,
     });
 
-    const result = await repository.deleteIfUnreferenced(parentId);
+    const result = await repository.deleteIfUnreferenced(parentId, workspaceId);
 
     expect(result).toEqual({
       deleted: false,
@@ -281,7 +293,10 @@ describe('category delete against a real postgres', () => {
       FOR EACH ROW EXECUTE FUNCTION test_block_category_delete()
     `);
 
-    const result = await repository.deleteIfUnreferenced(categoryId);
+    const result = await repository.deleteIfUnreferenced(
+      categoryId,
+      workspaceId,
+    );
 
     expect(result.deleted).toBe(false);
     expect(await repository.findById(categoryId)).not.toBeNull();

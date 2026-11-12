@@ -1,5 +1,6 @@
 import { TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
 import { Category } from '@modules/category/entities/Category';
 import {
   CategoryInUseError,
@@ -7,6 +8,7 @@ import {
   SystemCategoryModificationError,
 } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { NotFoundException } from '@nestjs/common';
 import { DeleteCategoryService } from './delete-category.handler';
 
 function makeCategory(
@@ -45,6 +47,7 @@ function makeRepository(): jest.Mocked<CategoryRepository> {
     update: jest.fn(),
     delete: jest.fn(),
     findById: jest.fn(),
+    findVisibleById: jest.fn(),
     countByWorkspaceId: jest.fn(),
     findUniqueByAttributes: jest.fn(),
     findManyByWorkspaceId: jest.fn(),
@@ -93,7 +96,9 @@ describe('DeleteCategoryService', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('should delete a category nothing references', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
     categoryRepository.deleteIfUnreferenced.mockResolvedValue({
       deleted: true,
     });
@@ -103,6 +108,7 @@ describe('DeleteCategoryService', () => {
     expect(result.isRight()).toBe(true);
     expect(categoryRepository.deleteIfUnreferenced).toHaveBeenCalledWith(
       'cat-1',
+      'ws-1',
     );
     expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
       'cache-gen:category:ws-1',
@@ -112,7 +118,7 @@ describe('DeleteCategoryService', () => {
   });
 
   it('should refuse a system category before any write', async () => {
-    categoryRepository.findById.mockResolvedValue(
+    categoryRepository.findVisibleById.mockResolvedValue(
       makeCategory({ workspaceId: null, isSystemCategory: true }, 'cat-system'),
     );
 
@@ -127,31 +133,38 @@ describe('DeleteCategoryService', () => {
   });
 
   it('should return not found for a missing category', async () => {
-    categoryRepository.findById.mockResolvedValue(null);
+    categoryRepository.findVisibleById.mockResolvedValue(null);
 
     const result = await service.execute(makeRequest());
 
     expect(result.isLeft()).toBe(true);
     if (result.isLeft())
       expect(result.value).toBeInstanceOf(CategoryTargetNotFoundError);
+    expect(() => ErrorPresenter.toHTTP(result.value as Error)).toThrow(
+      NotFoundException,
+    );
     expect(categoryRepository.deleteIfUnreferenced).not.toHaveBeenCalled();
   });
 
   it('should return not found for a category of another workspace', async () => {
-    categoryRepository.findById.mockResolvedValue(
-      makeCategory({ workspaceId: 'ws-2' }, 'cat-foreign'),
-    );
+    categoryRepository.findVisibleById.mockResolvedValue(null);
 
     const result = await service.execute(makeRequest({ id: 'cat-foreign' }));
 
     expect(result.isLeft()).toBe(true);
     if (result.isLeft())
       expect(result.value).toBeInstanceOf(CategoryTargetNotFoundError);
+    expect(categoryRepository.findVisibleById).toHaveBeenCalledWith(
+      'cat-foreign',
+      'ws-1',
+    );
     expect(categoryRepository.deleteIfUnreferenced).not.toHaveBeenCalled();
   });
 
   it('should name transactions as the blocking reference', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
     categoryRepository.deleteIfUnreferenced.mockResolvedValue({
       deleted: false,
       references: { ...NO_REFERENCES, transactions: 2 },
@@ -168,7 +181,9 @@ describe('DeleteCategoryService', () => {
   });
 
   it('should name budget allocations as the blocking reference', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
     categoryRepository.deleteIfUnreferenced.mockResolvedValue({
       deleted: false,
       references: { ...NO_REFERENCES, allocations: 1 },
@@ -184,7 +199,9 @@ describe('DeleteCategoryService', () => {
   });
 
   it('should name recurring rules as the blocking reference', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
     categoryRepository.deleteIfUnreferenced.mockResolvedValue({
       deleted: false,
       references: { ...NO_REFERENCES, recurringRules: 1 },
@@ -200,7 +217,9 @@ describe('DeleteCategoryService', () => {
   });
 
   it('should name children as the blocking reference', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
     categoryRepository.deleteIfUnreferenced.mockResolvedValue({
       deleted: false,
       references: { ...NO_REFERENCES, children: 3 },
@@ -216,7 +235,9 @@ describe('DeleteCategoryService', () => {
   });
 
   it('should carry the reference counts on the error', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
     const references = { ...NO_REFERENCES, transactions: 1, children: 1 };
     categoryRepository.deleteIfUnreferenced.mockResolvedValue({
       deleted: false,
@@ -230,7 +251,9 @@ describe('DeleteCategoryService', () => {
   });
 
   it('should rethrow an unexpected repository failure', async () => {
-    categoryRepository.findById.mockResolvedValue(makeCategory({}, 'cat-1'));
+    categoryRepository.findVisibleById.mockResolvedValue(
+      makeCategory({}, 'cat-1'),
+    );
     const failure = new Error('connection lost');
     categoryRepository.deleteIfUnreferenced.mockRejectedValue(failure);
 
