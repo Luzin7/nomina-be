@@ -12,7 +12,7 @@ import {
 } from '@modules/report/valueObjects/ProjectionHorizon';
 import { LOOKBACK_MONTHS } from '@modules/report/valueObjects/ProjectionRules';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
@@ -46,6 +46,8 @@ const isValidHorizon = (months: number): boolean =>
 
 @Injectable()
 export class GetProjectionService implements Service<Request, Error, Response> {
+  private readonly logger = new Logger(GetProjectionService.name);
+
   constructor(
     private readonly accountRepository: AccountRepository,
     private readonly monthProjectionRepository: MonthProjectionRepository,
@@ -63,6 +65,30 @@ export class GetProjectionService implements Service<Request, Error, Response> {
       return left(new InvalidProjectionHorizonError());
     }
 
+    const startedAt = performance.now();
+    let step = 'load-bundle';
+
+    try {
+      const bundle = await this.loadBundle(workspaceId, horizon);
+      step = 'project-horizon';
+
+      return right({
+        projection: projectHorizon(bundle),
+        horizon,
+        generatedAt: bundle.asOf,
+      });
+    } catch (error) {
+      this.logger.error(
+        `get-projection failed step=${step} workspaceId=${workspaceId} months=${horizon} elapsedMs=${Math.round(performance.now() - startedAt)} error=${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  private async loadBundle(
+    workspaceId: string,
+    horizon: number,
+  ): Promise<HorizonBundle> {
     const now = this.dateProvider.now();
     const timezone = await this.workspaceTimezone.execute(workspaceId);
     const currentMonthStart = this.dateProvider.startOfMonth(now, timezone);
@@ -107,7 +133,7 @@ export class GetProjectionService implements Service<Request, Error, Response> {
       ),
     ]);
 
-    const bundle: HorizonBundle = {
+    return {
       months: windows,
       asOf: now,
       timezone,
@@ -120,12 +146,6 @@ export class GetProjectionService implements Service<Request, Error, Response> {
         snapshot,
       })),
     };
-
-    return right({
-      projection: projectHorizon(bundle),
-      horizon,
-      generatedAt: now,
-    });
   }
 
   private monthWindows(
