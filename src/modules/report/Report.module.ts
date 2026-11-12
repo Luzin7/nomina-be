@@ -30,6 +30,6 @@ import { GetProjectionService } from './features/get-projection/get-projection.h
     FindMonthSummaryService,
     GetProjectionService,
   ],
-  exports: [FindMonthSummaryService],
+  exports: [FindMonthSummaryService, GetProjectionService],
 })
 export class ReportModule {}

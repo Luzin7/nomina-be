@@ -22,5 +22,6 @@ import { SaveBudgetConfigService } from './features/save-config/save-config.hand
     SaveBudgetConfigService,
     GetBudgetSetupService,
   ],
+  exports: [GetBudgetStatusService],
 })
 export class BudgetModule {}
