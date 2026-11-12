@@ -3,6 +3,7 @@ import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetR
 import { InvalidProjectionHorizonError } from '@modules/report/errors';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { Logger } from '@nestjs/common';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { GetProjectionService } from './get-projection.handler';
 
@@ -46,6 +47,8 @@ const buildService = () => {
 const request = { workspaceId: 'ws-1', sub: 'user-1' };
 
 describe('GetProjectionService', () => {
+  afterEach(() => jest.restoreAllMocks());
+
   it('returns six ordered months by default', async () => {
     const { service } = buildService();
 
@@ -188,5 +191,37 @@ describe('GetProjectionService', () => {
     expect(
       (budgetRepository.resolveSnapshots as jest.Mock).mock.calls[0][1],
     ).toHaveLength(6);
+  });
+
+  it('logs step, workspace, months and elapsed ms then rethrows when a read fails', async () => {
+    const { service, monthProjectionRepository } = buildService();
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    (monthProjectionRepository.findMonthLedger as jest.Mock).mockRejectedValue(
+      new Error('db down'),
+    );
+
+    await expect(service.execute({ ...request, months: 3 })).rejects.toThrow(
+      'db down',
+    );
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /step=load-bundle workspaceId=ws-1 months=3 elapsedMs=\d+ error=db down/,
+      ),
+    );
+  });
+
+  it('does not log for an invalid horizon', async () => {
+    const { service } = buildService();
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    await service.execute({ ...request, months: 0 });
+
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });

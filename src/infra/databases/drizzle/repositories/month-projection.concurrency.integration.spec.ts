@@ -381,6 +381,81 @@ describe('month projection repository against a real postgres', () => {
     });
   });
 
+  describe('pending installments against the ledger', () => {
+    it('should agree with the ledger pending totals per local month', async () => {
+      const ws = await seedWorkspace();
+      const pending = { status: TransactionStatus.PENDING };
+      await db.insert(schema.transactions).values([
+        makeRow({ ...ws, ...pending, date: IN_OCTOBER, amount: 2_000 }),
+        makeRow({
+          ...ws,
+          ...pending,
+          date: IN_OCTOBER,
+          amount: 7_000,
+          type: TransactionType.INCOME,
+        }),
+        makeRow({
+          ...ws,
+          ...pending,
+          date: new Date('2026-11-01T02:30:00Z'),
+          amount: 300,
+        }),
+        makeRow({
+          ...ws,
+          ...pending,
+          date: new Date('2026-11-01T03:00:00Z'),
+          amount: 400,
+        }),
+        makeRow({
+          ...ws,
+          ...pending,
+          date: new Date('2026-11-30T14:00:00Z'),
+          amount: 500,
+        }),
+        makeRow({
+          ...ws,
+          ...pending,
+          date: new Date('2026-12-01T02:59:59Z'),
+          amount: 600,
+        }),
+        makeRow({ ...ws, date: IN_OCTOBER, amount: 9_999 }),
+      ]);
+      const range: DateRange = {
+        start: monthRange('2026-10-15').start,
+        end: monthRange('2026-12-15').end,
+      };
+
+      const [ledger, installments] = await Promise.all([
+        repository.findMonthLedger({
+          workspaceId: ws.workspaceId,
+          timezone: DEFAULT_TIMEZONE,
+          range,
+          currentMonthStart: CURRENT_MONTH_START,
+        }),
+        repository.findPendingInstallments(ws.workspaceId, range),
+      ]);
+
+      const installmentTotals = new Map<string, number>();
+      for (const row of installments) {
+        const key = dateProvider.format(row.date, 'YYYY-MM', DEFAULT_TIMEZONE);
+        installmentTotals.set(
+          key,
+          (installmentTotals.get(key) ?? 0) + Number(row.amount),
+        );
+      }
+      const ledgerTotals = new Map(
+        ledger.map((month) => [
+          month.key,
+          month.pending.totalIncome + month.pending.totalExpense,
+        ]),
+      );
+
+      expect(Object.fromEntries(installmentTotals)).toEqual(
+        Object.fromEntries(ledgerTotals),
+      );
+    });
+  });
+
   describe('findActiveRecurringRules', () => {
     it('should return only active income and expense rules that overlap the month', async () => {
       const ws = await seedWorkspace();

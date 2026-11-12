@@ -32,9 +32,7 @@ const CURRENT_MONTH = { month: 11, year: 2026 };
 
 jest.setTimeout(180_000);
 
-function makeExpenseCategory(
-  overrides: Partial<CategoryRow>,
-): CategoryFixture {
+function makeExpenseCategory(overrides: Partial<CategoryRow>): CategoryFixture {
   return {
     id: randomUUID(),
     name: 'Mercado',
