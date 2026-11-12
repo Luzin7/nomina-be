@@ -203,6 +203,50 @@ describe('RecurringSummaryService', () => {
     expect(parts).toBe(summary.monthlyEquivalentCents);
   });
 
+  it('totals only the expense side and reports the committed income share', async () => {
+    const summary = await run({
+      rules: [
+        makeRule({
+          id: 'salary',
+          title: 'Salário',
+          type: 'INCOME',
+          amount: 500000,
+        }),
+        makeRule({ id: 'rent', amount: 200000 }),
+        makeRule({ id: 'netflix', amount: 5000 }),
+        makeRule({ id: 'phone', amount: 80000, installmentCount: 12 }),
+        makeRule({ id: 'paused', amount: 90000, active: false }),
+        makeRule({
+          id: 'old-plan',
+          amount: 70000,
+          installmentCount: 6,
+          exhausted: true,
+        }),
+      ],
+    });
+
+    expect(summary.monthlyEquivalentCents).toBe(285000);
+    expect(summary.recurringExpenseMonthlyCents).toBe(205000);
+    expect(summary.installmentMonthlyCents).toBe(80000);
+    expect(summary.recurringIncomeMonthlyCents).toBe(500000);
+    expect(summary.committedIncomePercent).toBe(57);
+    expect(summary.byFrequency).toEqual([
+      {
+        frequency: RecurrenceFrequency.MONTHLY,
+        interval: 1,
+        count: 3,
+        monthlyEquivalentCents: 285000,
+      },
+    ]);
+  });
+
+  it('returns a null committed share when there is no recurring income', async () => {
+    const summary = await run({ rules: [makeRule({ amount: 10000 })] });
+
+    expect(summary.recurringIncomeMonthlyCents).toBe(0);
+    expect(summary.committedIncomePercent).toBeNull();
+  });
+
   it('counts paused and exhausted rules without adding their equivalents', async () => {
     const summary = await run({
       rules: [
