@@ -1,6 +1,6 @@
+import { DatabaseModule } from '@infra/databases/Database.module';
 import { AccountModule } from '@modules/account/Account.module';
 import { BudgetModule } from '@modules/budget/Budget.module';
-import { GoalModule } from '@modules/goal/Goal.module';
 import { ReportModule } from '@modules/report/Report.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
@@ -14,7 +14,7 @@ import { ProjectionShortfallInsightService } from './services/projection-shortfa
   imports: [
     AccountModule,
     BudgetModule,
-    GoalModule,
+    DatabaseModule,
     ReportModule,
     WorkspaceModule,
     DateModule,
