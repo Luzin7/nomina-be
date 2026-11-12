@@ -33,6 +33,8 @@ import { AutoPayCardInvoicesJobService } from './auto-pay-card-invoices.service'
 
 const MIGRATIONS_FOLDER = resolve(__dirname, '../../../../../drizzle');
 const NOW = new Date('2024-01-25T15:00:00.000Z');
+const ENABLED_LONG_AGO = new Date('2023-06-01T00:00:00.000Z');
+const ENABLED_AFTER_DUE_DATE = new Date('2024-01-21T10:00:00.000Z');
 const CHARGE_DATE = new Date('2024-01-05T15:00:00.000Z');
 const AMOUNT = 25_000;
 const SOURCE_BALANCE = 100_000;
@@ -133,6 +135,7 @@ describe('auto pay card invoices against a real postgres', () => {
 
   async function seedAutopayCard(
     sourceBalance = SOURCE_BALANCE,
+    enabledAt = ENABLED_LONG_AGO,
   ): Promise<Seed> {
     const workspaceId = randomUUID();
     const cardId = randomUUID();
@@ -162,6 +165,7 @@ describe('auto pay card invoices against a real postgres', () => {
       closingDaysBeforeDue: 7,
       creditLimit: 1_000_000,
       autoPayEnabled: true,
+      autoPayEnabledAt: enabledAt,
       autoPaySourceAccountId: sourceId,
     });
     await db.insert(schema.balanceMovements).values([
@@ -340,5 +344,19 @@ describe('auto pay card invoices against a real postgres', () => {
     expect(await paymentsOf(cardId)).toHaveLength(1);
     expect(await invoicePaidMovementsOf(workspaceId)).toHaveLength(4);
     expect(await balanceOf(sourceId)).toBe(SOURCE_BALANCE - 2 * AMOUNT);
+  });
+
+  it('should write no claim nor transfer for an invoice due before activation', async () => {
+    const { cardId, sourceId } = await seedAutopayCard(
+      SOURCE_BALANCE,
+      ENABLED_AFTER_DUE_DATE,
+    );
+
+    const summary = await service.execute();
+
+    expect(summary.settledCount).toBe(0);
+    expect(await claimsOf(cardId)).toHaveLength(0);
+    expect(await paymentsOf(cardId)).toHaveLength(0);
+    expect(await balanceOf(sourceId)).toBe(SOURCE_BALANCE);
   });
 });

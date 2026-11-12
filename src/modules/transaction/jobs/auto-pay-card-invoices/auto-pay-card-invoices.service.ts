@@ -73,6 +73,8 @@ type FundedPayment =
   | { transaction: Transaction }
   | { insufficientAvailable: bigint };
 
+const NO_ATTEMPT_RESULTS: InvoiceResult[] = ['already-paid', 'nothing-to-pay'];
+
 const newTally = (): Tally => ({
   settled: 0,
   failed: 0,
@@ -194,8 +196,12 @@ export class AutoPayCardInvoicesJobService {
     tally: Tally,
   ): Promise<void> {
     try {
+      let attempted = 0;
       for (const period of this.duePeriodsOf(card, startedAt)) {
-        tally[await this.settleInvoice({ card, ...period })] += 1;
+        if (attempted >= MAX_INVOICES_PER_CARD) break;
+        const result = await this.settleInvoice({ card, ...period });
+        tally[result] += 1;
+        if (!NO_ATTEMPT_RESULTS.includes(result)) attempted += 1;
       }
     } catch (error) {
       tally.failed += 1;
@@ -223,9 +229,17 @@ export class AutoPayCardInvoicesJobService {
       dueDay: card.dueDay,
     });
 
+    const enabledOn = this.dateProvider.format(
+      card.autoPayEnabledAt,
+      'YYYY-MM-DD',
+      card.timezone,
+    );
+
     return probeKeysOf(today)
-      .filter((key) => calendar.bounds(key).dueDate <= today)
-      .slice(-MAX_INVOICES_PER_CARD)
+      .filter((key) => {
+        const { dueDate } = calendar.bounds(key);
+        return dueDate >= enabledOn && dueDate <= today;
+      })
       .map(periodOfKey);
   }
 

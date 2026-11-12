@@ -54,6 +54,7 @@ describe('AccountPresenter', () => {
       autoPayEnabled: false,
       autoPaySourceAccountId: null,
       autoPayConfirmedAt: null,
+      autoPayEnabledAt: null,
     });
   });
 
@@ -68,6 +69,7 @@ describe('AccountPresenter', () => {
       autoPayEnabled: true,
       autoPaySourceAccountId: 'src-1',
       autoPayConfirmedAt: '2026-11-01T10:00:00.000Z',
+      autoPayEnabledAt: '2026-11-01T10:00:00.000Z',
     });
   });
 
@@ -85,6 +87,7 @@ describe('AccountPresenter', () => {
       accountId: 'card-1',
       autoPayEnabled: true,
       autoPayConfirmedAt: '2026-11-01T10:00:00.000Z',
+      autoPayEnabledAt: '2026-11-01T10:00:00.000Z',
       autoPaySourceAccountId: 'src-1',
     });
   });

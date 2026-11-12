@@ -5,6 +5,7 @@ export interface AutopayCandidate {
   dueDay: number;
   closingDaysBeforeDue: number;
   sourceAccountId: string;
+  autoPayEnabledAt: Date;
 }
 
 export interface InvoicePeriod {

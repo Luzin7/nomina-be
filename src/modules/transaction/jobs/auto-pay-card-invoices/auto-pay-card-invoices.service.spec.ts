@@ -36,6 +36,7 @@ const makeCandidate = (
   dueDay: 15,
   closingDaysBeforeDue: 5,
   sourceAccountId: SOURCE_ID,
+  autoPayEnabledAt: new Date('2024-03-01T00:00:00.000Z'),
   ...overrides,
 });
 
@@ -174,7 +175,7 @@ describe('AutoPayCardInvoicesJobService', () => {
         invoiceOf({ invoiceStatus: 'paid' }),
       );
 
-      expect(summary.skipped['already-paid']).toBe(3);
+      expect(summary.skipped['already-paid']).toBe(1);
       expect(settlements.claim).not.toHaveBeenCalled();
       expect(payInvoice.execute).not.toHaveBeenCalled();
     });
@@ -402,6 +403,87 @@ describe('AutoPayCardInvoicesJobService', () => {
       await runWith([makeCandidate()], '2024-04');
 
       expect(payInvoice.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('activation cutoff', () => {
+    const runAllUnpaid = (candidate: AutopayCandidate) => {
+      settlements.findAutopayCandidates.mockResolvedValueOnce([candidate]);
+      settlements.countAutopayCandidates.mockResolvedValue(1);
+      getInvoice.execute.mockResolvedValue(right(invoiceOf() as never));
+      return service.execute();
+    };
+
+    const paidMonths = () =>
+      payInvoice.execute.mock.calls.map(([{ month, year }]) => [year, month]);
+
+    it('should skip an invoice due before the activation date', async () => {
+      await runAllUnpaid(
+        makeCandidate({
+          autoPayEnabledAt: new Date('2024-03-16T10:00:00.000Z'),
+        }),
+      );
+
+      expect(payInvoice.execute).not.toHaveBeenCalled();
+      expect(settlements.claim).not.toHaveBeenCalled();
+    });
+
+    it('should pay the invoice due on the activation date', async () => {
+      await runAllUnpaid(
+        makeCandidate({
+          autoPayEnabledAt: new Date('2024-03-15T08:00:00.000Z'),
+        }),
+      );
+
+      expect(paidMonths()).toEqual([[2024, 3]]);
+    });
+
+    it('should ignore invoices from before a re-enable', async () => {
+      await runAllUnpaid(
+        makeCandidate({
+          autoPayEnabledAt: new Date('2024-03-10T08:00:00.000Z'),
+        }),
+      );
+
+      expect(paidMonths()).toEqual([[2024, 3]]);
+    });
+
+    it('should judge the activation date in the card timezone', async () => {
+      await runAllUnpaid(
+        makeCandidate({
+          timezone: 'America/Sao_Paulo',
+          autoPayEnabledAt: new Date('2024-03-16T02:30:00.000Z'),
+        }),
+      );
+
+      expect(paidMonths()).toEqual([[2024, 3]]);
+    });
+
+    it('should pay the newest invoice when older eligible ones are already paid', async () => {
+      await runWith(
+        [
+          makeCandidate({
+            autoPayEnabledAt: new Date('2020-01-01T00:00:00.000Z'),
+          }),
+        ],
+        '2024-03',
+      );
+
+      expect(paidMonths()).toEqual([[2024, 3]]);
+    });
+
+    it('should take the oldest three eligible invoices', async () => {
+      await runAllUnpaid(
+        makeCandidate({
+          autoPayEnabledAt: new Date('2020-01-01T00:00:00.000Z'),
+        }),
+      );
+
+      expect(paidMonths()).toEqual([
+        [2023, 12],
+        [2024, 1],
+        [2024, 2],
+      ]);
     });
   });
 });

@@ -106,6 +106,7 @@ describe('SetAutopayService', () => {
             dueDay: 15,
             autoPayEnabled: false,
             autoPayConfirmedAt: null,
+            autoPayEnabledAt: null,
             autoPaySourceAccountId: null,
             ...override,
           },
@@ -187,5 +188,21 @@ describe('SetAutopayService', () => {
     expect(target.autoPayEnabled).toBe(true);
     expect(target.autoPayConfirmedAt).toEqual(FIRST_ENABLE);
     expect(target.autoPaySourceAccountId).toBe('src-1');
+  });
+
+  it('sets enabledAt on every enable and keeps it on disable', async () => {
+    const target = card();
+    givenAccounts(target, checking());
+
+    await service.execute(makeRequest());
+    expect(target.autoPayEnabledAt).toEqual(FIRST_ENABLE);
+
+    dateProvider.now.mockReturnValue(SECOND_ENABLE);
+    await service.execute(makeRequest({ enabled: false }));
+    expect(target.autoPayEnabledAt).toEqual(FIRST_ENABLE);
+
+    await service.execute(makeRequest({ sourceAccountId: undefined }));
+    expect(target.autoPayEnabledAt).toEqual(SECOND_ENABLE);
+    expect(target.autoPayConfirmedAt).toEqual(FIRST_ENABLE);
   });
 });

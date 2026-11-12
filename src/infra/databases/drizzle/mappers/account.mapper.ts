@@ -13,7 +13,10 @@ type AccountDrizzleEditable = Pick<
 >;
 type AccountDrizzleAutoPay = Pick<
   AccountDrizzleInsert,
-  'autoPayEnabled' | 'autoPayConfirmedAt' | 'autoPaySourceAccountId'
+  | 'autoPayEnabled'
+  | 'autoPayConfirmedAt'
+  | 'autoPayEnabledAt'
+  | 'autoPaySourceAccountId'
 >;
 
 export class AccountMapper {
@@ -36,6 +39,7 @@ export class AccountMapper {
             timezone: raw.timezone,
             autoPayEnabled: raw.autoPayEnabled,
             autoPayConfirmedAt: raw.autoPayConfirmedAt,
+            autoPayEnabledAt: raw.autoPayEnabledAt,
             autoPaySourceAccountId: raw.autoPaySourceAccountId,
           },
           raw.id,
@@ -102,6 +106,7 @@ export class AccountMapper {
     return {
       autoPayEnabled: entity.autoPayEnabled,
       autoPayConfirmedAt: entity.autoPayConfirmedAt,
+      autoPayEnabledAt: entity.autoPayEnabledAt,
       autoPaySourceAccountId: entity.autoPaySourceAccountId,
     };
   }
@@ -124,6 +129,7 @@ export class AccountMapper {
       dueDay: isCreditCard ? entity.dueDay : null,
       autoPayEnabled: isCreditCard ? entity.autoPayEnabled : false,
       autoPayConfirmedAt: isCreditCard ? entity.autoPayConfirmedAt : null,
+      autoPayEnabledAt: isCreditCard ? entity.autoPayEnabledAt : null,
       autoPaySourceAccountId: isCreditCard
         ? entity.autoPaySourceAccountId
         : null,

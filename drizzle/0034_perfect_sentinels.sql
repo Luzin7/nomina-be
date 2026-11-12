@@ -11,6 +11,7 @@ CREATE TABLE "card_invoice_settlements" (
 --> statement-breakpoint
 ALTER TABLE "accounts" ADD COLUMN "auto_pay_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "accounts" ADD COLUMN "auto_pay_confirmed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "accounts" ADD COLUMN "auto_pay_enabled_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "accounts" ADD COLUMN "auto_pay_source_account_id" text;--> statement-breakpoint
 ALTER TABLE "card_invoice_settlements" ADD CONSTRAINT "card_invoice_settlements_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "card_invoice_settlements" ADD CONSTRAINT "card_invoice_settlements_card_account_id_accounts_id_fk" FOREIGN KEY ("card_account_id") REFERENCES "public"."accounts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

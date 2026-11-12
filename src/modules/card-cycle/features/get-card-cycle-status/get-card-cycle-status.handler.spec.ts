@@ -71,6 +71,7 @@ function makeCardWithoutDueDay(): CreditCard {
       dueDay: null,
       autoPayEnabled: false,
       autoPayConfirmedAt: null,
+      autoPayEnabledAt: null,
       autoPaySourceAccountId: null,
     },
     'acc-1',

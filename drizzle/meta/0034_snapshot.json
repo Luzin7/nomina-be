@@ -1,5 +1,5 @@
 {
-  "id": "3b16a3e8-bd26-4213-bc41-2f312e8dc085",
+  "id": "3240fa14-16fb-4bde-ba49-c84a22a48858",
   "prevId": "27f6ad66-a639-46ac-8ba3-2a0cfb8054a9",
   "version": "7",
   "dialect": "postgresql",
@@ -74,6 +74,12 @@
         },
         "auto_pay_confirmed_at": {
           "name": "auto_pay_confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auto_pay_enabled_at": {
+          "name": "auto_pay_enabled_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false

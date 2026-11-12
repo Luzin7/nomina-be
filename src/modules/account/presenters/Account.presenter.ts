@@ -31,6 +31,7 @@ export class AccountPresenter {
         autoPayEnabled: account.autoPayEnabled,
         autoPaySourceAccountId: account.autoPaySourceAccountId,
         autoPayConfirmedAt: account.autoPayConfirmedAt?.toISOString() ?? null,
+        autoPayEnabledAt: account.autoPayEnabledAt?.toISOString() ?? null,
       };
     }
 
@@ -55,6 +56,7 @@ export class AccountPresenter {
       accountId: card.id,
       autoPayEnabled: card.autoPayEnabled,
       autoPayConfirmedAt: card.autoPayConfirmedAt?.toISOString() ?? null,
+      autoPayEnabledAt: card.autoPayEnabledAt?.toISOString() ?? null,
       autoPaySourceAccountId: card.autoPaySourceAccountId,
     };
   }

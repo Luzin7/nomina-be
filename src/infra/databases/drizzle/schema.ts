@@ -207,6 +207,9 @@ export const accounts = pgTable(
     autoPayConfirmedAt: timestamp('auto_pay_confirmed_at', {
       withTimezone: true,
     }),
+    autoPayEnabledAt: timestamp('auto_pay_enabled_at', {
+      withTimezone: true,
+    }),
     autoPaySourceAccountId: text('auto_pay_source_account_id').references(
       (): AnyPgColumn => accounts.id,
       { onDelete: 'set null' },

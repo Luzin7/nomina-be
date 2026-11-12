@@ -20,6 +20,7 @@ function makeRow(overrides: Partial<AccountRow> = {}): AccountRow {
     creditLimit: null,
     autoPayEnabled: false,
     autoPayConfirmedAt: null,
+    autoPayEnabledAt: null,
     autoPaySourceAccountId: null,
     ...overrides,
   };
@@ -128,6 +129,7 @@ describe('AccountRepositoryImplementation autopay persistence', () => {
     expect(set.mock.calls[0][0]).toEqual({
       autoPayEnabled: true,
       autoPayConfirmedAt: new Date('2026-11-01T10:00:00Z'),
+      autoPayEnabledAt: new Date('2026-11-01T10:00:00Z'),
       autoPaySourceAccountId: 'src-1',
     });
     expect(where).toHaveBeenCalledTimes(1);

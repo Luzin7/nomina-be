@@ -21,12 +21,17 @@ export interface CreditCardProps extends BaseAccountProps {
   dueDay: number | null;
   autoPayEnabled: boolean;
   autoPayConfirmedAt: Date | null;
+  autoPayEnabledAt: Date | null;
   autoPaySourceAccountId: string | null;
 }
 
 type CreditCardCreateProps = Omit<
   CreditCardProps,
-  'balance' | 'autoPayEnabled' | 'autoPayConfirmedAt' | 'autoPaySourceAccountId'
+  | 'balance'
+  | 'autoPayEnabled'
+  | 'autoPayConfirmedAt'
+  | 'autoPayEnabledAt'
+  | 'autoPaySourceAccountId'
 > &
   Partial<
     Pick<
@@ -34,6 +39,7 @@ type CreditCardCreateProps = Omit<
       | 'balance'
       | 'autoPayEnabled'
       | 'autoPayConfirmedAt'
+      | 'autoPayEnabledAt'
       | 'autoPaySourceAccountId'
     >
   >;
@@ -70,6 +76,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
           balance: props.balance ?? 0n,
           autoPayEnabled: props.autoPayEnabled ?? false,
           autoPayConfirmedAt: props.autoPayConfirmedAt ?? null,
+          autoPayEnabledAt: props.autoPayEnabledAt ?? null,
           autoPaySourceAccountId: props.autoPaySourceAccountId ?? null,
         },
         id,
@@ -99,6 +106,10 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
 
   get autoPayConfirmedAt(): Date | null {
     return this.props.autoPayConfirmedAt;
+  }
+
+  get autoPayEnabledAt(): Date | null {
+    return this.props.autoPayEnabledAt;
   }
 
   get autoPaySourceAccountId(): string | null {
@@ -224,6 +235,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     this.props.autoPayEnabled = true;
     this.props.autoPaySourceAccountId = sourceAccountId;
     this.props.autoPayConfirmedAt ??= now;
+    this.props.autoPayEnabledAt = now;
     return right(undefined);
   }
 

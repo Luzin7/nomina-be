@@ -16,6 +16,7 @@ const autopayCandidateFilter = and(
   eq(schema.accounts.autoPayEnabled, true),
   isNotNull(schema.accounts.autoPaySourceAccountId),
   isNotNull(schema.accounts.dueDay),
+  isNotNull(schema.accounts.autoPayEnabledAt),
 );
 
 @Injectable()
@@ -34,6 +35,7 @@ export class CardInvoiceSettlementRepositoryImplementation implements CardInvoic
         dueDay: schema.accounts.dueDay,
         closingDaysBeforeDue: schema.accounts.closingDaysBeforeDue,
         sourceAccountId: schema.accounts.autoPaySourceAccountId,
+        autoPayEnabledAt: schema.accounts.autoPayEnabledAt,
       })
       .from(schema.accounts)
       .where(
@@ -49,6 +51,7 @@ export class CardInvoiceSettlementRepositoryImplementation implements CardInvoic
       ...row,
       dueDay: row.dueDay as number,
       sourceAccountId: row.sourceAccountId as string,
+      autoPayEnabledAt: row.autoPayEnabledAt as Date,
     }));
   }
 

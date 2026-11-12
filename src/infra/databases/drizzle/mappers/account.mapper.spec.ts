@@ -18,6 +18,7 @@ function makeCreditCardRow(overrides: Partial<AccountRow> = {}): AccountRow {
     creditLimit: null,
     autoPayEnabled: false,
     autoPayConfirmedAt: null,
+    autoPayEnabledAt: null,
     autoPaySourceAccountId: null,
     ...overrides,
   };
