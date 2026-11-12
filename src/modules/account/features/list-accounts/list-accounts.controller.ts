@@ -40,7 +40,7 @@ export class ListAccountsController {
 
     return {
       data: {
-        accounts: data.value.accounts.map(AccountPresenter.toHTTP),
+        accounts: data.value.accounts.map(AccountPresenter.toListItemHTTP),
         total: data.value.total,
       },
     };
