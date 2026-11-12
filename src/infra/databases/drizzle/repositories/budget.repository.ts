@@ -146,6 +146,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         id: schema.categories.id,
         name: schema.categories.name,
         workspaceId: schema.categories.workspaceId,
+        isHidden: schema.categories.isHidden,
       })
       .from(schema.categories)
       .where(inArray(schema.categories.id, categoryIds));

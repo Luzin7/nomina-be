@@ -13,10 +13,21 @@ describe('SaveBudgetConfigPipe', () => {
     ).toThrow(BadRequestException);
   });
 
-  it('accepts a payload without a mode', () => {
-    expect(SaveBudgetConfigPipe.transform(PERCENTAGE_PAYLOAD)).toEqual(
-      PERCENTAGE_PAYLOAD,
-    );
+  it('defaults a payload without a mode to percentage', () => {
+    expect(SaveBudgetConfigPipe.transform(PERCENTAGE_PAYLOAD)).toEqual({
+      ...PERCENTAGE_PAYLOAD,
+      mode: 'percentage',
+    });
+  });
+
+  it('accepts mixed-mode fields', () => {
+    const payload = {
+      mode: 'fixed',
+      monthlyIncome: 100_000,
+      allocations: [{ categoryId: 'cat-1', percentageOfIncome: 100 }],
+    };
+
+    expect(SaveBudgetConfigPipe.transform(payload)).toEqual(payload);
   });
 
   it('accepts a fixed payload', () => {

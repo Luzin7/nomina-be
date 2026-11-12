@@ -81,6 +81,28 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
     return CategoryMapper.toDomain(category);
   }
 
+  async findVisibleById(
+    id: string,
+    workspaceId: string,
+  ): Promise<Category | null> {
+    const [category] = await this.drizzle.db
+      .select()
+      .from(schema.categories)
+      .where(
+        and(
+          eq(schema.categories.id, id),
+          or(
+            eq(schema.categories.workspaceId, workspaceId),
+            eq(schema.categories.isSystemCategory, true),
+          ),
+        ),
+      )
+      .limit(1);
+
+    if (!category) return null;
+    return CategoryMapper.toDomain(category);
+  }
+
   async findUniqueByAttributes(
     name: string,
     type: TransactionType,
@@ -233,6 +255,7 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
 
   async deleteIfUnreferenced(
     categoryId: string,
+    workspaceId: string,
   ): Promise<CategoryDeleteResult> {
     try {
       return await this.drizzle.db.transaction(async (tx) => {
@@ -241,7 +264,12 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
 
         await tx
           .delete(schema.categories)
-          .where(eq(schema.categories.id, categoryId));
+          .where(
+            and(
+              eq(schema.categories.id, categoryId),
+              eq(schema.categories.workspaceId, workspaceId),
+            ),
+          );
 
         return { deleted: true };
       });

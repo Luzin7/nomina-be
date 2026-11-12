@@ -5,6 +5,7 @@ import {
   CategoryNameAlreadyExistsError,
   InvalidParentCategoryError,
 } from '@modules/category/errors';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { BusinessRuleDomainError } from '@shared/core/errors/DomainError';
 import { CategoryRepositoryImplementation } from './category.repository';
 
@@ -81,5 +82,26 @@ describe('CategoryRepositoryImplementation.create', () => {
     await expect(repository.create(makeCategory())).rejects.toBeInstanceOf(
       CategoryNameAlreadyExistsError,
     );
+  });
+});
+
+describe('CategoryRepositoryImplementation.findVisibleById', () => {
+  it('scopes the query by id, workspace and system rows', async () => {
+    const where = jest
+      .fn()
+      .mockReturnValue({ limit: jest.fn().mockResolvedValue([]) });
+    const select = jest
+      .fn()
+      .mockReturnValue({ from: jest.fn().mockReturnValue({ where }) });
+    const repository = new CategoryRepositoryImplementation({
+      db: { select },
+    } as unknown as DrizzleService);
+
+    await repository.findVisibleById('cat-1', 'ws-1');
+
+    const query = new PgDialect().sqlToQuery(where.mock.calls[0][0]);
+    expect(query.sql).toContain('"workspace_id"');
+    expect(query.sql).toContain('"is_system_category"');
+    expect(query.params).toEqual(expect.arrayContaining(['cat-1', 'ws-1']));
   });
 });

@@ -8,6 +8,7 @@ import {
   DuplicateBudgetCategoryError,
   EmptyBudgetAllocationsError,
   ForbiddenBudgetCategoryError,
+  HiddenBudgetCategoryError,
   HistoricalBudgetImmutableError,
   InvalidBudgetEffectiveDateError,
   InvalidBudgetPercentageSumError,
@@ -38,14 +39,39 @@ function makeRequest(
   overrides: Partial<SaveBudgetConfigRequest> = {},
 ): SaveBudgetConfigRequest {
   return {
+    mode: 'percentage',
     monthlyIncome: 10_000,
     allocations: [makeAllocation()],
     ...overrides,
-  };
+  } as SaveBudgetConfigRequest;
 }
 
-function category(id: string, workspaceId: string | null = 'ws-1') {
-  return { id, name: `Category ${id}`, workspaceId };
+function category(
+  id: string,
+  workspaceId: string | null = 'ws-1',
+  isHidden = false,
+) {
+  return { id, name: `Category ${id}`, workspaceId, isHidden };
+}
+
+function makeSnapshot(categoryIds: string[]) {
+  return {
+    id: 'budget-0',
+    workspaceId: 'ws-1',
+    effectiveFrom: CURRENT_MONTH_START,
+    monthlyIncome: 10_000,
+    mode: 'percentage' as const,
+    allocations: categoryIds.map((categoryId, index) => ({
+      id: `alloc-${index}`,
+      categoryId,
+      categoryName: null,
+      groupName: 'Geral',
+      groupOrder: 0,
+      categoryOrder: index,
+      percentageOfIncome: 100,
+      targetCents: 10_000,
+    })),
+  };
 }
 
 describe('SaveBudgetConfigService', () => {
@@ -179,6 +205,65 @@ describe('SaveBudgetConfigService', () => {
       expect(result.value).toBeInstanceOf(ForbiddenBudgetCategoryError);
     }
     expect(repository.saveSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('rejects hidden category missing from snapshot', async () => {
+    repository.findCategoriesByIds.mockResolvedValueOnce([
+      category('cat-1', 'ws-1', true),
+    ]);
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot(['cat-2']));
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest(),
+    });
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(HiddenBudgetCategoryError);
+    }
+    expect(repository.saveSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('rejects a hidden category when no snapshot exists yet', async () => {
+    repository.findCategoriesByIds.mockResolvedValueOnce([
+      category('cat-1', 'ws-1', true),
+    ]);
+    repository.resolveSnapshot.mockResolvedValueOnce(null);
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest(),
+    });
+
+    expect(result.isLeft()).toBe(true);
+    if (result.isLeft()) {
+      expect(result.value).toBeInstanceOf(HiddenBudgetCategoryError);
+    }
+  });
+
+  it('accepts hidden category present in snapshot', async () => {
+    repository.findCategoriesByIds.mockResolvedValueOnce([
+      category('cat-1', 'ws-1', true),
+    ]);
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot(['cat-1']));
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({ effectiveFrom: CURRENT_MONTH_START.toISOString() }),
+    });
+
+    expect(result.isRight()).toBe(true);
+    expect(repository.resolveSnapshot).toHaveBeenCalledWith(
+      'ws-1',
+      CURRENT_MONTH_START,
+    );
+  });
+
+  it('does not load the snapshot when no category is hidden', async () => {
+    await service.execute({ workspaceId: 'ws-1', ...makeRequest() });
+
+    expect(repository.resolveSnapshot).not.toHaveBeenCalled();
   });
 
   it('rejects a category that does not exist', async () => {

@@ -10,6 +10,7 @@ import {
   DuplicateBudgetCategoryError,
   EmptyBudgetAllocationsError,
   ForbiddenBudgetCategoryError,
+  HiddenBudgetCategoryError,
   HistoricalBudgetImmutableError,
   InvalidBudgetEffectiveDateError,
   InvalidBudgetPercentageSumError,
@@ -55,6 +56,12 @@ type BuildAllocationsInput = {
   fields: AllocationFields;
 };
 
+type ValidateCategoriesInput = {
+  workspaceId: string;
+  effectiveFrom: Date;
+  allocations: AllocationInput[];
+};
+
 type BuildResponseInput = {
   saved: SavedBudgetSnapshot;
   mode: BudgetMode;
@@ -91,7 +98,7 @@ export class SaveBudgetConfigService implements Service<
     request: Request,
   ): Promise<Either<Error, SaveBudgetConfigResponse>> {
     const { workspaceId, monthlyIncome, allocations } = request;
-    const mode = request.mode ?? BUDGET_MODE_DEFAULT;
+    const { mode } = request;
 
     const fields = parseAllocationFields({ mode, allocations });
     if (fields.isLeft()) return left(fields.value);
@@ -104,10 +111,11 @@ export class SaveBudgetConfigService implements Service<
     });
     if (effectiveFrom.isLeft()) return left(effectiveFrom.value);
 
-    const categoryError = await this.validateCategories(
+    const categoryError = await this.validateCategories({
       workspaceId,
+      effectiveFrom: effectiveFrom.value,
       allocations,
-    );
+    });
     if (categoryError) return left(categoryError);
 
     const savedAllocations = this.buildAllocations({
@@ -220,10 +228,11 @@ export class SaveBudgetConfigService implements Service<
     };
   }
 
-  private async validateCategories(
-    workspaceId: string,
-    allocations: AllocationInput[],
-  ): Promise<Error | null> {
+  private async validateCategories({
+    workspaceId,
+    effectiveFrom,
+    allocations,
+  }: ValidateCategoriesInput): Promise<Error | null> {
     const categories = await this.budgetRepository.findCategoriesByIds(
       allocations.map((allocation) => allocation.categoryId),
     );
@@ -243,7 +252,20 @@ export class SaveBudgetConfigService implements Service<
       }
     }
 
-    return null;
+    const hidden = categories.filter((category) => category.isHidden);
+    if (hidden.length === 0) return null;
+
+    const snapshot = await this.budgetRepository.resolveSnapshot(
+      workspaceId,
+      effectiveFrom,
+    );
+    const allocatedIds = new Set(
+      snapshot?.allocations.map((allocation) => allocation.categoryId),
+    );
+
+    return hidden.every((category) => allocatedIds.has(category.id))
+      ? null
+      : new HiddenBudgetCategoryError();
   }
 }
 

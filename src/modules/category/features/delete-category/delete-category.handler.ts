@@ -22,18 +22,20 @@ export class DeleteCategoryService implements Service<Request, Error, void> {
   ) {}
 
   async execute({ id, workspaceId }: Request): Promise<Either<Error, void>> {
-    const category = await this.categoryRepository.findById(id);
+    const category = await this.categoryRepository.findVisibleById(
+      id,
+      workspaceId,
+    );
     if (!category) return left(new CategoryTargetNotFoundError());
 
     if (category.isSystemCategory) {
       return left(new SystemCategoryModificationError());
     }
 
-    if (category.workspaceId !== workspaceId) {
-      return left(new CategoryTargetNotFoundError());
-    }
-
-    const result = await this.categoryRepository.deleteIfUnreferenced(id);
+    const result = await this.categoryRepository.deleteIfUnreferenced(
+      id,
+      workspaceId,
+    );
     if (!result.deleted) return left(new CategoryInUseError(result.references));
 
     await bumpCategoryGeneration({

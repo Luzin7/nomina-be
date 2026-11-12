@@ -4,6 +4,7 @@ export type BudgetCategoryRef = {
   id: string;
   name: string;
   workspaceId: string | null;
+  isHidden: boolean;
 };
 
 export type BudgetAllocationRecord = {
