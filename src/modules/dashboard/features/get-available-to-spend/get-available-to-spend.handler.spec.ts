@@ -1,6 +1,7 @@
 import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
 import { ListAccountsService } from '@modules/account/features/list-accounts/list-accounts.service';
 import { GetCreditCardInvoiceService } from '@modules/account/features/get-credit-card-invoice/get-credit-card-invoice.handler';
+import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
   BudgetStatusAllocation,
   BudgetStatusResponse,
@@ -46,6 +47,18 @@ const makeProjection = (
   ...overrides,
 });
 
+const makeSpendProjection = (
+  recurringExpense = 0,
+  daysRemaining = 3,
+): MonthProjection =>
+  makeProjection({
+    recurringNotYetGenerated: {
+      totalIncome: 0,
+      totalExpense: recurringExpense,
+    },
+    daysRemaining,
+  });
+
 const makeSummary = (recurringExpense = 0, daysRemaining = 3): MonthSummary =>
   MonthSummary.create({
     month: new Date('2026-11-01T03:00:00.000Z'),
@@ -56,13 +69,7 @@ const makeSummary = (recurringExpense = 0, daysRemaining = 3): MonthSummary =>
     totalCreditCardBalance: 0,
     rate: { currentMonthSaving: 0, previousMonthCompareSaving: 0 },
     previousMonthToDate: { totalIncome: 0, totalExpense: 0 },
-    projection: makeProjection({
-      recurringNotYetGenerated: {
-        totalIncome: 0,
-        totalExpense: recurringExpense,
-      },
-      daysRemaining,
-    }),
+    projection: makeSpendProjection(recurringExpense, daysRemaining),
   });
 
 const makeAllocation = (
@@ -107,7 +114,7 @@ const makeBudget = (
   unallocatedIncomeCents: 0,
   allocationState: 'balanced',
   totalSpent: 500,
-  projection: null,
+  projection: makeSpendProjection(),
   ...overrides,
 });
 
@@ -139,13 +146,29 @@ describe('GetAvailableToSpendService', () => {
   let getProjection: jest.Mocked<GetProjectionService>;
   let warn: jest.SpyInstance;
 
-  const givenBudget = (budget: BudgetStatusResponse) =>
+  let currentBudget: BudgetStatusResponse;
+  const givenBudget = (budget: BudgetStatusResponse) => {
+    currentBudget = budget;
     getBudgetStatus.execute.mockResolvedValue(right(budget));
+  };
+  const givenProjection = (recurringExpense: number, daysRemaining = 3) => {
+    if (!currentBudget.exists) throw new Error('budget snapshot required');
+    givenBudget({
+      ...currentBudget,
+      projection: makeSpendProjection(recurringExpense, daysRemaining),
+    });
+  };
   const givenSummary = (summary: MonthSummary) =>
     findMonthSummary.execute.mockResolvedValue(right(summary));
   const givenAccounts = (...accounts: unknown[]) =>
     listAccounts.execute.mockResolvedValue(
-      right({ accounts, total: accounts.length } as never),
+      right({
+        accounts: accounts.map((account) => ({
+          account,
+          balanceUpdatedAt: null,
+        })),
+        total: accounts.length,
+      } as never),
     );
   const givenHorizon = (...months: HorizonMonth[]) =>
     getProjection.execute.mockResolvedValue(
@@ -221,7 +244,7 @@ describe('GetAvailableToSpendService', () => {
   describe('figure', () => {
     it('subtracts recurring and goal aportes from the remaining budget', async () => {
       givenBudget(makeBudget({ totalTargetCents: 1_500, totalSpent: 500 }));
-      givenSummary(makeSummary(200, 3));
+      givenProjection(200, 3);
       goalRepository.sumMonthlyAporteCents.mockResolvedValue(300);
 
       const response = await run();
@@ -249,7 +272,7 @@ describe('GetAvailableToSpendService', () => {
           allocations: [],
         }),
       );
-      givenSummary(makeSummary(313));
+      givenProjection(313);
       goalRepository.sumMonthlyAporteCents.mockResolvedValue(200);
 
       const response = await run();
@@ -261,7 +284,7 @@ describe('GetAvailableToSpendService', () => {
 
     it('has no daily allowance when spendable is zero', async () => {
       givenBudget(makeBudget({ totalTargetCents: 1_000, totalSpent: 500 }));
-      givenSummary(makeSummary(500));
+      givenProjection(500);
 
       const response = await run();
 
@@ -272,7 +295,7 @@ describe('GetAvailableToSpendService', () => {
 
     it('floors the daily allowance and never divides by less than one day', async () => {
       givenBudget(makeBudget({ totalTargetCents: 1_000, totalSpent: 0 }));
-      givenSummary(makeSummary(0, 0));
+      givenProjection(0, 0);
 
       const response = await run();
 
@@ -330,19 +353,70 @@ describe('GetAvailableToSpendService', () => {
       });
     });
 
-    it('reads the month summary exactly once', async () => {
-      await run();
-
-      expect(findMonthSummary.execute).toHaveBeenCalledTimes(1);
-    });
-
-    it('never reads the budget payload projection or the pace', async () => {
-      givenSummary(makeSummary(0, 3));
+    it('derives the daily allowance from spendable, never from the pace', async () => {
+      givenBudget(makeBudget({ totalTargetCents: 1_000, totalSpent: 0 }));
 
       const response = await run();
 
-      expect(JSON.stringify(response)).not.toContain('777');
+      expect(response.perDayCents).toBe(333);
     });
+
+    it('does not read the month summary when the budget carries the projection', async () => {
+      await run();
+
+      expect(findMonthSummary.execute).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['with a budget snapshot', () => makeBudget()],
+      [
+        'without a budget snapshot',
+        (): BudgetStatusResponse => ({ exists: false }),
+      ],
+    ])(
+      'computes the month summary exactly once %s',
+      async (_label, budgetOf) => {
+        const budgetRepository = {
+          resolveSnapshot: jest.fn().mockResolvedValue(
+            budgetOf().exists
+              ? {
+                  id: 'budget-1',
+                  workspaceId: 'ws-1',
+                  effectiveFrom: new Date('2026-11-01T03:00:00.000Z'),
+                  monthlyIncome: 1_500,
+                  mode: 'percentage',
+                  allocations: [],
+                }
+              : null,
+          ),
+          findCompletedExpenseByCategory: jest.fn().mockResolvedValue({}),
+          findCategoryParentMap: jest.fn().mockResolvedValue({}),
+        } as unknown as BudgetRepository;
+        const dateProvider = new DayJsDateProvider();
+        jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
+        const workspaceTimezone = {
+          execute: jest.fn().mockResolvedValue(TIMEZONE),
+        } as unknown as GetWorkspaceTimezoneService;
+        const wired = new GetAvailableToSpendService(
+          new GetBudgetStatusService(
+            budgetRepository,
+            findMonthSummary,
+            workspaceTimezone,
+            dateProvider,
+          ),
+          findMonthSummary,
+          goalRepository,
+          new CardBillDueInsightService(listAccounts, getInvoice),
+          new ProjectionShortfallInsightService(getProjection),
+          workspaceTimezone,
+          dateProvider,
+        );
+
+        await wired.execute(REQUEST);
+
+        expect(findMonthSummary.execute).toHaveBeenCalledTimes(1);
+      },
+    );
 
     it('returns the error when the budget status fails', async () => {
       const failure = new Error('budget down');
@@ -353,7 +427,8 @@ describe('GetAvailableToSpendService', () => {
       expect(result.value).toBe(failure);
     });
 
-    it('returns the error when the month summary fails', async () => {
+    it('returns the error when the month summary fails without a budget', async () => {
+      givenBudget({ exists: false });
       const failure = new Error('summary down');
       findMonthSummary.execute.mockResolvedValue(left(failure as never));
 
@@ -363,7 +438,9 @@ describe('GetAvailableToSpendService', () => {
     });
 
     it('is identical when a card gains six pending future parcels', async () => {
-      givenAccounts(dueIn(10));
+      givenAccounts(dueIn(3));
+      givenInvoice();
+      givenHorizon(makeHorizonMonth());
       const baseline = JSON.stringify(await run());
 
       givenInvoice(
@@ -380,8 +457,11 @@ describe('GetAvailableToSpendService', () => {
           pendingInstallments: Array.from({ length: 6 }, () => ({})) as never,
         }),
       );
+      getInvoice.execute.mockClear();
+      const withParcels = JSON.stringify(await run());
 
-      expect(JSON.stringify(await run())).toBe(baseline);
+      expect(getInvoice.execute).toHaveBeenCalledTimes(1);
+      expect(withParcels).toBe(baseline);
     });
   });
 
@@ -400,7 +480,7 @@ describe('GetAvailableToSpendService', () => {
           allocations: [],
         }),
       );
-      givenSummary(makeSummary(313));
+      givenProjection(313);
       goalRepository.sumMonthlyAporteCents.mockResolvedValue(200);
 
       const response = await run();
@@ -533,6 +613,24 @@ describe('GetAvailableToSpendService', () => {
       const response = await run();
 
       expect(response.insight?.args).toMatchObject({ cardId: 'itau', days: 3 });
+    });
+
+    it('silences the insight when the account page is truncated', async () => {
+      givenBudget(makeBudget({ unallocatedIncomeCents: 800 }));
+      listAccounts.execute.mockResolvedValue(
+        right({
+          accounts: [{ account: dueIn(3), balanceUpdatedAt: null }],
+          total: 201,
+        } as never),
+      );
+
+      const response = await run();
+
+      expect(response.insight).toBeNull();
+      expect(getInvoice.execute).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('AccountScanTruncatedError'),
+      );
     });
 
     it('includes a card due today and one due in six days', async () => {

@@ -1,5 +1,6 @@
 import { GetBudgetStatusService } from '@modules/budget/features/get-status/get-status.handler';
 import type { BudgetStatusResponse } from '@modules/budget/features/get-status/get-status.handler';
+import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
@@ -66,15 +67,19 @@ export class GetAvailableToSpendService implements Service<
     const today = this.dateProvider.format(now, 'YYYY-MM-DD', timezone);
     const [year, month] = today.split('-').map(Number);
 
-    const [budget, summary, goalAportesCents] = await Promise.all([
+    const [budget, goalAportesCents] = await Promise.all([
       this.getBudgetStatus.execute({ workspaceId, sub, month, year }),
-      this.findMonthSummary.execute({ workspaceId, sub }),
       this.goalRepository.sumMonthlyAporteCents(workspaceId),
     ]);
     if (budget.isLeft()) return left(budget.value);
-    if (summary.isLeft()) return left(summary.value);
 
-    const { projection } = summary.value;
+    const projectionResult = await this.currentProjectionOf(budget.value, {
+      workspaceId,
+      sub,
+    });
+    if (projectionResult.isLeft()) return left(projectionResult.value);
+
+    const projection = projectionResult.value;
     const figure = buildSpendableFigure({
       budget: budget.value,
       recurringNotYetGeneratedCents:
@@ -96,6 +101,18 @@ export class GetAvailableToSpendService implements Service<
       ...figure,
       insight,
     });
+  }
+
+  private async currentProjectionOf(
+    budget: BudgetStatusResponse,
+    identity: Request,
+  ): Promise<Either<Error, MonthProjection>> {
+    if (budget.exists && budget.projection) return right(budget.projection);
+
+    const summary = await this.findMonthSummary.execute(identity);
+    if (summary.isLeft()) return left(summary.value);
+
+    return right(summary.value.projection);
   }
 
   private async rankInsight(

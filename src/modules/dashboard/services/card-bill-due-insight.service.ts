@@ -2,6 +2,7 @@ import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { GetCreditCardInvoiceService } from '@modules/account/features/get-credit-card-invoice/get-credit-card-invoice.handler';
 import { ListAccountsService } from '@modules/account/features/list-accounts/list-accounts.service';
 import { Injectable } from '@nestjs/common';
+import { AccountScanTruncatedError } from '../errors';
 import type { AvailableToSpendInsight } from '../valueObjects/AvailableToSpend';
 import {
   findCardDueInWindow,
@@ -35,7 +36,12 @@ export class CardBillDueInsightService {
     });
     if (listed.isLeft()) throw listed.value;
 
+    if (listed.value.total > listed.value.accounts.length) {
+      throw new AccountScanTruncatedError();
+    }
+
     const due = listed.value.accounts
+      .map(({ account }) => account)
       .filter((account): account is CreditCard => account instanceof CreditCard)
       .map((card) => findCardDueInWindow(card, today))
       .filter((entry): entry is CardDueInWindow => entry !== null);
