@@ -32,6 +32,11 @@ export abstract class CardInvoiceSettlementRepository {
 
   abstract countAutopayCandidates(): Promise<number>;
 
+  abstract isAutopayActive(
+    cardAccountId: string,
+    sourceAccountId: string,
+  ): Promise<boolean>;
+
   abstract claim(input: ClaimInvoiceSettlementInput): Promise<string | null>;
 
   abstract findClaim(

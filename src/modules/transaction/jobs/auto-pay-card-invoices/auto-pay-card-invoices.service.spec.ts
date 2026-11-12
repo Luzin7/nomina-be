@@ -77,6 +77,7 @@ describe('AutoPayCardInvoicesJobService', () => {
     settlements = {
       findAutopayCandidates: jest.fn().mockResolvedValue([]),
       countAutopayCandidates: jest.fn().mockResolvedValue(0),
+      isAutopayActive: jest.fn().mockResolvedValue(true),
       claim: jest.fn().mockResolvedValue('claim-1'),
       findClaim: jest.fn(),
       releaseClaim: jest.fn().mockResolvedValue(undefined),
@@ -145,7 +146,31 @@ describe('AutoPayCardInvoicesJobService', () => {
     const summary = await service.execute();
 
     expect(summary.outcome).toBe('nothing-due');
+    expect(summary.lockBusy).toBe(true);
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining('lock busy'),
+    );
     expect(settlements.findAutopayCandidates).not.toHaveBeenCalled();
+  });
+
+  it('should not flag lockBusy when the lock is acquired', async () => {
+    const summary = await runWith([]);
+
+    expect(summary.lockBusy).toBe(false);
+  });
+
+  it('should skip as disabled without claiming when autopay was turned off after the batch was read', async () => {
+    settlements.isAutopayActive.mockResolvedValue(false);
+
+    const summary = await runWith([makeCandidate()]);
+
+    expect(settlements.isAutopayActive).toHaveBeenCalledWith(
+      'card-1',
+      SOURCE_ID,
+    );
+    expect(summary.skipped.disabled).toBe(1);
+    expect(settlements.claim).not.toHaveBeenCalled();
+    expect(payInvoice.execute).not.toHaveBeenCalled();
   });
 
   it('should release the lock after a run', async () => {
@@ -459,17 +484,28 @@ describe('AutoPayCardInvoicesJobService', () => {
       expect(paidMonths()).toEqual([[2024, 3]]);
     });
 
-    it('should pay the newest invoice when older eligible ones are already paid', async () => {
-      await runWith(
-        [
-          makeCandidate({
-            autoPayEnabledAt: new Date('2020-01-01T00:00:00.000Z'),
-          }),
-        ],
-        '2024-03',
+    it('should not count an already paid invoice toward the cap', async () => {
+      settlements.findAutopayCandidates.mockResolvedValueOnce([
+        makeCandidate({
+          autoPayEnabledAt: new Date('2020-01-01T00:00:00.000Z'),
+        }),
+      ]);
+      settlements.countAutopayCandidates.mockResolvedValue(1);
+      getInvoice.execute.mockImplementation(async ({ month, year }) =>
+        right(
+          invoiceOf(
+            year === 2024 && month === 1 ? { invoiceStatus: 'paid' } : {},
+          ) as never,
+        ),
       );
 
-      expect(paidMonths()).toEqual([[2024, 3]]);
+      await service.execute();
+
+      expect(paidMonths()).toEqual([
+        [2023, 12],
+        [2024, 2],
+        [2024, 3],
+      ]);
     });
 
     it('should take the oldest three eligible invoices', async () => {

@@ -64,6 +64,25 @@ export class CardInvoiceSettlementRepositoryImplementation implements CardInvoic
     return totalCount;
   }
 
+  async isAutopayActive(
+    cardAccountId: string,
+    sourceAccountId: string,
+  ): Promise<boolean> {
+    const [active] = await this.drizzle.db
+      .select({ id: schema.accounts.id })
+      .from(schema.accounts)
+      .where(
+        and(
+          eq(schema.accounts.id, cardAccountId),
+          eq(schema.accounts.autoPayEnabled, true),
+          eq(schema.accounts.autoPaySourceAccountId, sourceAccountId),
+        ),
+      )
+      .limit(1);
+
+    return Boolean(active);
+  }
+
   async claim(input: ClaimInvoiceSettlementInput): Promise<string | null> {
     const [inserted] = await this.drizzle.db
       .insert(schema.cardInvoiceSettlements)

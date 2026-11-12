@@ -33,9 +33,11 @@ function summaryOf(overrides: Partial<AutopaySummary>): AutopaySummary {
       'settled-by-another-run': 0,
       'nothing-to-pay': 0,
       'insufficient-balance': 0,
+      disabled: 0,
     },
     processedCount: 0,
     remainingCount: 0,
+    lockBusy: false,
     ...overrides,
   };
 }

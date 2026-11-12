@@ -59,7 +59,7 @@ export class AutoPayCardInvoicesJobController {
     const summary = await this.autoPayService.execute();
 
     this.logger[OUTCOME_LOG_LEVEL[summary.outcome]](
-      `${OUTCOME_MESSAGES[summary.outcome](summary)} skipped=${JSON.stringify(summary.skipped)} remaining=${summary.remainingCount}`,
+      `${OUTCOME_MESSAGES[summary.outcome](summary)} skipped=${JSON.stringify(summary.skipped)} remaining=${summary.remainingCount} lockBusy=${summary.lockBusy}`,
     );
 
     if (summary.outcome === 'total-failure') {

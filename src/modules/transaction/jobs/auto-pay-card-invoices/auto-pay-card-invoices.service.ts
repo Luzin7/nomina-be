@@ -36,7 +36,8 @@ export type AutopaySkipReason =
   | 'already-settled'
   | 'settled-by-another-run'
   | 'nothing-to-pay'
-  | 'insufficient-balance';
+  | 'insufficient-balance'
+  | 'disabled';
 
 export type AutopayOutcome =
   | 'nothing-due'
@@ -51,6 +52,7 @@ export interface AutopaySummary {
   skipped: Record<AutopaySkipReason, number>;
   processedCount: number;
   remainingCount: number;
+  lockBusy: boolean;
 }
 
 type InvoiceResult = 'settled' | 'failed' | AutopaySkipReason;
@@ -83,6 +85,7 @@ const newTally = (): Tally => ({
   'settled-by-another-run': 0,
   'nothing-to-pay': 0,
   'insufficient-balance': 0,
+  disabled: 0,
 });
 
 const keyOf = ({ month, year }: InvoicePeriod): string =>
@@ -133,7 +136,12 @@ export class AutoPayCardInvoicesJobService {
 
   async execute(): Promise<AutopaySummary> {
     const lock = await this.cache.acquireLock(LOCK_KEY, LOCK_TTL_SECONDS);
-    if (!lock) return this.summaryOf(newTally(), 0);
+    if (!lock) {
+      this.logger.warn(
+        `${AutoPayCardInvoicesJobService.name} skipped: lock busy, another run holds ${LOCK_KEY}`,
+      );
+      return this.summaryOf(newTally(), 0, true);
+    }
 
     try {
       return await this.run();
@@ -169,7 +177,11 @@ export class AutoPayCardInvoicesJobService {
     return this.summaryOf(tally, Math.max(totalCards - startedCards, 0));
   }
 
-  private summaryOf(tally: Tally, remainingCount: number): AutopaySummary {
+  private summaryOf(
+    tally: Tally,
+    remainingCount: number,
+    lockBusy = false,
+  ): AutopaySummary {
     const { settled, failed, ...skipped } = tally;
     const processedCount =
       settled + failed + Object.values(skipped).reduce((a, b) => a + b, 0);
@@ -181,6 +193,7 @@ export class AutoPayCardInvoicesJobService {
       skipped,
       processedCount,
       remainingCount,
+      lockBusy,
     };
   }
 
@@ -259,10 +272,19 @@ export class AutoPayCardInvoicesJobService {
     if (invoice.invoiceStatus === 'paid') return 'already-paid';
     if (invoice.totalAmount <= 0n) return 'nothing-to-pay';
 
+    if (!(await this.isStillEnabled(context.card))) return 'disabled';
+
     const claim = await this.claim(context);
     if (claim.skip) return claim.skip;
 
     return this.payClaimed(context, claim.claimId, invoice.totalAmount);
+  }
+
+  private isStillEnabled(card: AutopayCandidate): Promise<boolean> {
+    return this.settlements.isAutopayActive(
+      card.cardAccountId,
+      card.sourceAccountId,
+    );
   }
 
   private async loadInvoice({
