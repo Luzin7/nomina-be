@@ -133,3 +133,26 @@ describe('AccountRepositoryImplementation autopay persistence', () => {
     expect(where).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AccountRepositoryImplementation.findAllByWorkspaceId', () => {
+  it('lists a card without dueDay together with the other accounts', async () => {
+    const rows = [
+      makeRow({ id: 'acc-1' }),
+      makeRow({ id: 'acc-2', type: AccountType.CREDIT_CARD, dueDay: null }),
+    ];
+    const drizzle = {
+      db: {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue(rows),
+          }),
+        }),
+      },
+    } as unknown as DrizzleService;
+    const repository = new AccountRepositoryImplementation(drizzle);
+
+    const accounts = await repository.findAllByWorkspaceId('ws-1');
+
+    expect(accounts.map((account) => account.id)).toEqual(['acc-1', 'acc-2']);
+  });
+});

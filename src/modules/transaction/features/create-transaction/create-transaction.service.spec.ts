@@ -69,6 +69,7 @@ describe('CreateTransactionService', () => {
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
     categoryRepository = {
@@ -77,6 +78,7 @@ describe('CreateTransactionService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
       findUniqueByAttributes: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       countChildren: jest.fn(),

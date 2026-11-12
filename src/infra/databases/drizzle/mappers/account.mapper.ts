@@ -26,11 +26,6 @@ export class AccountMapper {
 
     switch (raw.type) {
       case AccountType.CREDIT_CARD:
-        if (raw.dueDay === null) {
-          throw new Error(
-            `Dados corrompidos no banco: Cartão ${raw.id} sem dia de vencimento.`,
-          );
-        }
         return CreditCard.reconstitute(
           {
             ...baseProps,

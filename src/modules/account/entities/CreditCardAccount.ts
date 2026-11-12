@@ -18,7 +18,7 @@ export interface CreditCardProps extends BaseAccountProps {
   balance: bigint;
   creditLimit: bigint | null;
   closingDaysBeforeDue: number;
-  dueDay: number;
+  dueDay: number | null;
   autoPayEnabled: boolean;
   autoPayConfirmedAt: Date | null;
   autoPaySourceAccountId: string | null;
@@ -57,7 +57,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     if (!isValidClosingDaysBeforeDue(props.closingDaysBeforeDue)) {
       return left(new InvalidClosingDaysBeforeDueError());
     }
-    if (!isValidDueDay(props.dueDay)) {
+    if (props.dueDay !== null && !isValidDueDay(props.dueDay)) {
       return left(new InvalidDueDayError());
     }
 
@@ -89,7 +89,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     return this.props.closingDaysBeforeDue;
   }
 
-  get dueDay(): number {
+  get dueDay(): number | null {
     return this.props.dueDay;
   }
 
@@ -210,6 +210,7 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
       );
     }
     if (
+      this.props.dueDay === null ||
       !isValidDueDay(this.props.dueDay) ||
       !isValidClosingDaysBeforeDue(this.props.closingDaysBeforeDue)
     ) {

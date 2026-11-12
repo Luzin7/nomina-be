@@ -65,6 +65,14 @@ export class InvalidDueDayError extends ValidationAccountError {
   }
 }
 
+export class CreditCardCycleNotConfiguredError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'O cartão não tem o ciclo da fatura configurado. Defina o dia de vencimento e o fechamento.',
+    );
+  }
+}
+
 export class InsufficientBalanceError extends BusinessRuleDomainError {
   constructor(reason = 'Saldo insuficiente para essa operação.') {
     super(reason);

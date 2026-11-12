@@ -4,6 +4,7 @@ import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import {
   AccountNotFoundError,
+  CreditCardCycleNotConfiguredError,
   InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -86,6 +87,8 @@ export class PayCreditCardInvoiceService implements Service<
     if (creditCardAccountOrError.isLeft())
       return left(creditCardAccountOrError.value);
     const creditCardAccount = creditCardAccountOrError.value;
+    const dueDay = creditCardAccount.dueDay;
+    if (dueDay === null) return left(new CreditCardCycleNotConfiguredError());
 
     const sourceAccountOrError = await this.validateSourceAccount(props);
     if (sourceAccountOrError.isLeft()) return left(sourceAccountOrError.value);
@@ -102,7 +105,7 @@ export class PayCreditCardInvoiceService implements Service<
     const invoiceKey = allocateInvoice({
       calendar: new InvoiceCalendar({
         closingDaysBeforeDue: creditCardAccount.closingDaysBeforeDue,
-        dueDay: creditCardAccount.dueDay,
+        dueDay,
       }),
       paymentDate: this.dateProvider.format(
         now,

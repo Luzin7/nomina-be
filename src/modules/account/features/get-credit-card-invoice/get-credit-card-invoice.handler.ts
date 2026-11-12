@@ -3,6 +3,7 @@ import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
   AccountNotFoundError,
   AccountTypeError,
+  CreditCardCycleNotConfiguredError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import {
@@ -108,6 +109,10 @@ export class GetCreditCardInvoiceService implements Service<
       return left(new UnauthorizedError());
 
     if (!(account instanceof CreditCard)) return left(new AccountTypeError());
+
+    if (account.dueDay === null) {
+      return left(new CreditCardCycleNotConfiguredError());
+    }
 
     const calendar = new InvoiceCalendar({
       closingDaysBeforeDue: account.closingDaysBeforeDue,
