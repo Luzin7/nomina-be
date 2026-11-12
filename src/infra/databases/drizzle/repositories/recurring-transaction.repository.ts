@@ -1,4 +1,5 @@
 import { RecurringKind } from '@constants/enums';
+import { MIN_INSTALLMENTS_FOR_PLAN } from '@constants/recurring';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { Transaction } from '@modules/transaction/entities/Transaction';
@@ -30,7 +31,6 @@ import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
 import { installmentPlanExhaustedAt } from './installment-position';
 
-const MIN_INSTALLMENTS_FOR_PLAN = 2;
 const RECURRING_TYPES = ['INCOME', 'EXPENSE'];
 
 @Injectable()

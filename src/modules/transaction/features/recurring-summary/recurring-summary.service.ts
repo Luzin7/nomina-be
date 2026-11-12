@@ -1,4 +1,5 @@
 import { RecurrenceFrequency } from '@constants/enums';
+import { MIN_INSTALLMENTS_FOR_PLAN } from '@constants/recurring';
 import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { projectMonth } from '@modules/report/valueObjects/ProjectionHorizon';
@@ -42,6 +43,10 @@ export type RecurringSummaryEntry = {
 
 export type RecurringSummary = {
   monthlyEquivalentCents: number;
+  recurringExpenseMonthlyCents: number;
+  installmentMonthlyCents: number;
+  recurringIncomeMonthlyCents: number;
+  committedIncomePercent: number | null;
   activeCount: number;
   pausedCount: number;
   exhaustedCount: number;
@@ -71,6 +76,25 @@ export const monthlyEquivalentCents = (
 
 const isContributing = (rule: RecurringSummaryRule): boolean =>
   rule.active && !rule.exhausted;
+
+const isExpense = (rule: RecurringSummaryRule): boolean =>
+  rule.type === 'EXPENSE';
+
+const isIncome = (rule: RecurringSummaryRule): boolean =>
+  rule.type === 'INCOME';
+
+const isInstallment = (rule: RecurringSummaryRule): boolean =>
+  rule.installmentCount !== null &&
+  rule.installmentCount >= MIN_INSTALLMENTS_FOR_PLAN;
+
+const sumMonthlyEquivalent = (rules: RecurringSummaryRule[]): number =>
+  rules.reduce((total, rule) => total + monthlyEquivalentCents(rule), 0);
+
+const committedIncomePercent = (
+  expenseCents: number,
+  incomeCents: number,
+): number | null =>
+  incomeCents === 0 ? null : Math.round((expenseCents / incomeCents) * 100);
 
 const countRules = (
   rules: RecurringSummaryRule[],
@@ -162,7 +186,7 @@ const byFrequency = (
 ): RecurringSummaryFrequency[] => {
   const groups = new Map<string, RecurringSummaryFrequency>();
 
-  for (const rule of rules.filter(isContributing)) {
+  for (const rule of rules.filter(isContributing).filter(isExpense)) {
     const key = `${rule.frequency}:${rule.interval}`;
     const group = groups.get(key) ?? {
       frequency: rule.frequency,
@@ -264,10 +288,29 @@ export class RecurringSummaryService implements Service<
       recurringRules,
     });
 
+    const contributing = rules.filter(isContributing);
+    const expenses = contributing.filter(isExpense);
+    const recurringExpenseMonthlyCents = sumMonthlyEquivalent(
+      expenses.filter((rule) => !isInstallment(rule)),
+    );
+    const installmentMonthlyCents = sumMonthlyEquivalent(
+      expenses.filter(isInstallment),
+    );
+    const monthlyExpenseCents =
+      recurringExpenseMonthlyCents + installmentMonthlyCents;
+    const recurringIncomeMonthlyCents = sumMonthlyEquivalent(
+      contributing.filter(isIncome),
+    );
+
     return right({
-      monthlyEquivalentCents: rules
-        .filter(isContributing)
-        .reduce((total, rule) => total + monthlyEquivalentCents(rule), 0),
+      monthlyEquivalentCents: monthlyExpenseCents,
+      recurringExpenseMonthlyCents,
+      installmentMonthlyCents,
+      recurringIncomeMonthlyCents,
+      committedIncomePercent: committedIncomePercent(
+        monthlyExpenseCents,
+        recurringIncomeMonthlyCents,
+      ),
       ...countRules(rules),
       materializedThisMonthCents,
       stillToComeThisMonthCents:
