@@ -2,6 +2,8 @@ import { AggregateRoot } from '@shared/core/Entities/AggregateRoot';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { Optional } from '@shared/core/types/Optional';
 
+const MAX_EMAIL_LENGTH = 254;
+
 export interface UserProps {
   name: string;
   email: string;
@@ -46,7 +48,16 @@ export class User extends AggregateRoot<UserProps> {
   }
 
   private static isValidEmail(email: string): boolean {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (email.length > MAX_EMAIL_LENGTH) return false;
+    if (/\s/.test(email)) return false;
+
+    const separatorIndex = email.indexOf('@');
+    if (separatorIndex < 1) return false;
+    if (email.indexOf('@', separatorIndex + 1) !== -1) return false;
+
+    const domain = email.slice(separatorIndex + 1);
+    const lastDotIndex = domain.lastIndexOf('.');
+    return lastDotIndex > 0 && lastDotIndex < domain.length - 1;
   }
 
   get createdAt(): Date {
