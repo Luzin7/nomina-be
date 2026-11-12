@@ -1,5 +1,6 @@
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AnyAccount } from '@modules/account/entities/types';
+import { AccountListItem } from '@modules/account/repositories/contracts/AccountRepository';
 import { MoneyUtils } from '@utils/MoneyUtils';
 import { CashAccount } from '../entities/CashAccounts';
 import { CreditCard } from '../entities/CreditCardAccount';
@@ -35,5 +36,14 @@ export class AccountPresenter {
     }
 
     return basePayload;
+  }
+
+  static toListItemHTTP({ account, balanceUpdatedAt }: AccountListItem) {
+    return {
+      ...AccountPresenter.toHTTP(account),
+      balanceUpdatedAt: balanceUpdatedAt
+        ? balanceUpdatedAt.toISOString()
+        : null,
+    };
   }
 }

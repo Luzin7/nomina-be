@@ -1,5 +1,7 @@
-import { AnyAccount } from '@modules/account/entities/types';
-import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import {
+  AccountListItem,
+  AccountRepository,
+} from '@modules/account/repositories/contracts/AccountRepository';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
@@ -8,7 +10,7 @@ import { ListAccountsRequest } from './list-accounts.dto';
 
 type Request = ListAccountsRequest & Pick<TokenPayloadSchema, 'workspaceId'>;
 type Response = {
-  accounts: AnyAccount[];
+  accounts: AccountListItem[];
   total: number;
 };
 

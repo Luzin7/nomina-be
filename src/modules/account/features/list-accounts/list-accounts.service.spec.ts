@@ -41,7 +41,10 @@ describe('ListAccountsService', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('should return accounts and total', async () => {
-    const accounts = [makeAccount(), makeAccount()];
+    const accounts = [
+      { account: makeAccount(), balanceUpdatedAt: new Date() },
+      { account: makeAccount(), balanceUpdatedAt: null },
+    ];
     accountRepository.findManyByWorkspaceId.mockResolvedValue({
       accounts,
       total: 2,

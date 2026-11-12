@@ -9,7 +9,6 @@ import { ListGoalsController } from '@modules/goal/features/list-goals/list-goal
 import { ListGoalsService } from '@modules/goal/features/list-goals/list-goals.service';
 import { UpdateGoalController } from '@modules/goal/features/update-goal/update-goal.controller';
 import { UpdateGoalService } from '@modules/goal/features/update-goal/update-goal.service';
-import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
 import { ValidateGoalLinksService } from '@modules/goal/services/validate-goal-links.service';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
@@ -32,6 +31,5 @@ import { DateModule } from '@providers/date/Date.module';
     GetGoalsSummaryService,
     ValidateGoalLinksService,
   ],
-  exports: [GoalRepository],
 })
 export class GoalModule {}
