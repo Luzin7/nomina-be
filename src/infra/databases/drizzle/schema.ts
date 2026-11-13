@@ -601,6 +601,43 @@ export const goals = pgTable(
   ],
 );
 
+export const goalContributions = pgTable(
+  'goal_contributions',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    goalId: text('goal_id')
+      .notNull()
+      .references(() => goals.id, { onDelete: 'cascade' }),
+    amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
+    sourceAccountId: text('source_account_id').references(() => accounts.id, {
+      onDelete: 'set null',
+    }),
+    contributedAt: timestamp('contributed_at', {
+      withTimezone: true,
+      mode: 'date',
+    })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_goal_contribution_ws_goal_contributed_at').on(
+      table.workspaceId,
+      table.goalId,
+      table.contributedAt.desc(),
+    ),
+    check(
+      'chk_goal_contribution_amount_cents_positive',
+      sql`${table.amountCents} > 0`,
+    ),
+  ],
+);
+
 // --------------------------------------------------------
 // FATURAMENTO (SAAS)
 // --------------------------------------------------------

@@ -70,6 +70,7 @@ export interface FreshnessRead {
 
 export interface FreshnessWrite {
   name: string;
+  prepare?(context: FreshnessContext): Promise<void>;
   run(context: FreshnessContext): Promise<void>;
   changes: string[];
 }
@@ -333,6 +334,7 @@ export function defineFreshnessSuite({
           seed: await seedWorkspace(app, postgres.db),
         };
 
+        await write.prepare?.(context);
         const warm = snapshot(await read.run(context));
         await write.run(context);
         const served = snapshot(await read.run(context));
