@@ -8,8 +8,10 @@ import { ListGoalsService } from '@modules/goal/features/list-goals/list-goals.s
 import { BalanceEvolutionService } from '@modules/report/features/get-balance-evolution/get-balance-evolution.handler';
 import { GetExpensesByCategoryService } from '@modules/report/features/get-expenses-by-category/get-expenses-by-category.handler';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
+import { GetMonthPaceService } from '@modules/report/features/get-month-pace/get-month-pace.handler';
 import { GetProjectionService } from '@modules/report/features/get-projection/get-projection.handler';
 import { ListRecurringTransactionsService } from '@modules/transaction/features/list-recurring-transactions/list-recurring-transactions.service';
+import { ListTransactionTotalsService } from '@modules/transaction/features/list-transaction-totals/list-transaction-totals.service';
 import { ListTransactionsService } from '@modules/transaction/features/list-transaction/list-transaction.service';
 import { ListRecurringSuggestionsService } from '@modules/transaction/features/recurring-suggestions/list-recurring-suggestions.service';
 import { RecurringSummaryService } from '@modules/transaction/features/recurring-summary/recurring-summary.service';
@@ -54,7 +56,20 @@ export const FRESHNESS_READS: FreshnessRead[] = [
         workspaceId: seed.workspaceId,
         month: seed.month,
         year: seed.year,
+        limit: 5,
       } as never),
+  },
+  {
+    name: 'month-pace',
+    domains: ['ledger'],
+    run: async ({ app, seed }) =>
+      unwrap(
+        await app.get(GetMonthPaceService).execute({
+          workspaceId: seed.workspaceId,
+          month: seed.month,
+          year: seed.year,
+        }),
+      ),
   },
   {
     name: 'budget-status',
@@ -140,6 +155,16 @@ export const FRESHNESS_READS: FreshnessRead[] = [
         await context.app
           .get(ListTransactionsService)
           .execute({ ...actor(context), page: 1, pageSize: 20 } as never),
+      ),
+  },
+  {
+    name: 'list-totals',
+    domains: ['ledger'],
+    run: async (context) =>
+      unwrap(
+        await context.app
+          .get(ListTransactionTotalsService)
+          .execute(actor(context) as never),
       ),
   },
   {

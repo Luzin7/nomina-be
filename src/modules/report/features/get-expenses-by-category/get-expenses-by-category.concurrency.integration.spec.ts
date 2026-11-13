@@ -149,7 +149,11 @@ describe('expenses by category over a hidden category', () => {
   });
 
   it('excludes the hidden category from the current month', async () => {
-    const result = await service.execute({ workspaceId, ...CURRENT_MONTH });
+    const result = await service.execute({
+      workspaceId,
+      limit: 5,
+      ...CURRENT_MONTH,
+    });
 
     expect(result.expenses.map((expense) => expense.categoryName)).toEqual([
       'Mercado',
@@ -157,7 +161,11 @@ describe('expenses by category over a hidden category', () => {
   });
 
   it('keeps the hidden category in a historical month', async () => {
-    const result = await service.execute({ workspaceId, ...PREVIOUS_MONTH });
+    const result = await service.execute({
+      workspaceId,
+      limit: 5,
+      ...PREVIOUS_MONTH,
+    });
 
     expect(result.expenses.map((expense) => expense.categoryName)).toEqual([
       'Mercado',

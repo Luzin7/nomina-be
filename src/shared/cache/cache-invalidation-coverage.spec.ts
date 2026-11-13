@@ -52,6 +52,12 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
     route: 'transaction:list',
     kinds: ['ledger', 'category'],
   },
+  'transaction/features/list-transaction-totals/list-transaction-totals.service.ts':
+    { route: 'transaction:list-totals', kinds: ['ledger'] },
+  'report/features/get-month-pace/get-month-pace.handler.ts': {
+    route: 'report:month-pace',
+    kinds: ['ledger'],
+  },
   'transaction/features/list-recurring-transactions/list-recurring-transactions.service.ts':
     { route: 'recurring:list', kinds: ['ledger', 'category'] },
   'transaction/features/recurring-summary/recurring-summary.service.ts': {

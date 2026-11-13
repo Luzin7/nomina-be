@@ -1,6 +1,7 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { Transaction } from '@modules/transaction/entities/Transaction';
+import { resolveListDayRange } from '@modules/transaction/services/resolve-list-day-range';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
@@ -74,21 +75,19 @@ export class ListTransactionsService implements Service<
   private async list(request: Request): Promise<Either<Error, Response>> {
     const timezone = await this.workspaceTimezone.execute(request.workspaceId);
 
-    const start = request.startDate
-      ? this.dateProvider.startOfDay(request.startDate, timezone)
-      : undefined;
-
-    const end = request.endDate
-      ? this.dateProvider.endOfDay(request.endDate, timezone)
-      : undefined;
+    const { startDate, endDate } = resolveListDayRange(this.dateProvider, {
+      startDate: request.startDate,
+      endDate: request.endDate,
+      timezone,
+    });
 
     const { transactions, total } =
       await this.transactionRepository.listTransactionsByWorkspaceId({
         workspaceId: request.workspaceId,
         page: request.page,
         pageSize: request.pageSize,
-        startDate: start,
-        endDate: end,
+        startDate,
+        endDate,
         type: request.type,
         categoryId: request.categoryId,
         accountId: request.accountId,

@@ -61,6 +61,15 @@ export type PresetCategory = {
   name: string;
 };
 
+export type CompletedExpenseByLocalDayQuery = {
+  workspaceId: string;
+  start: Date;
+  end: Date;
+  timezone: string;
+};
+
+export type CompletedExpenseOfDay = { day: number; totalCents: number };
+
 export abstract class BudgetRepository {
   abstract resolveSnapshot(
     workspaceId: string,
@@ -81,6 +90,10 @@ export abstract class BudgetRepository {
     start: Date,
     end: Date,
   ): Promise<Record<string, number>>;
+
+  abstract findCompletedExpenseByLocalDay(
+    query: CompletedExpenseByLocalDayQuery,
+  ): Promise<CompletedExpenseOfDay[]>;
 
   abstract findCategoryParentMap(
     workspaceId: string,

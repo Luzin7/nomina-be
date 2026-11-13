@@ -24,7 +24,9 @@ import {
   CreateBalanceMutation,
   DueCardTransactions,
   ListTransactionsParams,
+  TransactionFilterParams,
   TransactionRepository,
+  TransactionTotals,
   UpdateTransactionMutation,
   UpdateTransactionStatusParams,
 } from '@modules/transaction/repositories/contracts/TransactionRepository';
@@ -97,29 +99,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
   async listTransactionsByWorkspaceId(
     params: ListTransactionsParams,
   ): Promise<{ transactions: Transaction[]; total: number }> {
-    const whereConditions = and(
-      eq(schema.transactions.workspaceId, params.workspaceId),
-      params.startDate
-        ? gte(schema.transactions.date, params.startDate)
-        : undefined,
-      params.endDate
-        ? lte(schema.transactions.date, params.endDate)
-        : undefined,
-      params.type ? eq(schema.transactions.type, params.type) : undefined,
-      params.categoryId
-        ? eq(schema.transactions.categoryId, params.categoryId)
-        : undefined,
-      params.accountId
-        ? or(
-            eq(schema.transactions.accountId, params.accountId),
-            eq(schema.transactions.destinationAccountId, params.accountId),
-          )
-        : undefined,
-      params.title
-        ? ilike(schema.transactions.title, `%${params.title}%`)
-        : undefined,
-      params.status ? eq(schema.transactions.status, params.status) : undefined,
-    );
+    const whereConditions = this.buildFilterConditions(params);
 
     const [transactionsRaw, [{ totalCount }]] = await Promise.all([
       this.drizzle.db
@@ -158,6 +138,53 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
       ),
       total: totalCount,
     };
+  }
+
+  async sumTransactionsByWorkspaceId(
+    params: TransactionFilterParams,
+  ): Promise<TransactionTotals> {
+    const sumOfType = (type: TransactionType) =>
+      sql<number>`COALESCE(SUM(${schema.transactions.amount}) FILTER (WHERE ${schema.transactions.type} = ${type}), 0)`.mapWith(
+        Number,
+      );
+
+    const [totals] = await this.drizzle.db
+      .select({
+        count: count(),
+        incomeCents: sumOfType(TransactionType.INCOME),
+        expenseCents: sumOfType(TransactionType.EXPENSE),
+        transferCents: sumOfType(TransactionType.TRANSFER),
+      })
+      .from(schema.transactions)
+      .where(this.buildFilterConditions(params));
+
+    return totals;
+  }
+
+  private buildFilterConditions(params: TransactionFilterParams) {
+    return and(
+      eq(schema.transactions.workspaceId, params.workspaceId),
+      params.startDate
+        ? gte(schema.transactions.date, params.startDate)
+        : undefined,
+      params.endDate
+        ? lte(schema.transactions.date, params.endDate)
+        : undefined,
+      params.type ? eq(schema.transactions.type, params.type) : undefined,
+      params.categoryId
+        ? eq(schema.transactions.categoryId, params.categoryId)
+        : undefined,
+      params.accountId
+        ? or(
+            eq(schema.transactions.accountId, params.accountId),
+            eq(schema.transactions.destinationAccountId, params.accountId),
+          )
+        : undefined,
+      params.title
+        ? ilike(schema.transactions.title, `%${params.title}%`)
+        : undefined,
+      params.status ? eq(schema.transactions.status, params.status) : undefined,
+    );
   }
 
   async getTopExpensesByCategory(params: {

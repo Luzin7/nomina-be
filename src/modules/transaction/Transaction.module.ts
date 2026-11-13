@@ -21,6 +21,8 @@ import { FindTransactionByIdService } from './features/find-transaction/find-tra
 import { ListRecurringTransactionsController } from './features/list-recurring-transactions/list-recurring-transactions.controller';
 import { ListRecurringTransactionsService } from './features/list-recurring-transactions/list-recurring-transactions.service';
 import { ListTransactionController } from './features/list-transaction/list-transaction.controller';
+import { ListTransactionTotalsController } from './features/list-transaction-totals/list-transaction-totals.controller';
+import { ListTransactionTotalsService } from './features/list-transaction-totals/list-transaction-totals.service';
 import { ListTransactionsService } from './features/list-transaction/list-transaction.service';
 import { RecurringSummaryController } from './features/recurring-summary/recurring-summary.controller';
 import { RecurringSummaryService } from './features/recurring-summary/recurring-summary.service';
@@ -56,6 +58,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     CreateTransactionController,
     DeleteTransactionController,
     ListTransactionController,
+    ListTransactionTotalsController,
     ListRecurringTransactionsController,
     FindTransactionController,
     UpdateTransactionController,
@@ -88,6 +91,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     DeleteTransactionService,
     FindTransactionByIdService,
     ListTransactionsService,
+    ListTransactionTotalsService,
     UpdateTransactionService,
     SetTransactionStatusService,
     CreateRecurringTransactionService,
