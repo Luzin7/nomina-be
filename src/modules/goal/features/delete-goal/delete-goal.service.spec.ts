@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import {
   EmergencyGoalNotDeletableError,
   GoalNotFoundError,
@@ -14,7 +15,10 @@ describe('DeleteGoalService', () => {
 
   beforeEach(() => {
     goalRepository = makeGoalRepository();
-    service = new DeleteGoalService(goalRepository);
+    service = new DeleteGoalService(
+      goalRepository,
+      new InMemoryCacheProvider(),
+    );
   });
 
   it('deletes a normal goal of the workspace', async () => {

@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AccountTypeError } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -82,6 +83,7 @@ describe('SaveCardCycleBudgetService', () => {
       accountRepository,
       cardCycleRepository,
       dateProvider,
+      new InMemoryCacheProvider(),
     );
   });
 

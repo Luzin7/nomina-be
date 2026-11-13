@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
 import { ListAccountsService } from '@modules/account/features/list-accounts/list-accounts.service';
 import { GetCreditCardInvoiceService } from '@modules/account/features/get-credit-card-invoice/get-credit-card-invoice.handler';
@@ -138,6 +139,7 @@ const makeInvoice = (overrides: Record<string, unknown> = {}) => ({
 
 describe('GetAvailableToSpendService', () => {
   let service: GetAvailableToSpendService;
+  let cache: InMemoryCacheProvider;
   let getBudgetStatus: jest.Mocked<GetBudgetStatusService>;
   let findMonthSummary: jest.Mocked<FindMonthSummaryService>;
   let goalRepository: jest.Mocked<GoalRepository>;
@@ -219,6 +221,7 @@ describe('GetAvailableToSpendService', () => {
     givenHorizon(makeHorizonMonth());
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
+    cache = new InMemoryCacheProvider();
     service = new GetAvailableToSpendService(
       getBudgetStatus,
       findMonthSummary,
@@ -227,6 +230,7 @@ describe('GetAvailableToSpendService', () => {
       new ProjectionShortfallInsightService(getProjection),
       workspaceTimezone,
       dateProvider,
+      cache,
     );
   });
 
@@ -236,6 +240,7 @@ describe('GetAvailableToSpendService', () => {
   });
 
   const run = async () => {
+    cache.values.clear();
     const result = await service.execute(REQUEST);
     if (result.isLeft()) throw result.value;
     return result.value;
@@ -403,6 +408,7 @@ describe('GetAvailableToSpendService', () => {
             findMonthSummary,
             workspaceTimezone,
             dateProvider,
+            new InMemoryCacheProvider(),
           ),
           findMonthSummary,
           goalRepository,
@@ -410,6 +416,7 @@ describe('GetAvailableToSpendService', () => {
           new ProjectionShortfallInsightService(getProjection),
           workspaceTimezone,
           dateProvider,
+          new InMemoryCacheProvider(),
         );
 
         await wired.execute(REQUEST);
@@ -660,6 +667,7 @@ describe('GetAvailableToSpendService', () => {
         new ProjectionShortfallInsightService(getProjection),
         { execute: jest.fn().mockResolvedValue(TIMEZONE) } as never,
         dateProvider,
+        new InMemoryCacheProvider(),
       );
 
       const result = await rolling.execute(REQUEST);

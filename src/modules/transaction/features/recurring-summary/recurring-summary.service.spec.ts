@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { RecurrenceFrequency } from '@constants/enums';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import {
@@ -105,6 +106,7 @@ const buildService = ({
       projectionRepository,
       workspaceTimezone,
       dateProvider,
+      new InMemoryCacheProvider(),
     ),
     recurringRepository,
     projectionRepository,

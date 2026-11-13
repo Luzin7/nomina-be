@@ -1,6 +1,8 @@
 import { CreateGoalRequest } from '@modules/goal/features/create-goal/create-goal.dto';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Goal } from '@modules/goal/entities/Goal';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
+import { invalidateGoalReads } from '@modules/goal/services/goal-cache';
 import { ValidateGoalLinksService } from '@modules/goal/services/validate-goal-links.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
@@ -28,6 +30,7 @@ export class CreateGoalService implements Service<
     private readonly validateGoalLinks: ValidateGoalLinksService,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, CreateGoalResponse>> {
@@ -50,6 +53,8 @@ export class CreateGoalService implements Service<
       linkedAccountId: request.linkedAccountId ?? null,
       categoryId: request.categoryId ?? null,
     });
+
+    await invalidateGoalReads(this.cache, workspaceId, 'create-goal');
 
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 

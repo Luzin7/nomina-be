@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { ListTransactionsService } from './list-transaction.service';
@@ -50,7 +51,11 @@ describe('ListTransactionsService', () => {
       startOfMonth: jest.fn(),
     } as unknown as jest.Mocked<DateProvider>;
 
-    service = new ListTransactionsService(transactionRepository, dateProvider);
+    service = new ListTransactionsService(
+      transactionRepository,
+      dateProvider,
+      new InMemoryCacheProvider(),
+    );
   });
 
   afterEach(() => jest.clearAllMocks());

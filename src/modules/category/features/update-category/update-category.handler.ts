@@ -7,10 +7,10 @@ import {
   SystemCategoryModificationError,
 } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
-import { bumpCategoryGeneration } from '@modules/category/services/category-list-cache';
+import { invalidateCategoryReads } from '@modules/category/services/category-list-cache';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UpdateCategoryRequest } from './update-category.dto';
@@ -54,14 +54,18 @@ export class UpdateCategoryService implements Service<
 
     try {
       const updated = await this.categoryRepository.update(category);
-      await bumpCategoryGeneration({
-        cache: this.cacheProvider,
+      await invalidateCategoryReads(
+        this.cacheProvider,
         workspaceId,
-        operation: 'update-category',
-      });
+        'update-category',
+      );
 
       if (isHidden !== undefined) {
-        await bumpReportGeneration(this.cacheProvider, workspaceId);
+        await invalidateLedgerReads(
+          this.cacheProvider,
+          workspaceId,
+          'update-category',
+        );
       }
 
       return right(updated);

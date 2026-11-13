@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import {
   GoalLinkedAccountInvalidError,
   GoalNotFoundError,
@@ -43,6 +44,7 @@ describe('UpdateGoalService', () => {
         execute: jest.fn().mockResolvedValue(TIMEZONE),
       } as unknown as GetWorkspaceTimezoneService,
       { now: () => NOW } as unknown as DateProvider,
+      new InMemoryCacheProvider(),
     );
   });
 

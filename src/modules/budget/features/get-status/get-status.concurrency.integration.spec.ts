@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { TransactionType } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { BudgetRepositoryImplementation } from '@infra/databases/drizzle/repositories/budget.repository';
@@ -103,6 +104,7 @@ describe('budget status over a hidden category', () => {
         execute: jest.fn().mockResolvedValue('UTC'),
       } as unknown as GetWorkspaceTimezoneService,
       dateProvider,
+      new InMemoryCacheProvider(),
     );
   });
 

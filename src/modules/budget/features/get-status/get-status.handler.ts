@@ -1,16 +1,24 @@
 import { type BudgetMode } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
   resolveAllocationState,
   type BudgetAllocationState,
 } from '@modules/budget/valueObjects/BudgetAllocationState';
 import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
+import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
+import {
+  LEDGER_LIVE_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
+} from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { GetBudgetStatusRequest } from './get-status.dto';
@@ -64,13 +72,43 @@ export class GetBudgetStatusService implements Service<
     private readonly findMonthSummary: FindMonthSummaryService,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute(
     request: Request,
   ): Promise<Either<Error, BudgetStatusResponse>> {
     const { workspaceId, month, year } = request;
+    const [ledger, category] = await Promise.all([
+      readLedgerGeneration(this.cache, workspaceId),
+      readCategoryGeneration(this.cache, workspaceId),
+    ]);
     const timezone = await this.workspaceTimezone.execute(workspaceId);
+    const localDay = this.dateProvider.format(
+      this.dateProvider.now(),
+      'YYYY-MM-DD',
+      timezone,
+    );
+
+    return readThrough({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'budget:status',
+        version: 'v1',
+        workspaceId,
+        generations: { ledger, category },
+        parts: [`${year}-${month}`, localDay],
+      }),
+      ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
+      load: () => this.computeStatus(request, timezone),
+    });
+  }
+
+  private async computeStatus(
+    request: Request,
+    timezone: string,
+  ): Promise<Either<Error, BudgetStatusResponse>> {
+    const { workspaceId, month, year } = request;
     const referenceDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const monthStart = this.dateProvider.startOfMonth(referenceDate, timezone);
     const monthEnd = this.dateProvider.endOfMonth(referenceDate, timezone);

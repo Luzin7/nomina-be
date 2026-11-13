@@ -6,10 +6,13 @@ import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-wor
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
 import {
-  REPORT_CACHE_TTL_SECONDS,
-  readReportGeneration,
+  LEDGER_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
 } from '@shared/cache/report-cache';
+import { right } from '@shared/core/errors/Either';
 import { MoneyUtils } from '@utils/MoneyUtils';
 import { and, desc, eq, gte, lte, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -38,14 +41,30 @@ export class CashFlowEvolutionService {
     startDate,
     endDate,
   }: Request): Promise<Response> {
-    const generation = await readReportGeneration(this.cache, workspaceId);
-    const cacheKey =
-      generation === null
-        ? null
-        : `report:cash-flow-evolution:v2:${workspaceId}:g${generation}:${startDate}:${endDate}`;
-    const cached = cacheKey ? await this.cache.get(cacheKey) : null;
-    if (cached) return JSON.parse(cached) as Response;
+    const generation = await readLedgerGeneration(this.cache, workspaceId);
 
+    const result = await readThrough<never, Response>({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'report:cash-flow-evolution',
+        version: 'v3',
+        workspaceId,
+        generations: { ledger: generation },
+        parts: [startDate, endDate],
+      }),
+      ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
+      load: async () =>
+        right(await this.aggregate(workspaceId, startDate, endDate)),
+    });
+
+    return result.value;
+  }
+
+  private async aggregate(
+    workspaceId: string,
+    startDate: Request['startDate'],
+    endDate: Request['endDate'],
+  ): Promise<Response> {
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 
     const start = this.dateProvider.startOfDay(startDate, timezone);
@@ -105,21 +124,11 @@ export class CashFlowEvolutionService {
       .groupBy(dateFormatted)
       .orderBy(desc(dateFormatted));
 
-    const response: Response = aggregates.map((item) => ({
+    return aggregates.map((item) => ({
       date: item.date,
       income: MoneyUtils.centsToDecimal(item.income),
       expense: MoneyUtils.centsToDecimal(item.expense),
       balance: MoneyUtils.centsToDecimal(item.balance),
     }));
-
-    if (cacheKey) {
-      await this.cache.set(
-        cacheKey,
-        JSON.stringify(response),
-        REPORT_CACHE_TTL_SECONDS,
-      );
-    }
-
-    return response;
   }
 }

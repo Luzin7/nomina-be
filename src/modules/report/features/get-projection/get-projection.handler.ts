@@ -1,7 +1,9 @@
 import { AccountType } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import { readGoalGeneration } from '@modules/goal/services/goal-cache';
 import { InvalidProjectionHorizonError } from '@modules/report/errors';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import {
@@ -15,6 +17,12 @@ import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-wor
 import { Injectable, Logger } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
+import {
+  LEDGER_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
+} from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { GetProjectionRequest } from './get-projection.dto';
@@ -54,6 +62,7 @@ export class GetProjectionService implements Service<Request, Error, Response> {
     private readonly budgetRepository: BudgetRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute({
@@ -65,6 +74,35 @@ export class GetProjectionService implements Service<Request, Error, Response> {
       return left(new InvalidProjectionHorizonError());
     }
 
+    const [ledger, goal] = await Promise.all([
+      readLedgerGeneration(this.cache, workspaceId),
+      readGoalGeneration(this.cache, workspaceId),
+    ]);
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+    const localDay = this.dateProvider.format(
+      this.dateProvider.now(),
+      'YYYY-MM-DD',
+      timezone,
+    );
+
+    return readThrough({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'projection',
+        version: 'v1',
+        workspaceId,
+        generations: { ledger, goal },
+        parts: [horizon, localDay],
+      }),
+      ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
+      load: () => this.project(workspaceId, horizon),
+    });
+  }
+
+  private async project(
+    workspaceId: string,
+    horizon: number,
+  ): Promise<Either<Error, Response>> {
     const startedAt = performance.now();
     let step = 'load-bundle';
 

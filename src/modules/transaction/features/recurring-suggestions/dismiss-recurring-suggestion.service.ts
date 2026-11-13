@@ -7,7 +7,7 @@ import {
 import { RecurringSuggestionRepository } from '@modules/transaction/repositories/contracts/RecurringSuggestionRepository';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 
@@ -57,7 +57,11 @@ export class DismissRecurringSuggestionService implements Service<
       return left(new RecurringSuggestionAlreadyAcceptedError());
     }
 
-    await bumpReportGeneration(this.cacheProvider, workspaceId);
+    await invalidateLedgerReads(
+      this.cacheProvider,
+      workspaceId,
+      'dismiss-recurring-suggestion',
+    );
 
     return right({ id: suggestion.id, status: 'dismissed' });
   }

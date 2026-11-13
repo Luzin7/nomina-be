@@ -5,7 +5,7 @@ import { ReportRepository } from '@modules/report/repositories/contracts/ReportR
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
-import { REPORT_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
+import { LEDGER_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import { FindMonthSummaryService } from './get-month-summary.service';
 
 const GENERATION = 7;
@@ -217,7 +217,7 @@ describe('FindMonthSummaryService', () => {
         '2026-10-01T03:00:00.000Z',
       );
       expect(cache.get).toHaveBeenCalledWith(
-        'report:month-summary:v8:ws-1:g7:2026-10-31',
+        'report:month-summary:v9:ws-1:g7:2026-10-31',
       );
     });
 
@@ -266,9 +266,9 @@ describe('FindMonthSummaryService', () => {
       await executeAt(NOW);
 
       expect(cache.set).toHaveBeenCalledWith(
-        'report:month-summary:v8:ws-1:g7:2026-09-15',
+        'report:month-summary:v9:ws-1:g7:2026-09-15',
         expect.any(String),
-        REPORT_CACHE_TTL_SECONDS,
+        LEDGER_CACHE_TTL_SECONDS,
       );
     });
 
@@ -280,11 +280,11 @@ describe('FindMonthSummaryService', () => {
 
       expect(cache.get).toHaveBeenNthCalledWith(
         1,
-        'report:month-summary:v8:ws-1:g7:2026-09-15',
+        'report:month-summary:v9:ws-1:g7:2026-09-15',
       );
       expect(cache.get).toHaveBeenNthCalledWith(
         2,
-        'report:month-summary:v8:ws-1:g8:2026-09-15',
+        'report:month-summary:v9:ws-1:g8:2026-09-15',
       );
     });
 

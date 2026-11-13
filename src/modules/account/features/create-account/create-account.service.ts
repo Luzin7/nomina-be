@@ -16,7 +16,7 @@ import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { CreateAccountRequest } from './create-account.dto';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 
 type Request = CreateAccountRequest & TokenPayloadBase;
 
@@ -108,7 +108,11 @@ export class CreateAccountService implements Service<
 
     await this.accountRepository.createWithOpeningMovement(account, sub);
 
-    await bumpReportGeneration(this.redisService, workspaceId);
+    await invalidateLedgerReads(
+      this.redisService,
+      workspaceId,
+      'create-account',
+    );
 
     return right(account);
   }

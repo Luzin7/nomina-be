@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import {
   BudgetRepository,
   SaveBudgetSnapshotInput,
@@ -110,6 +111,7 @@ describe('SaveBudgetConfigService', () => {
       repository,
       workspaceTimezone,
       dateProvider,
+      new InMemoryCacheProvider(),
     );
   });
 

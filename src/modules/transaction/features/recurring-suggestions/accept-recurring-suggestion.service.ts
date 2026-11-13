@@ -18,7 +18,7 @@ import {
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 
@@ -101,7 +101,11 @@ export class AcceptRecurringSuggestionService implements Service<
     }
 
     if (outcome.kind === 'accepted') {
-      await bumpReportGeneration(this.cacheProvider, workspaceId);
+      await invalidateLedgerReads(
+        this.cacheProvider,
+        workspaceId,
+        'accept-recurring-suggestion',
+      );
 
       return right({ recurringId: outcome.recurringId });
     }

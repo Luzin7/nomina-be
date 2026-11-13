@@ -1,14 +1,18 @@
 import { TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
-import { buildCategoryListCacheKey } from '@modules/category/constants/cache-keys';
 import { Category } from '@modules/category/entities/Category';
 import {
   CategoryRepository,
   CategoryVisibility,
 } from '@modules/category/repositories/contracts/CategoryRepository';
-import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
+import {
+  CATEGORIES_CACHE_TTL_SECONDS,
+  buildCategoryListCacheKey,
+  readCategoryGeneration,
+} from '@modules/category/services/category-list-cache';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
+import { readThrough } from '@shared/cache/read-through';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, right } from '@shared/core/errors/Either';
 import { ListCategoriesRequest } from './list-categories.dto';
@@ -45,8 +49,6 @@ interface CachePayload {
   hierarchy: Record<string, CategoryCacheData[]> | null;
 }
 
-const CATEGORIES_CACHE_TTL_SECONDS = 6 * 60 * 60;
-
 @Injectable()
 export class ListCategoriesService implements Service<
   Request,
@@ -67,24 +69,17 @@ export class ListCategoriesService implements Service<
       generation === null
         ? null
         : buildCategoryListCacheKey(request, generation);
-    const cached = cacheKey ? await this.redisService.get(cacheKey) : null;
 
-    if (cached) {
-      return right(this.deserializeResponse(JSON.parse(cached)));
-    }
-
-    const response = await this.fetchAndProcess(request);
-    if (response.isLeft()) return response;
-
-    if (cacheKey) {
-      await this.redisService.set(
-        cacheKey,
-        this.serializeResponse(response.value),
-        CATEGORIES_CACHE_TTL_SECONDS,
-      );
-    }
-
-    return right(response.value);
+    return readThrough({
+      cache: this.redisService,
+      key: cacheKey,
+      ttlSeconds: CATEGORIES_CACHE_TTL_SECONDS,
+      codec: {
+        encode: (value) => this.serializeResponse(value),
+        decode: (raw) => this.deserializeResponse(JSON.parse(raw)),
+      },
+      load: () => this.fetchAndProcess(request),
+    });
   }
 
   private async fetchAndProcess({

@@ -1,9 +1,11 @@
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import { ConflictAccountError } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -20,7 +22,10 @@ export class UpdateAccountService implements Service<
   Error,
   AnyAccount
 > {
-  constructor(private readonly accountRepository: AccountRepository) {}
+  constructor(
+    private readonly accountRepository: AccountRepository,
+    private readonly cache: CacheProvider,
+  ) {}
 
   private validateCreditCardFields(
     account: CreditCard,
@@ -96,6 +101,7 @@ export class UpdateAccountService implements Service<
     }
 
     await this.accountRepository.update(account);
+    await invalidateLedgerReads(this.cache, workspaceId, 'update-account');
 
     return right(account);
   }

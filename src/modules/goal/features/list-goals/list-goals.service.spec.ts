@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { Goal } from '@modules/goal/entities/Goal';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -31,7 +32,11 @@ describe('ListGoalsService', () => {
       {
         execute: jest.fn().mockResolvedValue(TIMEZONE),
       } as unknown as GetWorkspaceTimezoneService,
-      { now: () => NOW } as unknown as DateProvider,
+      {
+        now: () => NOW,
+        format: () => '2026-11-09',
+      } as unknown as DateProvider,
+      new InMemoryCacheProvider(),
     );
   });
 
