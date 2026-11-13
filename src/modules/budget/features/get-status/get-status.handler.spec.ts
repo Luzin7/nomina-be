@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
 import { BudgetPresenter } from '@modules/budget/presenters/Budget.presenter';
@@ -120,6 +121,7 @@ describe('GetBudgetStatusService', () => {
       findMonthSummary,
       workspaceTimezone,
       dateProvider,
+      new InMemoryCacheProvider(),
     );
   });
 
@@ -701,6 +703,7 @@ describe('GetBudgetStatusService', () => {
         sumCycleSpend: jest.fn(),
       } as unknown as jest.Mocked<CardCycleRepository>,
       dateProvider,
+      new InMemoryCacheProvider(),
     );
     const saved = await saveCardCycleBudget.execute({
       workspaceId: 'ws-1',

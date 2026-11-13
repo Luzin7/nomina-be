@@ -1,3 +1,4 @@
+import { CATEGORIES_CACHE_TTL_SECONDS } from '@modules/category/services/category-list-cache';
 import { TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Category } from '@modules/category/entities/Category';
@@ -126,7 +127,7 @@ describe('ListCategoriesService', () => {
       expect(redisService.set).toHaveBeenCalledTimes(1);
       const [key, payload, ttl] = redisService.set.mock.calls[0];
       expect(key).toContain('categories:list:ws-1');
-      expect(ttl).toBe(6 * 60 * 60);
+      expect(ttl).toBe(CATEGORIES_CACHE_TTL_SECONDS);
       expect(typeof payload).toBe('string');
     });
 
@@ -156,7 +157,7 @@ describe('ListCategoriesService', () => {
       expect(redisService.set).toHaveBeenCalledWith(
         'categories:list:ws-1:g7:t=:p=none:h=false:1:10',
         expect.any(String),
-        6 * 60 * 60,
+        CATEGORIES_CACHE_TTL_SECONDS,
       );
     });
 

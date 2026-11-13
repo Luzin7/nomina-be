@@ -1,6 +1,7 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { MIN_INSTALLMENTS_FOR_PLAN } from '@constants/recurring';
 import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { projectMonth } from '@modules/report/valueObjects/ProjectionHorizon';
 import { LOOKBACK_MONTHS } from '@modules/report/valueObjects/ProjectionRules';
@@ -12,6 +13,12 @@ import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-wor
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
+import {
+  LEDGER_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
+} from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, right } from '@shared/core/errors/Either';
 import { nextOccurrence } from '@utils/installmentSchedule';
@@ -217,13 +224,35 @@ export class RecurringSummaryService implements Service<
     private readonly monthProjectionRepository: MonthProjectionRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute({
     workspaceId,
   }: Request): Promise<Either<Error, RecurringSummary>> {
+    const generation = await readLedgerGeneration(this.cache, workspaceId);
     const now = this.dateProvider.now();
     const timezone = await this.workspaceTimezone.execute(workspaceId);
+
+    return readThrough({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'recurring:summary',
+        version: 'v1',
+        workspaceId,
+        generations: { ledger: generation },
+        parts: [this.dateProvider.format(now, 'YYYY-MM-DD', timezone)],
+      }),
+      ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
+      load: () => this.summarize(workspaceId, now, timezone),
+    });
+  }
+
+  private async summarize(
+    workspaceId: string,
+    now: Date,
+    timezone: string,
+  ): Promise<Either<Error, RecurringSummary>> {
     const currentMonthStart = this.dateProvider.startOfMonth(now, timezone);
     const currentMonthEnd = this.dateProvider.endOfMonth(now, timezone);
     const todayStart = this.dateProvider.startOfDay(now, timezone);

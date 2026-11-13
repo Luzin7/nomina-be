@@ -1,3 +1,4 @@
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Goal } from '@modules/goal/entities/Goal';
 import { GoalNotFoundError } from '@modules/goal/errors';
 import {
@@ -5,6 +6,7 @@ import {
   GoalRepository,
   UpdateGoalInput,
 } from '@modules/goal/repositories/contracts/GoalRepository';
+import { invalidateGoalReads } from '@modules/goal/services/goal-cache';
 import { ValidateGoalLinksService } from '@modules/goal/services/validate-goal-links.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
@@ -34,6 +36,7 @@ export class UpdateGoalService implements Service<
     private readonly validateGoalLinks: ValidateGoalLinksService,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, UpdateGoalResponse>> {
@@ -53,6 +56,8 @@ export class UpdateGoalService implements Service<
     );
 
     if (!updated) return left(new GoalNotFoundError());
+
+    await invalidateGoalReads(this.cache, workspaceId, 'update-goal');
 
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 

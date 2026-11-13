@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -72,6 +73,7 @@ describe('ListTransactionsService', () => {
       transactionRepository,
       dateProvider,
       workspaceTimezone,
+      new InMemoryCacheProvider(),
     );
   });
 
@@ -147,6 +149,7 @@ describe('ListTransactionsService', () => {
         transactionRepository,
         realDateProvider,
         makeTimezoneService(timezone),
+        new InMemoryCacheProvider(),
       );
 
       await zonedService.execute(makeRequest({ endDate: '2026-11-15' }));

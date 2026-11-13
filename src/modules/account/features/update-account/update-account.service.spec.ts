@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountType } from '@constants/enums';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
@@ -81,7 +82,10 @@ describe('UpdateAccountService', () => {
       updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
-    service = new UpdateAccountService(accountRepository);
+    service = new UpdateAccountService(
+      accountRepository,
+      new InMemoryCacheProvider(),
+    );
   });
 
   afterEach(() => jest.clearAllMocks());

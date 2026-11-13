@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountType, RecurrenceFrequency } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -359,6 +360,7 @@ describe('report regression goldens', () => {
         execute: jest.fn().mockResolvedValue(TIMEZONE),
       } as unknown as jest.Mocked<GetWorkspaceTimezoneService>,
       Object.assign(new DayJsDateProvider(), { now: () => NOW }),
+      new InMemoryCacheProvider(),
     );
 
     const result = await service.execute({

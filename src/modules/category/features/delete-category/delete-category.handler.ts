@@ -5,7 +5,7 @@ import {
   SystemCategoryModificationError,
 } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
-import { bumpCategoryGeneration } from '@modules/category/services/category-list-cache';
+import { invalidateCategoryReads } from '@modules/category/services/category-list-cache';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
@@ -38,11 +38,11 @@ export class DeleteCategoryService implements Service<Request, Error, void> {
     );
     if (!result.deleted) return left(new CategoryInUseError(result.references));
 
-    await bumpCategoryGeneration({
-      cache: this.cacheProvider,
+    await invalidateCategoryReads(
+      this.cacheProvider,
       workspaceId,
-      operation: 'delete-category',
-    });
+      'delete-category',
+    );
 
     return right(undefined);
   }

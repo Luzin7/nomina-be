@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { makeGoalRepository } from '@modules/goal/test-helpers/goal-factories';
 import { GetGoalsSummaryService } from './get-goals-summary.service';
 
@@ -16,7 +17,10 @@ describe('GetGoalsSummaryService', () => {
     });
     goalRepository.sumMonthlyAporteCents.mockResolvedValue(300);
 
-    service = new GetGoalsSummaryService(goalRepository);
+    service = new GetGoalsSummaryService(
+      goalRepository,
+      new InMemoryCacheProvider(),
+    );
   });
 
   it('seeds the emergency goal before aggregating', async () => {

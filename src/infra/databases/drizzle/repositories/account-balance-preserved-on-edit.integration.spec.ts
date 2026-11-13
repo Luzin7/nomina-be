@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountType } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
@@ -71,7 +72,7 @@ function makeService(database: InMemoryAccountsDatabase): UpdateAccountService {
     db: database,
   } as unknown as DrizzleService);
 
-  return new UpdateAccountService(repository);
+  return new UpdateAccountService(repository, new InMemoryCacheProvider());
 }
 
 describe('account edit preserves balance', () => {

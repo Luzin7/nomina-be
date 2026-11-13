@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import {
   AccountNotFoundError,
   AutopayConfigurationError,
@@ -39,7 +40,11 @@ describe('SetAutopayService', () => {
     } as unknown as jest.Mocked<AccountRepository>;
     dateProvider = { now: jest.fn() } as unknown as jest.Mocked<DateProvider>;
     dateProvider.now.mockReturnValue(FIRST_ENABLE);
-    service = new SetAutopayService(accountRepository, dateProvider);
+    service = new SetAutopayService(
+      accountRepository,
+      dateProvider,
+      new InMemoryCacheProvider(),
+    );
   });
 
   function givenAccounts(...accounts: Array<{ id: string }>) {

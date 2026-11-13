@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AccountTypeError } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -133,6 +134,7 @@ function makeStatusService(
     accountRepository,
     cardCycleRepository,
     dateProvider,
+    new InMemoryCacheProvider(),
   );
 }
 
@@ -166,6 +168,7 @@ describe('GetCardCycleStatusService', () => {
       accountRepository,
       cardCycleRepository,
       dateProvider,
+      new InMemoryCacheProvider(),
     );
   });
 
@@ -365,4 +368,40 @@ describe('GetCardCycleStatusService', () => {
     });
     expect(cardCycleRepository.materializePeriod).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      timezone: 'America/Sao_Paulo',
+      before: '2026-11-22T02:30:00.000Z',
+      after: '2026-11-22T03:30:00.000Z',
+    },
+    {
+      timezone: 'Pacific/Auckland',
+      before: '2026-11-21T10:30:00.000Z',
+      after: '2026-11-21T11:30:00.000Z',
+    },
+  ])(
+    'moves to the next cycle after local midnight in $timezone',
+    async ({ timezone, before, after }) => {
+      card = makeCreditCard({ dueDay: 28, closingDaysBeforeDue: 7, timezone });
+      accountRepository.findById.mockResolvedValue(card);
+      const ledgerRepository = makeLedgerRepository([], []);
+      const now = jest.spyOn(dateProvider, 'now');
+      const request = { workspaceId: 'ws-1', accountId: 'acc-1' };
+      const statusService = new GetCardCycleStatusService(
+        accountRepository,
+        ledgerRepository,
+        dateProvider,
+        new InMemoryCacheProvider(),
+      );
+
+      now.mockReturnValue(new Date(before));
+      const first = await statusService.execute(request);
+      now.mockReturnValue(new Date(after));
+      const second = await statusService.execute(request);
+
+      expect(first.isRight() && first.value.dueDate).toBe('2026-11-28');
+      expect(second.isRight() && second.value.dueDate).toBe('2026-12-28');
+    },
+  );
 });

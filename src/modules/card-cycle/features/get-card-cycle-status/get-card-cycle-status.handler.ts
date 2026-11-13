@@ -1,3 +1,4 @@
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
   AccountNotFoundError,
@@ -17,6 +18,12 @@ import { CardCycleWindow } from '@modules/card-cycle/valueObjects/CardCycleWindo
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
+import {
+  LEDGER_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
+} from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -60,6 +67,7 @@ export class GetCardCycleStatusService implements Service<
     private readonly accountRepository: AccountRepository,
     private readonly cardCycleRepository: CardCycleRepository,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute(
@@ -77,6 +85,35 @@ export class GetCardCycleStatusService implements Service<
     const dueDay: number | null = account.dueDay;
     if (dueDay === null) return left(new CardCycleNotConfiguredError());
 
+    const generation = await readLedgerGeneration(
+      this.cache,
+      request.workspaceId,
+    );
+    const localDay = this.dateProvider.format(
+      this.dateProvider.now(),
+      'YYYY-MM-DD',
+      account.timezone,
+    );
+
+    return readThrough({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'account:cycle',
+        version: 'v2',
+        workspaceId: request.workspaceId,
+        generations: { ledger: generation },
+        parts: [request.accountId, request.dueDate, localDay],
+      }),
+      ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
+      load: () => this.computeStatus(request, account, dueDay),
+    });
+  }
+
+  private async computeStatus(
+    request: Request,
+    account: CreditCard,
+    dueDay: number,
+  ): Promise<Either<Error, CardCycleStatusResponse>> {
     const period = await this.resolvePeriod({
       workspaceId: request.workspaceId,
       account,

@@ -1,12 +1,21 @@
+import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { GetBudgetStatusService } from '@modules/budget/features/get-status/get-status.handler';
 import type { BudgetStatusResponse } from '@modules/budget/features/get-status/get-status.handler';
 import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
+import { readGoalGeneration } from '@modules/goal/services/goal-cache';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
+import {
+  LEDGER_LIVE_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
+} from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { CardBillDueInsightService } from '../../services/card-bill-due-insight.service';
@@ -56,15 +65,43 @@ export class GetAvailableToSpendService implements Service<
     private readonly projectionShortfallInsight: ProjectionShortfallInsightService,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
-  async execute({
-    workspaceId,
-    sub,
-  }: Request): Promise<Either<Error, AvailableToSpendResponse>> {
+  async execute(
+    request: Request,
+  ): Promise<Either<Error, AvailableToSpendResponse>> {
+    const { workspaceId } = request;
+    const [ledger, goal, category] = await Promise.all([
+      readLedgerGeneration(this.cache, workspaceId),
+      readGoalGeneration(this.cache, workspaceId),
+      readCategoryGeneration(this.cache, workspaceId),
+    ]);
     const timezone = await this.workspaceTimezone.execute(workspaceId);
-    const now = this.dateProvider.now();
-    const today = this.dateProvider.format(now, 'YYYY-MM-DD', timezone);
+    const today = this.dateProvider.format(
+      this.dateProvider.now(),
+      'YYYY-MM-DD',
+      timezone,
+    );
+
+    return readThrough({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'dashboard:available-to-spend',
+        version: 'v2',
+        workspaceId,
+        generations: { ledger, goal, category },
+        parts: [today],
+      }),
+      ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
+      load: () => this.compute(request, today),
+    });
+  }
+
+  private async compute(
+    { workspaceId, sub }: Request,
+    today: string,
+  ): Promise<Either<Error, AvailableToSpendResponse>> {
     const [year, month] = today.split('-').map(Number);
 
     const [budget, goalAportesCents] = await Promise.all([
