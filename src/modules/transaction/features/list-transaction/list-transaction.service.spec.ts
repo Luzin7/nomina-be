@@ -40,6 +40,7 @@ describe('ListTransactionsService', () => {
       create: jest.fn(),
       findUniqueById: jest.fn(),
       listTransactionsByWorkspaceId: jest.fn(),
+      sumTransactionsByWorkspaceId: jest.fn(),
       getTopExpensesByCategory: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
       createInstallmentPlan: jest.fn(),

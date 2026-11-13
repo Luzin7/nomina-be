@@ -13,7 +13,7 @@ const END = new Date('2026-09-30T02:59:59.999Z');
 const NOW = new Date('2026-09-10T12:00:00.000Z');
 
 function makeRequest(overrides = {}) {
-  return { workspaceId: 'ws-1', month: 9, year: 2026, ...overrides };
+  return { workspaceId: 'ws-1', month: 9, year: 2026, limit: 5, ...overrides };
 }
 
 function makeExpense(categoryId: string, categoryName: string, amount: number) {
@@ -96,6 +96,32 @@ describe('GetExpensesByCategoryService', () => {
     );
   });
 
+  it('passes the requested limit to the repository as pageSize', async () => {
+    transactionRepository.getTopExpensesByCategory.mockResolvedValue({
+      expenses: [],
+      totalExpense: 0,
+    });
+
+    await service.execute(makeRequest({ limit: 50 }));
+
+    expect(transactionRepository.getTopExpensesByCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ pageSize: 50 }),
+    );
+  });
+
+  it('keys the cache by limit', async () => {
+    transactionRepository.getTopExpensesByCategory.mockResolvedValue({
+      expenses: [],
+      totalExpense: 0,
+    });
+
+    await service.execute(makeRequest({ limit: 50 }));
+
+    expect(cache.get).toHaveBeenCalledWith(
+      'report:expenses-by-category:v6:ws-1:g7:c7:2026-9:2026-09:50',
+    );
+  });
+
   it('keeps hidden categories for a historical month', async () => {
     transactionRepository.getTopExpensesByCategory.mockResolvedValue({
       expenses: [],
@@ -124,7 +150,7 @@ describe('GetExpensesByCategoryService', () => {
       totalExpense: 10000,
     });
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v5:ws-1:g7:c7:2026-9:2026-09',
+      'report:expenses-by-category:v6:ws-1:g7:c7:2026-9:2026-09:5',
       JSON.stringify(result),
       LEDGER_CACHE_TTL_SECONDS,
     );
@@ -159,12 +185,12 @@ describe('GetExpensesByCategoryService', () => {
     await service.execute(makeRequest());
 
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v5:ws-1:g7:c7:2026-9:2026-09',
+      'report:expenses-by-category:v6:ws-1:g7:c7:2026-9:2026-09:5',
       expect.any(String),
       LEDGER_CACHE_TTL_SECONDS,
     );
     expect(cache.get).toHaveBeenLastCalledWith(
-      'report:expenses-by-category:v5:ws-1:g8:c8:2026-9:2026-09',
+      'report:expenses-by-category:v6:ws-1:g8:c8:2026-9:2026-09:5',
     );
   });
 });

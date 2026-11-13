@@ -18,8 +18,6 @@ import { TopExpensesByCategoryResult } from '@modules/report/presenters/TopExpen
 type Request = GetExpensesByCategoryRequest &
   Pick<TokenPayloadSchema, 'workspaceId'>;
 
-const TOP_CATEGORIES_LIMIT = 5;
-
 @Injectable()
 export class GetExpensesByCategoryService {
   constructor(
@@ -33,6 +31,7 @@ export class GetExpensesByCategoryService {
     workspaceId,
     month,
     year,
+    limit,
   }: Request): Promise<TopExpensesByCategoryResult> {
     const [ledger, category, timezone] = await Promise.all([
       readLedgerGeneration(this.cache, workspaceId),
@@ -49,14 +48,14 @@ export class GetExpensesByCategoryService {
       cache: this.cache,
       key: buildCacheKey({
         route: 'report:expenses-by-category',
-        version: 'v5',
+        version: 'v6',
         workspaceId,
         generations: { ledger, category },
-        parts: [`${year}-${month}`, localDay],
+        parts: [`${year}-${month}`, localDay, limit],
       }),
       ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
       load: async () =>
-        right(await this.summarize(workspaceId, timezone, month, year)),
+        right(await this.summarize(workspaceId, timezone, month, year, limit)),
     });
 
     return result.value;
@@ -67,6 +66,7 @@ export class GetExpensesByCategoryService {
     timezone: string,
     month: Request['month'],
     year: Request['year'],
+    limit: Request['limit'],
   ): Promise<TopExpensesByCategoryResult> {
     const monthKey = `${year}-${String(month).padStart(2, '0')}`;
     const referenceDate = `${monthKey}-01`;
@@ -81,7 +81,7 @@ export class GetExpensesByCategoryService {
         workspaceId,
         startDate,
         endDate,
-        pageSize: TOP_CATEGORIES_LIMIT,
+        pageSize: limit,
         isCurrentMonth,
       });
 

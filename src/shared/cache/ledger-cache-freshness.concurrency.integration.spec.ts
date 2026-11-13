@@ -45,6 +45,8 @@ const LEDGER_VISIBLE = [
   'list-transactions',
 ];
 
+const LEDGER_ROWS_VISIBLE = [...LEDGER_VISIBLE, 'month-pace', 'list-totals'];
+
 function daysFromToday({ seed }: FreshnessContext, days: number): string {
   return new Date(Date.parse(seed.today) + days * DAY_MS)
     .toISOString()
@@ -75,7 +77,7 @@ defineFreshnessSuite({
   writes: [
     {
       name: 'create-transaction',
-      changes: LEDGER_VISIBLE,
+      changes: LEDGER_ROWS_VISIBLE,
       run: async (context) => {
         unwrap(
           await context.app
@@ -86,7 +88,7 @@ defineFreshnessSuite({
     },
     {
       name: 'update-transaction',
-      changes: LEDGER_VISIBLE,
+      changes: LEDGER_ROWS_VISIBLE,
       run: async (context) => {
         unwrap(
           await context.app.get(UpdateTransactionService).execute({
@@ -98,7 +100,7 @@ defineFreshnessSuite({
     },
     {
       name: 'delete-transaction',
-      changes: LEDGER_VISIBLE,
+      changes: LEDGER_ROWS_VISIBLE,
       run: async (context) => {
         unwrap(
           await context.app.get(DeleteTransactionService).execute({
@@ -110,7 +112,7 @@ defineFreshnessSuite({
     },
     {
       name: 'set-transaction-status',
-      changes: LEDGER_VISIBLE,
+      changes: [...LEDGER_VISIBLE, 'month-pace'],
       run: async (context) => {
         unwrap(
           await context.app.get(SetTransactionStatusService).execute({
@@ -182,7 +184,7 @@ defineFreshnessSuite({
     },
     {
       name: 'create-installment-purchase',
-      changes: ['list-transactions'],
+      changes: ['list-transactions', 'list-totals'],
       run: async (context) => {
         unwrap(
           await context.app.get(CreateInstallmentPurchaseService).execute({
@@ -296,7 +298,7 @@ defineFreshnessSuite({
     },
     {
       name: 'generate-recurring-transactions-job',
-      changes: ['list-transactions'],
+      changes: ['list-transactions', 'list-totals'],
       run: async ({ app, db, seed }) => {
         await db.insert(schema.recurringTransactions).values({
           workspaceId: seed.workspaceId,
@@ -317,7 +319,7 @@ defineFreshnessSuite({
     },
     {
       name: 'settle-card-installments-job',
-      changes: ['list-transactions'],
+      changes: ['list-transactions', 'list-totals'],
       run: async ({ app, db, seed }) => {
         await db.insert(schema.transactions).values({
           workspaceId: seed.workspaceId,
@@ -363,7 +365,7 @@ defineFreshnessSuite({
     },
     {
       name: 'save-budget-config',
-      changes: ['budget-status'],
+      changes: ['budget-status', 'month-pace'],
       run: async (context) => {
         unwrap(
           await context.app.get(SaveBudgetConfigService).execute({

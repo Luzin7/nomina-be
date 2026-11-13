@@ -10,6 +10,8 @@ import {
   BudgetCategoryRef,
   BudgetRepository,
   BudgetSnapshot,
+  CompletedExpenseByLocalDayQuery,
+  CompletedExpenseOfDay,
   PresetCategory,
   ResolvedBudgetSnapshot,
   SavedBudgetSnapshot,
@@ -31,10 +33,12 @@ import {
   isNull,
   lte,
   or,
+  type SQL,
   sql,
   sum,
 } from 'drizzle-orm';
 import { getErrorDetails } from '@shared/utils/error-details';
+import { localDayIn } from '../sql-helpers';
 import * as schema from '../schema';
 
 const UNIQUE_VIOLATION = '23505';
@@ -152,6 +156,20 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
       .where(inArray(schema.categories.id, categoryIds));
   }
 
+  private completedExpenseInRange(
+    workspaceId: string,
+    start: Date,
+    end: Date,
+  ): SQL | undefined {
+    return and(
+      eq(schema.transactions.workspaceId, workspaceId),
+      eq(schema.transactions.type, TransactionType.EXPENSE),
+      eq(schema.transactions.status, 'COMPLETED'),
+      gte(schema.transactions.date, start),
+      lte(schema.transactions.date, end),
+    );
+  }
+
   async findCompletedExpenseByCategory(
     workspaceId: string,
     start: Date,
@@ -163,18 +181,35 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         total: sum(schema.transactions.amount).mapWith(Number),
       })
       .from(schema.transactions)
-      .where(
-        and(
-          eq(schema.transactions.workspaceId, workspaceId),
-          eq(schema.transactions.type, TransactionType.EXPENSE),
-          eq(schema.transactions.status, 'COMPLETED'),
-          gte(schema.transactions.date, start),
-          lte(schema.transactions.date, end),
-        ),
-      )
+      .where(this.completedExpenseInRange(workspaceId, start, end))
       .groupBy(schema.transactions.categoryId);
 
     return Object.fromEntries(rows.map((row) => [row.categoryId, row.total]));
+  }
+
+  async findCompletedExpenseByLocalDay({
+    workspaceId,
+    start,
+    end,
+    timezone,
+  }: CompletedExpenseByLocalDayQuery): Promise<CompletedExpenseOfDay[]> {
+    const localDay = localDayIn(
+      sql`(${schema.transactions.date}::timestamp AT TIME ZONE 'UTC')`,
+      sql`${timezone}`,
+    );
+    const dayOfMonth = sql<number>`EXTRACT(DAY FROM ${localDay})::int`;
+
+    const rows = await this.drizzle.db
+      .select({
+        day: dayOfMonth,
+        totalCents: sum(schema.transactions.amount).mapWith(Number),
+      })
+      .from(schema.transactions)
+      .where(this.completedExpenseInRange(workspaceId, start, end))
+      .groupBy(sql`1`)
+      .orderBy(sql`1`);
+
+    return rows;
   }
 
   async findCategoryParentMap(
