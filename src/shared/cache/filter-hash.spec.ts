@@ -15,8 +15,16 @@ describe('hashFilters', () => {
     expect(hashFilters({ a: 1 })).not.toBe(hashFilters({ a: 2 }));
   });
 
-  it('orders keys by code unit, keeping uppercase before lowercase', () => {
-    expect(hashFilters({ a: 1, B: 2 })).toBe(hashFilters({ B: 2, a: 1 }));
+  it('keeps the hash of mixed-case keys stable', () => {
+    expect(hashFilters({ a: 1, B: 2 })).toBe('fa712e621486bed1');
+  });
+
+  it('keeps the hash of non-ASCII keys stable', () => {
+    expect(hashFilters({ é: 1, z: 2 })).toBe('6383dadcacf821f1');
+  });
+
+  it('keeps the hash of a single key stable', () => {
+    expect(hashFilters({ a: 1 })).toBe('38d8e023d06e961f');
   });
 
   it('returns a 16 character hex string', () => {
