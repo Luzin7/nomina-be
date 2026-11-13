@@ -42,6 +42,10 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
     route: 'goal:summary',
     kinds: ['ledger', 'goal', 'category'],
   },
+  'goal/features/list-goal-contributions/list-goal-contributions.service.ts': {
+    route: 'goal:contributions',
+    kinds: ['ledger', 'goal'],
+  },
   'account/features/list-accounts/list-accounts.service.ts': {
     route: 'account:list',
     kinds: ['ledger'],
@@ -121,6 +125,10 @@ const WRITES: Record<string, Kind[]> = {
   'goal/features/create-goal/create-goal.service.ts': ['goal'],
   'goal/features/update-goal/update-goal.service.ts': ['goal'],
   'goal/features/delete-goal/delete-goal.service.ts': ['goal'],
+  'goal/features/create-goal-contribution/create-goal-contribution.service.ts':
+    ['goal'],
+  'goal/features/delete-goal-contribution/delete-goal-contribution.service.ts':
+    ['goal'],
 };
 
 const INVALIDATORS: Record<string, Kind> = {

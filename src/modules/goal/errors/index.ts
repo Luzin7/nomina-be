@@ -35,3 +35,23 @@ export class GoalCategoryInvalidError extends BusinessRuleDomainError {
     super('A categoria informada não pertence a este workspace.');
   }
 }
+
+export class GoalContributionNotFoundError extends NotFoundDomainError {
+  constructor() {
+    super('Aporte não encontrado.');
+  }
+}
+
+export class GoalContributionIdConflictError extends ConflictDomainError {
+  constructor() {
+    super('Este identificador de aporte já pertence a outra meta.');
+  }
+}
+
+export class GoalContributionUndoConflictError extends ConflictDomainError {
+  constructor() {
+    super(
+      'Não é possível desfazer este aporte: o valor atual da meta ficaria negativo.',
+    );
+  }
+}

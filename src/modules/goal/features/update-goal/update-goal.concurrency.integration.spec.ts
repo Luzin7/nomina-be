@@ -6,9 +6,16 @@ import { CategoryRepositoryImplementation } from '@infra/databases/drizzle/repos
 import { GoalRepositoryImplementation } from '@infra/databases/drizzle/repositories/goal.repository';
 import { WorkspaceRepositoryImplementation } from '@infra/databases/drizzle/repositories/workspace.repository';
 import * as schema from '@infra/databases/drizzle/schema';
+import { makeCheckingAccount } from '@modules/account/test-helpers/mock-factories';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
+import {
+  holdGoalLock,
+  linkGoalToAccount,
+  raceAccountDelete,
+  sqlStateOf,
+} from '@modules/goal/test-helpers/goal-contribution-integration';
 import { ValidateGoalLinksService } from '@modules/goal/services/validate-goal-links.service';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
@@ -215,5 +222,97 @@ describe('concurrent goal patches against a real postgres', () => {
     expect(rename.goal.record.currentCents).toBe(FUNDED_CENTS);
     expect(dismissal.goal.etaMonths).toBe(expectedEtaMonths(FUNDED_CENTS));
     expect(rename.goal.etaMonths).toBe(expectedEtaMonths(row.currentCents));
+  });
+
+  it('fails with a lock timeout while another transaction holds the goal', async () => {
+    const release = await holdGoalLock(db, goalId);
+
+    const sqlState = await sqlStateOf(patch({ name: 'Reserva' }));
+    await release();
+
+    expect(sqlState).toBe('55P03');
+    expect((await currentGoal()).name).toBe('Viagem');
+  });
+
+  async function seedAccounts(): Promise<[string, string]> {
+    const accounts = moduleRef.get(AccountRepository);
+    const ids: [string, string] = [randomUUID(), randomUUID()];
+    for (const id of ids) {
+      await accounts.create(
+        makeCheckingAccount({ id, workspaceId, name: id, timezone: 'UTC' }),
+      );
+    }
+
+    return ids;
+  }
+
+  it('survives an account delete racing a relink on a goal linked to that account', async () => {
+    const [linkedId, relinkedId] = await seedAccounts();
+    await linkGoalToAccount(db, goalId, linkedId);
+
+    const { acted, deleted } = await raceAccountDelete(
+      db,
+      { goalId, accountId: linkedId },
+      () => patch({ name: 'Reserva', linkedAccountId: relinkedId }),
+    );
+
+    expect(acted).toMatchObject({ ok: true });
+    expect(deleted).toMatchObject({ ok: true });
+    expect(await currentGoal()).toMatchObject({
+      name: 'Reserva',
+      linkedAccountId: relinkedId,
+    });
+  });
+
+  it('survives an account delete racing a rename that keeps the link', async () => {
+    const [linkedId] = await seedAccounts();
+    await linkGoalToAccount(db, goalId, linkedId);
+
+    const { acted, deleted } = await raceAccountDelete(
+      db,
+      { goalId, accountId: linkedId },
+      () => patch({ name: 'Reserva' }),
+    );
+
+    expect(acted).toMatchObject({ ok: true });
+    expect(deleted).toMatchObject({ ok: true });
+    expect(await currentGoal()).toMatchObject({
+      name: 'Reserva',
+      linkedAccountId: null,
+    });
+  });
+
+  it('survives an account delete racing an unlink from that account', async () => {
+    const [linkedId] = await seedAccounts();
+    await linkGoalToAccount(db, goalId, linkedId);
+
+    const { acted, deleted } = await raceAccountDelete(
+      db,
+      { goalId, accountId: linkedId },
+      () => patch({ name: 'Reserva', linkedAccountId: null }),
+    );
+
+    expect(acted).toMatchObject({ ok: true });
+    expect(deleted).toMatchObject({ ok: true });
+    expect(await currentGoal()).toMatchObject({
+      name: 'Reserva',
+      linkedAccountId: null,
+    });
+  });
+
+  it('survives an account delete racing a relink from another account to it', async () => {
+    const [targetId, currentId] = await seedAccounts();
+    await linkGoalToAccount(db, goalId, currentId);
+
+    const { acted, deleted } = await raceAccountDelete(
+      db,
+      { goalId, accountId: targetId },
+      () => patch({ linkedAccountId: targetId }),
+      false,
+    );
+
+    expect(acted).toMatchObject({ ok: false, sqlState: null });
+    expect(deleted).toMatchObject({ ok: true });
+    expect(await currentGoal()).toMatchObject({ linkedAccountId: currentId });
   });
 });

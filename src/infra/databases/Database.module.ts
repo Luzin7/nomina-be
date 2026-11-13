@@ -3,6 +3,7 @@ import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetR
 import { CardInvoiceSettlementRepository } from '@modules/transaction/repositories/contracts/CardInvoiceSettlementRepository';
 import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { GoalContributionRepository } from '@modules/goal/repositories/contracts/GoalContributionRepository';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
@@ -29,6 +30,7 @@ import { BudgetRepositoryImplementation } from './drizzle/repositories/budget.re
 import { CardCycleRepositoryImplementation } from './drizzle/repositories/card-cycle.repository';
 import { CardInvoiceSettlementRepositoryImplementation } from './drizzle/repositories/card-invoice-settlement.repository';
 import { CategoryRepositoryImplementation } from './drizzle/repositories/category.repository';
+import { GoalContributionRepositoryImplementation } from './drizzle/repositories/goal-contribution.repository';
 import { GoalRepositoryImplementation } from './drizzle/repositories/goal.repository';
 import { MonthProjectionRepositoryImplementation } from './drizzle/repositories/month-projection.repository';
 import { RecurringSuggestionRepositoryImplementation } from './drizzle/repositories/recurring-suggestion.repository';
@@ -101,6 +103,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: GoalRepositoryImplementation,
     },
     {
+      provide: GoalContributionRepository,
+      useClass: GoalContributionRepositoryImplementation,
+    },
+    {
       provide: BudgetRepository,
       useClass: BudgetRepositoryImplementation,
     },
@@ -136,6 +142,7 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     AccountRepository,
     CategoryRepository,
     GoalRepository,
+    GoalContributionRepository,
     BudgetRepository,
     CardCycleRepository,
     SubscriptionRepository,

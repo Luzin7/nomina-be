@@ -5,6 +5,10 @@ import type { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import type { GoalRecord } from '@modules/goal/repositories/contracts/GoalRepository';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
+import {
+  GoalContributionRecord,
+  GoalContributionRepository,
+} from '@modules/goal/repositories/contracts/GoalContributionRepository';
 
 export function makeGoalRecord(
   overrides: Partial<GoalRecord> = {},
@@ -67,4 +71,27 @@ export function makeCategory(
   return {
     workspaceId: overrides.workspaceId ?? 'ws-1',
   } as unknown as Category;
+}
+
+export function makeGoalContributionRecord(
+  overrides: Partial<GoalContributionRecord> = {},
+): GoalContributionRecord {
+  return {
+    id: '7f1d1f4e-52a0-4d0c-9a53-1c3f0d6f8a11',
+    workspaceId: 'ws-1',
+    goalId: 'goal-1',
+    amountCents: 5_000,
+    sourceAccountId: null,
+    contributedAt: new Date('2026-11-10T12:00:00.000Z'),
+    createdAt: new Date('2026-11-10T12:00:00.000Z'),
+    ...overrides,
+  };
+}
+
+export function makeGoalContributionRepository(): jest.Mocked<GoalContributionRepository> {
+  return {
+    recordContribution: jest.fn(),
+    undoContribution: jest.fn(),
+    listContributionsByGoal: jest.fn(),
+  } as unknown as jest.Mocked<GoalContributionRepository>;
 }

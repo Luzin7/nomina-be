@@ -1,4 +1,10 @@
 import { DatabaseModule } from '@infra/databases/Database.module';
+import { CreateGoalContributionController } from '@modules/goal/features/create-goal-contribution/create-goal-contribution.controller';
+import { CreateGoalContributionService } from '@modules/goal/features/create-goal-contribution/create-goal-contribution.service';
+import { DeleteGoalContributionController } from '@modules/goal/features/delete-goal-contribution/delete-goal-contribution.controller';
+import { DeleteGoalContributionService } from '@modules/goal/features/delete-goal-contribution/delete-goal-contribution.service';
+import { ListGoalContributionsController } from '@modules/goal/features/list-goal-contributions/list-goal-contributions.controller';
+import { ListGoalContributionsService } from '@modules/goal/features/list-goal-contributions/list-goal-contributions.service';
 import { CreateGoalController } from '@modules/goal/features/create-goal/create-goal.controller';
 import { CreateGoalService } from '@modules/goal/features/create-goal/create-goal.service';
 import { DeleteGoalController } from '@modules/goal/features/delete-goal/delete-goal.controller';
@@ -22,6 +28,9 @@ import { DateModule } from '@providers/date/Date.module';
     UpdateGoalController,
     DeleteGoalController,
     GetGoalsSummaryController,
+    CreateGoalContributionController,
+    ListGoalContributionsController,
+    DeleteGoalContributionController,
   ],
   providers: [
     CreateGoalService,
@@ -29,6 +38,9 @@ import { DateModule } from '@providers/date/Date.module';
     UpdateGoalService,
     DeleteGoalService,
     GetGoalsSummaryService,
+    CreateGoalContributionService,
+    ListGoalContributionsService,
+    DeleteGoalContributionService,
     ValidateGoalLinksService,
   ],
 })

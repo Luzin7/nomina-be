@@ -6,6 +6,7 @@ import {
   TransactionType,
 } from '@constants/enums';
 import { CreateAccountService } from '@modules/account/features/create-account/create-account.service';
+import { CreateGoalContributionService } from '@modules/goal/features/create-goal-contribution/create-goal-contribution.service';
 import { DeleteAccountService } from '@modules/account/features/delete-account/delete-account.handler';
 import { UpdateAccountService } from '@modules/account/features/update-account/update-account.service';
 import { CreateRecurringTransactionService } from '@modules/transaction/features/create-recurring-transaction/create-recurring-transaction.service';
@@ -28,6 +29,7 @@ import { UpdateRecurringTransactionService } from '@modules/transaction/features
 import { GenerateRecurringTransactionsJobService } from '@modules/transaction/jobs/generate-recurring-transactions/generate-recurring-transactions.service';
 import { SettleCardInstallmentsJobService } from '@modules/transaction/jobs/settle-card-installments/settle-card-installments.service';
 import * as schema from '@infra/databases/drizzle/schema';
+import { randomUUID } from 'node:crypto';
 import { FRESHNESS_READS } from './test-helpers/freshness-reads';
 import {
   AMOUNT,
@@ -153,7 +155,18 @@ defineFreshnessSuite({
     },
     {
       name: 'delete-account',
-      changes: ['list-accounts', 'list-goals'],
+      changes: ['list-accounts', 'list-goals', 'goal-contributions'],
+      prepare: async (context) => {
+        unwrap(
+          await context.app.get(CreateGoalContributionService).execute({
+            workspaceId: context.seed.workspaceId,
+            goalId: context.seed.goalId,
+            id: randomUUID(),
+            amountCents: 5_000,
+            sourceAccountId: context.seed.otherAccountId,
+          }),
+        );
+      },
       run: async (context) => {
         unwrap(
           await context.app.get(DeleteAccountService).execute({

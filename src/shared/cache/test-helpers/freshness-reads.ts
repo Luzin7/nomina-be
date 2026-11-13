@@ -4,6 +4,7 @@ import { GetCardCycleStatusService } from '@modules/card-cycle/features/get-card
 import { ListCategoriesService } from '@modules/category/features/list-categories/list-categories.handler';
 import { GetAvailableToSpendService } from '@modules/dashboard/features/get-available-to-spend/get-available-to-spend.handler';
 import { GetGoalsSummaryService } from '@modules/goal/features/get-goals-summary/get-goals-summary.service';
+import { ListGoalContributionsService } from '@modules/goal/features/list-goal-contributions/list-goal-contributions.service';
 import { ListGoalsService } from '@modules/goal/features/list-goals/list-goals.service';
 import { BalanceEvolutionService } from '@modules/report/features/get-balance-evolution/get-balance-evolution.handler';
 import { GetExpensesByCategoryService } from '@modules/report/features/get-expenses-by-category/get-expenses-by-category.handler';
@@ -125,6 +126,17 @@ export const FRESHNESS_READS: FreshnessRead[] = [
           .execute({ workspaceId: seed.workspaceId }),
       );
       return withoutKey(goals, 'now');
+    },
+  },
+  {
+    name: 'goal-contributions',
+    domains: ['goal', 'ledger'],
+    run: async ({ app, seed }) => {
+      const result = await app
+        .get(ListGoalContributionsService)
+        .execute({ workspaceId: seed.workspaceId, goalId: seed.goalId });
+
+      return result.isLeft() ? { error: result.value.name } : result.value;
     },
   },
   {
