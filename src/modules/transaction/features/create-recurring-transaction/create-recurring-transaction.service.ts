@@ -20,7 +20,7 @@ import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { calculateInstallmentEndDate } from '@utils/installmentSchedule';
 import { MoneyUtils } from '@utils/MoneyUtils';
 import { CreateRecurringTransactionRequest } from './create-recurring-transaction.dto';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 
 type Request = CreateRecurringTransactionRequest & TokenPayloadBase;
 
@@ -111,7 +111,11 @@ export class CreateRecurringTransactionService implements Service<
       recurringOrError.value,
     );
 
-    await bumpReportGeneration(this.redisService, workspaceId);
+    await invalidateLedgerReads(
+      this.redisService,
+      workspaceId,
+      'create-recurring-transaction',
+    );
 
     return right(created);
   }

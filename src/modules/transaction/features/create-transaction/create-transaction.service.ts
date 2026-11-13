@@ -24,7 +24,7 @@ import {
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { CreateTransactionRequest } from './create-transaction.dto';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 
 type Request = CreateTransactionRequest & TokenPayloadBase;
 
@@ -80,7 +80,11 @@ export class CreateTransactionService implements Service<
     );
     if (persisted.isLeft()) return left(persisted.value);
 
-    await bumpReportGeneration(this.redisService, request.workspaceId);
+    await invalidateLedgerReads(
+      this.redisService,
+      request.workspaceId,
+      'create-transaction',
+    );
 
     return right(transaction);
   }

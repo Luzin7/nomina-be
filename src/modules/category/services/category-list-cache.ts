@@ -1,7 +1,8 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
-import { Logger } from '@nestjs/common';
+import { bumpGeneration } from '@shared/cache/generation-counter';
 
-const logger = new Logger('CategoryListCache');
+export const CATEGORIES_CACHE_TTL_SECONDS = 30 * 60;
+export const CATEGORY_LIST_CACHE_PREFIX = 'categories:list:';
 
 export const categoryGenerationKey = (workspaceId: string): string =>
   `cache-gen:category:${workspaceId}`;
@@ -12,28 +13,37 @@ export const readCategoryGeneration = (
 ): Promise<number | null> =>
   cache.readCounter(categoryGenerationKey(workspaceId), Date.now());
 
-interface BumpCategoryGenerationInput {
-  cache: CacheProvider;
+export const invalidateCategoryReads = (
+  cache: CacheProvider,
+  workspaceId: string,
+  operation: string,
+): Promise<void> =>
+  bumpGeneration({
+    cache,
+    counterKey: categoryGenerationKey(workspaceId),
+    workspaceId,
+    operation,
+  });
+
+interface CategoryListCacheKeyInput {
   workspaceId: string;
-  operation: string;
+  type?: string;
+  parentId?: string;
+  page: number;
+  pageSize: number;
+  hidden: 'false' | 'all';
 }
 
-export async function bumpCategoryGeneration({
-  cache,
-  workspaceId,
-  operation,
-}: BumpCategoryGenerationInput): Promise<void> {
-  const failureMessage = `category list cache generation bump failed for workspace ${workspaceId} during ${operation}`;
-
-  try {
-    const generation = await cache.incrementCounter(
-      categoryGenerationKey(workspaceId),
-      Date.now(),
-    );
-    if (generation !== null) return;
-
-    logger.error(failureMessage);
-  } catch (error) {
-    logger.error(failureMessage, error);
-  }
+export function buildCategoryListCacheKey(
+  {
+    workspaceId,
+    type,
+    parentId,
+    page,
+    pageSize,
+    hidden,
+  }: CategoryListCacheKeyInput,
+  generation: number,
+): string {
+  return `${CATEGORY_LIST_CACHE_PREFIX}${workspaceId}:g${generation}:t=${type ?? ''}:p=${parentId ?? 'none'}:h=${hidden}:${page}:${pageSize}`;
 }

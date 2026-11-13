@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountType } from '@constants/enums';
 import {
   GoalCategoryInvalidError,
@@ -51,6 +52,7 @@ describe('CreateGoalService', () => {
         execute: jest.fn().mockResolvedValue(TIMEZONE),
       } as unknown as GetWorkspaceTimezoneService,
       { now: () => NOW } as unknown as DateProvider,
+      new InMemoryCacheProvider(),
     );
   });
 

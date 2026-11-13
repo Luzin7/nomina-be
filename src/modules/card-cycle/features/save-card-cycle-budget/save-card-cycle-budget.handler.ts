@@ -1,3 +1,4 @@
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
   AccountNotFoundError,
@@ -15,6 +16,7 @@ import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -39,6 +41,7 @@ export class SaveCardCycleBudgetService implements Service<
     private readonly accountRepository: AccountRepository,
     private readonly cardCycleRepository: CardCycleRepository,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute(
@@ -70,6 +73,12 @@ export class SaveCardCycleBudgetService implements Service<
         effectiveFrom: request.effectiveFrom,
         limitCents: request.limitCents,
       });
+
+      await invalidateLedgerReads(
+        this.cache,
+        request.workspaceId,
+        'save-card-cycle-budget',
+      );
 
       return right({
         accountId: account.id,

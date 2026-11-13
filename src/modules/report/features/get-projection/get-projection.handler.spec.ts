@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import { InvalidProjectionHorizonError } from '@modules/report/errors';
@@ -34,6 +35,7 @@ const buildService = () => {
     budgetRepository,
     workspaceTimezone,
     dateProvider,
+    new InMemoryCacheProvider(),
   );
 
   return {

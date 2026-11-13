@@ -16,9 +16,12 @@ import { HttpException, Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { createStructuredCodec } from '@shared/cache/cache-codec';
+import { readThrough } from '@shared/cache/read-through';
 import {
-  REPORT_CACHE_TTL_SECONDS,
-  readReportGeneration,
+  LEDGER_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
 } from '@shared/cache/report-cache';
 import { Either, right } from '@shared/core/errors/Either';
 import { nextOccurrence } from '@utils/installmentSchedule';
@@ -101,30 +104,31 @@ export class FindMonthSummaryService implements Service<
   ) {}
 
   async execute({ workspaceId }: Request): Promise<Either<Errors, Response>> {
-    const generation = await readReportGeneration(this.cache, workspaceId);
+    const generation = await readLedgerGeneration(this.cache, workspaceId);
     const now = this.dateProvider.now();
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 
-    const currentMonthStart = this.dateProvider.startOfMonth(now, timezone);
-    const cacheKey =
-      generation === null
-        ? null
-        : `report:month-summary:v8:${workspaceId}:g${generation}:${this.dateProvider.format(now, 'YYYY-MM-DD', timezone)}`;
-    const cached = cacheKey ? await this.cache.get(cacheKey) : null;
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      return right(
-        MonthSummary.create({
-          ...parsed,
-          month: new Date(parsed.month),
-          totalCheckingBalance: parsed.totalCheckingBalance ?? 0,
-          totalInvestmentBalance: parsed.totalInvestmentBalance ?? 0,
-          totalCreditCardBalance: parsed.totalCreditCardBalance ?? 0,
-          projection: parsed.projection,
-        }),
-      );
-    }
+    return readThrough({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'report:month-summary',
+        version: 'v9',
+        workspaceId,
+        generations: { ledger: generation },
+        parts: [this.dateProvider.format(now, 'YYYY-MM-DD', timezone)],
+      }),
+      ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
+      codec: createStructuredCodec<Response>([MonthSummary]),
+      load: () => this.summarize(workspaceId, now, timezone),
+    });
+  }
 
+  private async summarize(
+    workspaceId: string,
+    now: Date,
+    timezone: string,
+  ): Promise<Either<Errors, Response>> {
+    const currentMonthStart = this.dateProvider.startOfMonth(now, timezone);
     const currentMonthEnd = this.dateProvider.endOfMonth(now, timezone);
     const previousMonthReference = this.dateProvider.add(
       currentMonthStart,
@@ -224,24 +228,6 @@ export class FindMonthSummaryService implements Service<
       },
       projection,
     });
-
-    if (cacheKey) {
-      await this.cache.set(
-        cacheKey,
-        JSON.stringify({
-          month: monthSummary.month,
-          totalIncome: monthSummary.totalIncome,
-          totalExpense: monthSummary.totalExpense,
-          totalCheckingBalance: monthSummary.totalCheckingBalance,
-          totalInvestmentBalance: monthSummary.totalInvestmentBalance,
-          totalCreditCardBalance: monthSummary.totalCreditCardBalance,
-          rate: monthSummary.rate,
-          previousMonthToDate: monthSummary.previousMonthToDate,
-          projection: monthSummary.projection,
-        }),
-        REPORT_CACHE_TTL_SECONDS,
-      );
-    }
 
     return right(monthSummary);
   }

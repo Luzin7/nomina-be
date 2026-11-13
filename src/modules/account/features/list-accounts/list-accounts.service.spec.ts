@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountType } from '@constants/enums';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -36,7 +37,10 @@ describe('ListAccountsService', () => {
       updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
-    service = new ListAccountsService(accountRepository);
+    service = new ListAccountsService(
+      accountRepository,
+      new InMemoryCacheProvider(),
+    );
   });
 
   afterEach(() => jest.clearAllMocks());

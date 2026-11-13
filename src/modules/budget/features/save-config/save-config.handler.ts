@@ -1,4 +1,5 @@
 import { BUDGET_MODE_DEFAULT, type BudgetMode } from '@constants/enums';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import {
   BudgetRepository,
   SaveBudgetAllocationInput,
@@ -24,6 +25,7 @@ import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-wor
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { SaveBudgetConfigRequest } from './save-config.dto';
@@ -92,6 +94,7 @@ export class SaveBudgetConfigService implements Service<
     private readonly budgetRepository: BudgetRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute(
@@ -133,6 +136,11 @@ export class SaveBudgetConfigService implements Service<
         mode,
         allocations: savedAllocations,
       });
+      await invalidateLedgerReads(
+        this.cache,
+        workspaceId,
+        'save-budget-config',
+      );
 
       return right(
         this.buildResponse({

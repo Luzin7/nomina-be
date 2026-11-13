@@ -3,7 +3,9 @@ import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpe
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
-import { REPORT_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
+import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
+import { LEDGER_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { GetExpensesByCategoryService } from './get-expenses-by-category.handler';
 
 const START = new Date('2026-09-01T03:00:00.000Z');
@@ -65,7 +67,6 @@ describe('GetExpensesByCategoryService', () => {
     expect(
       transactionRepository.getTopExpensesByCategory,
     ).not.toHaveBeenCalled();
-    expect(workspaceTimezone.execute).not.toHaveBeenCalled();
   });
 
   it('queries the repository with named params in workspace timezone', async () => {
@@ -123,9 +124,9 @@ describe('GetExpensesByCategoryService', () => {
       totalExpense: 10000,
     });
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v3:ws-1:g7:2026-9',
+      'report:expenses-by-category:v5:ws-1:g7:c7:2026-9:2026-09',
       JSON.stringify(result),
-      REPORT_CACHE_TTL_SECONDS,
+      LEDGER_CACHE_TTL_SECONDS,
     );
   });
 
@@ -144,7 +145,11 @@ describe('GetExpensesByCategoryService', () => {
   });
 
   it('misses on the next read when a write bumped the generation during compute', async () => {
-    cache.readCounter.mockResolvedValueOnce(7).mockResolvedValueOnce(8);
+    cache.readCounter
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(8);
     transactionRepository.getTopExpensesByCategory.mockResolvedValue({
       expenses: [],
       totalExpense: 0,
@@ -154,12 +159,57 @@ describe('GetExpensesByCategoryService', () => {
     await service.execute(makeRequest());
 
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v3:ws-1:g7:2026-9',
+      'report:expenses-by-category:v5:ws-1:g7:c7:2026-9:2026-09',
       expect.any(String),
-      REPORT_CACHE_TTL_SECONDS,
+      LEDGER_CACHE_TTL_SECONDS,
     );
     expect(cache.get).toHaveBeenLastCalledWith(
-      'report:expenses-by-category:v3:ws-1:g8:2026-9',
+      'report:expenses-by-category:v5:ws-1:g8:c8:2026-9:2026-09',
     );
+  });
+});
+
+describe('GetExpensesByCategoryService today-dependent key', () => {
+  const SAO_PAULO = 'America/Sao_Paulo';
+
+  it.each([
+    {
+      case: 'month rollover in UTC',
+      before: '2026-09-30T12:00:00.000Z',
+      after: '2026-10-01T12:00:00.000Z',
+    },
+    {
+      case: 'local midnight month rollover inside one UTC day',
+      before: '2026-10-01T02:30:00.000Z',
+      after: '2026-10-01T03:30:00.000Z',
+    },
+  ])('recomputes isCurrentMonth after $case', async ({ before, after }) => {
+    const transactionRepository = {
+      getTopExpensesByCategory: jest
+        .fn()
+        .mockResolvedValue({ expenses: [], totalExpense: 0 }),
+    } as unknown as jest.Mocked<TransactionRepository>;
+    const workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue(SAO_PAULO),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
+    const dateProvider = new DayJsDateProvider();
+    const now = jest.spyOn(dateProvider, 'now');
+    const service = new GetExpensesByCategoryService(
+      transactionRepository,
+      workspaceTimezone,
+      dateProvider,
+      new InMemoryCacheProvider(),
+    );
+
+    now.mockReturnValue(new Date(before));
+    await service.execute(makeRequest());
+    now.mockReturnValue(new Date(after));
+    await service.execute(makeRequest());
+
+    expect(
+      transactionRepository.getTopExpensesByCategory.mock.calls.map(
+        ([input]) => input.isCurrentMonth,
+      ),
+    ).toEqual([true, false]);
   });
 });

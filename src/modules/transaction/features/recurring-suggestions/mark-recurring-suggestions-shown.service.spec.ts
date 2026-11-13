@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { RecurringSuggestionRepository } from '@modules/transaction/repositories/contracts/RecurringSuggestionRepository';
 import { MarkRecurringSuggestionsShownService } from './mark-recurring-suggestions-shown.service';
 
@@ -19,7 +20,10 @@ describe('MarkRecurringSuggestionsShownService', () => {
 
   beforeEach(() => {
     repository = makeRepository();
-    service = new MarkRecurringSuggestionsShownService(repository);
+    service = new MarkRecurringSuggestionsShownService(
+      repository,
+      new InMemoryCacheProvider(),
+    );
   });
 
   afterEach(() => jest.clearAllMocks());

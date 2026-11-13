@@ -6,7 +6,7 @@ import {
   InvalidParentCategoryError,
 } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
-import { bumpCategoryGeneration } from '@modules/category/services/category-list-cache';
+import { invalidateCategoryReads } from '@modules/category/services/category-list-cache';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { Service } from '@shared/core/contracts/Service';
@@ -50,11 +50,11 @@ export class CreateCategoryService implements Service<
 
     try {
       const created = await this.categoryRepository.create(category.value);
-      await bumpCategoryGeneration({
-        cache: this.cacheProvider,
+      await invalidateCategoryReads(
+        this.cacheProvider,
         workspaceId,
-        operation: 'create-category',
-      });
+        'create-category',
+      );
 
       return right(created);
     } catch (error) {

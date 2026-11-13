@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { Logger } from '@nestjs/common';
 import { RecurringSuggestionRepository } from '@modules/transaction/repositories/contracts/RecurringSuggestionRepository';
 import { makeSuggestion } from '@modules/transaction/test-helpers/mock-factories';
@@ -31,6 +32,7 @@ describe('ListRecurringSuggestionsService', () => {
     } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
     dateProvider = {
       now: jest.fn().mockReturnValue(new Date('2026-11-09T12:00:00.000Z')),
+      format: jest.fn(() => '2026-11-09'),
       add: jest.fn(() => new Date('2026-08-01T03:00:00.000Z')),
       startOfMonth: jest.fn(() => new Date('2026-11-01T03:00:00.000Z')),
     } as unknown as jest.Mocked<DateProvider>;
@@ -39,6 +41,7 @@ describe('ListRecurringSuggestionsService', () => {
       repository,
       timezoneService,
       dateProvider,
+      new InMemoryCacheProvider(),
     );
   });
 

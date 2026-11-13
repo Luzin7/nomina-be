@@ -4,10 +4,14 @@ import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-wor
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
+import { right } from '@shared/core/errors/Either';
 import {
-  REPORT_CACHE_TTL_SECONDS,
-  readReportGeneration,
+  LEDGER_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
 } from '@shared/cache/report-cache';
+import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { GetExpensesByCategoryRequest } from './get-expenses-by-category.dto';
 import { TopExpensesByCategoryResult } from '@modules/report/presenters/TopExpensesByCategory.presenter';
 
@@ -30,15 +34,40 @@ export class GetExpensesByCategoryService {
     month,
     year,
   }: Request): Promise<TopExpensesByCategoryResult> {
-    const generation = await readReportGeneration(this.cache, workspaceId);
-    const cacheKey =
-      generation === null
-        ? null
-        : `report:expenses-by-category:v3:${workspaceId}:g${generation}:${year}-${month}`;
-    const cached = cacheKey ? await this.cache.get(cacheKey) : null;
-    if (cached) return JSON.parse(cached) as TopExpensesByCategoryResult;
+    const [ledger, category, timezone] = await Promise.all([
+      readLedgerGeneration(this.cache, workspaceId),
+      readCategoryGeneration(this.cache, workspaceId),
+      this.workspaceTimezone.execute(workspaceId),
+    ]);
+    const localDay = this.dateProvider.format(
+      this.dateProvider.now(),
+      'YYYY-MM-DD',
+      timezone,
+    );
 
-    const timezone = await this.workspaceTimezone.execute(workspaceId);
+    const result = await readThrough<never, TopExpensesByCategoryResult>({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'report:expenses-by-category',
+        version: 'v5',
+        workspaceId,
+        generations: { ledger, category },
+        parts: [`${year}-${month}`, localDay],
+      }),
+      ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
+      load: async () =>
+        right(await this.summarize(workspaceId, timezone, month, year)),
+    });
+
+    return result.value;
+  }
+
+  private async summarize(
+    workspaceId: string,
+    timezone: string,
+    month: Request['month'],
+    year: Request['year'],
+  ): Promise<TopExpensesByCategoryResult> {
     const monthKey = `${year}-${String(month).padStart(2, '0')}`;
     const referenceDate = `${monthKey}-01`;
     const isCurrentMonth =
@@ -56,7 +85,7 @@ export class GetExpensesByCategoryService {
         isCurrentMonth,
       });
 
-    const result: TopExpensesByCategoryResult = {
+    return {
       expenses: expenses.map((expense) => ({
         categoryId: expense.categoryId,
         categoryName: expense.categoryName,
@@ -64,15 +93,5 @@ export class GetExpensesByCategoryService {
       })),
       totalExpense,
     };
-
-    if (cacheKey) {
-      await this.cache.set(
-        cacheKey,
-        JSON.stringify(result),
-        REPORT_CACHE_TTL_SECONDS,
-      );
-    }
-
-    return result;
   }
 }
