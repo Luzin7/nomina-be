@@ -2,6 +2,7 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Goal } from '@modules/goal/entities/Goal';
 import {
   GoalContributionIdConflictError,
+  GoalLinkedAccountInvalidError,
   GoalNotFoundError,
 } from '@modules/goal/errors';
 import {
@@ -67,6 +68,9 @@ export class CreateGoalContributionService implements Service<
     }
     if (result.status === 'goal-not-found')
       return left(new GoalNotFoundError());
+    if (result.status === 'source-account-invalid') {
+      return left(new GoalLinkedAccountInvalidError());
+    }
 
     if (result.status === 'recorded') {
       await invalidateGoalReads(

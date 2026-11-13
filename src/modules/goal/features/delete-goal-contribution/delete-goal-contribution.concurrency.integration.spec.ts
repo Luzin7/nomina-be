@@ -9,7 +9,11 @@ import { UpdateGoalService } from '@modules/goal/features/update-goal/update-goa
 import {
   ContributionHarness,
   OPENING_BALANCE,
+  holdGoalLock,
+  linkGoalToAccount,
+  raceAccountDelete,
   seedGoal,
+  sqlStateOf,
   startContributionHarness,
 } from '@modules/goal/test-helpers/goal-contribution-integration';
 import { count, eq } from 'drizzle-orm';
@@ -181,5 +185,45 @@ describe('goal contribution DELETE against a real postgres', () => {
       .where(eq(schema.accounts.id, accountId));
     expect(after.total).toBe(before.total);
     expect(account.balance).toBe(Number(OPENING_BALANCE));
+  });
+
+  it('fails with a lock timeout while another transaction holds the goal', async () => {
+    const { workspaceId, goalId } = await seedGoal(harness);
+    const id = await contribute(workspaceId, goalId);
+    const release = await holdGoalLock(harness.db, goalId);
+
+    const sqlState = await sqlStateOf(
+      remove.execute({ workspaceId, goalId, contributionId: id }),
+    );
+    await release();
+
+    expect(sqlState).toBe('55P03');
+    expect(await rowsOf(id)).toHaveLength(1);
+  });
+
+  it('survives an account delete racing the undo on a goal linked to that account', async () => {
+    const seed = await seedGoal(harness);
+    await linkGoalToAccount(harness.db, seed.goalId, seed.accountId);
+    const id = randomUUID();
+    await create.execute({
+      workspaceId: seed.workspaceId,
+      goalId: seed.goalId,
+      id,
+      amountCents: AMOUNT_CENTS,
+      sourceAccountId: seed.accountId,
+    });
+
+    const { acted, deleted } = await raceAccountDelete(harness.db, seed, () =>
+      remove.execute({
+        workspaceId: seed.workspaceId,
+        goalId: seed.goalId,
+        contributionId: id,
+      }),
+    );
+
+    expect(acted.ok && acted.value.isRight()).toBe(true);
+    expect(deleted).toMatchObject({ ok: true });
+    expect(await rowsOf(id)).toHaveLength(0);
+    expect(await currentCentsOf(seed.goalId)).toBe(0);
   });
 });

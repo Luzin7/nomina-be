@@ -115,7 +115,7 @@ export const FRESHNESS_READS: FreshnessRead[] = [
   },
   {
     name: 'goal-contributions',
-    domains: ['goal'],
+    domains: ['goal', 'ledger'],
     run: async ({ app, seed }) => {
       const result = await app
         .get(ListGoalContributionsService)

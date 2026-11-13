@@ -12,6 +12,7 @@ import {
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { buildCacheKey } from '@shared/cache/cache-key';
+import { readLedgerGeneration } from '@shared/cache/report-cache';
 import { readThrough } from '@shared/cache/read-through';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
@@ -38,7 +39,10 @@ export class ListGoalContributionsService implements Service<
     workspaceId,
     goalId,
   }: Request): Promise<Either<Error, ListGoalContributionsResponse>> {
-    const goal = await readGoalGeneration(this.cache, workspaceId);
+    const [goal, ledger] = await Promise.all([
+      readGoalGeneration(this.cache, workspaceId),
+      readLedgerGeneration(this.cache, workspaceId),
+    ]);
 
     return readThrough({
       cache: this.cache,
@@ -46,7 +50,7 @@ export class ListGoalContributionsService implements Service<
         route: 'goal:contributions',
         version: 'v1',
         workspaceId,
-        generations: { goal },
+        generations: { ledger, goal },
         parts: [goalId],
       }),
       ttlSeconds: GOAL_CACHE_TTL_SECONDS,

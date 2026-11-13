@@ -43,6 +43,19 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  it('should map 40P01 to 503', () => {
+    const { host, status, json } = makeHost();
+
+    filter.catch(makePostgresError('40P01'), host);
+
+    expect(status).toHaveBeenCalledWith(HttpStatus.SERVICE_UNAVAILABLE);
+    expect(json).toHaveBeenCalledWith({
+      statusCode: 503,
+      message: 'Service temporarily unavailable',
+      path: '/accounts',
+    });
+  });
+
   it('should map 57014 nested in the cause chain to 503', () => {
     const { host, status, json } = makeHost();
     const error = new Error('wrapped', {

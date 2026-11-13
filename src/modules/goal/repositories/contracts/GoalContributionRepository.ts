@@ -31,7 +31,8 @@ export type RecordContributionResult =
       goal: GoalRecord;
     }
   | { status: 'id-conflict' }
-  | { status: 'goal-not-found' };
+  | { status: 'goal-not-found' }
+  | { status: 'source-account-invalid' };
 
 export type UndoContributionResult = {
   status:

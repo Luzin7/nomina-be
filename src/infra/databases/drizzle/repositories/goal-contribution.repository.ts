@@ -22,6 +22,12 @@ export class GoalContributionRepositoryImplementation implements GoalContributio
     input: RecordContributionInput,
   ): Promise<RecordContributionResult> {
     return this.drizzle.db.transaction(async (tx) => {
+      await tx.execute(sql`set local lock_timeout = '3s'`);
+      const sourceMissing =
+        input.sourceAccountId &&
+        !(await keepAccount(tx, input.sourceAccountId, input.workspaceId));
+      if (sourceMissing) return { status: 'source-account-invalid' };
+
       const locked = await lockGoal(tx, input.goalId, input.workspaceId);
       if (!locked) return { status: 'goal-not-found' };
 
@@ -72,6 +78,8 @@ export class GoalContributionRepositoryImplementation implements GoalContributio
     workspaceId,
   }: UndoContributionInput): Promise<UndoContributionResult> {
     return this.drizzle.db.transaction(async (tx) => {
+      await tx.execute(sql`set local lock_timeout = '3s'`);
+      await this.lockSourceAccount(tx, id, goalId, workspaceId);
       const locked = await lockGoal(tx, goalId, workspaceId);
       if (!locked) return { status: 'goal-not-found' };
 
@@ -102,6 +110,28 @@ export class GoalContributionRepositoryImplementation implements GoalContributio
 
       return { status: 'undone' };
     });
+  }
+
+  private async lockSourceAccount(
+    tx: Tx,
+    id: string,
+    goalId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const [contribution] = await tx
+      .select({ sourceAccountId: schema.goalContributions.sourceAccountId })
+      .from(schema.goalContributions)
+      .where(
+        and(
+          eq(schema.goalContributions.id, id),
+          eq(schema.goalContributions.goalId, goalId),
+          eq(schema.goalContributions.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+    if (!contribution?.sourceAccountId) return;
+
+    await keepAccount(tx, contribution.sourceAccountId, workspaceId);
   }
 
   async listContributionsByGoal(
@@ -170,6 +200,26 @@ async function lockGoal(
     .for('update');
 
   return row ? toGoalRecord(row) : null;
+}
+
+async function keepAccount(
+  tx: Tx,
+  accountId: string,
+  workspaceId: string,
+): Promise<boolean> {
+  const [account] = await tx
+    .select({ id: schema.accounts.id })
+    .from(schema.accounts)
+    .where(
+      and(
+        eq(schema.accounts.id, accountId),
+        eq(schema.accounts.workspaceId, workspaceId),
+      ),
+    )
+    .limit(1)
+    .for('key share');
+
+  return Boolean(account);
 }
 
 function toContributionRecord(

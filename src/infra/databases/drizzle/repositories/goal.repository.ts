@@ -72,6 +72,7 @@ export class GoalRepositoryImplementation implements GoalRepository {
   ): Promise<GoalRecord | null> {
     return this.writeChecked(() =>
       this.drizzle.db.transaction(async (tx) => {
+        await tx.execute(sql`set local lock_timeout = '3s'`);
         const [current] = await tx
           .select()
           .from(schema.goals)

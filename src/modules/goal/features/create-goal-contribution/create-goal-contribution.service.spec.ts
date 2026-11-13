@@ -146,4 +146,15 @@ describe('CreateGoalContributionService', () => {
       expect.objectContaining({ sourceAccountId: 'account-1' }),
     );
   });
+
+  it('returns the named account error when the repository finds the source account gone', async () => {
+    contributionRepository.recordContribution.mockResolvedValue({
+      status: 'source-account-invalid',
+    });
+
+    const result = await service.execute(REQUEST);
+
+    expect(result.value).toBeInstanceOf(GoalLinkedAccountInvalidError);
+    expect(cache.counters.has(goalGenerationKey('ws-1'))).toBe(false);
+  });
 });

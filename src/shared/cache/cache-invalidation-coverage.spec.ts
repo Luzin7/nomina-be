@@ -44,7 +44,7 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
   },
   'goal/features/list-goal-contributions/list-goal-contributions.service.ts': {
     route: 'goal:contributions',
-    kinds: ['goal'],
+    kinds: ['ledger', 'goal'],
   },
   'account/features/list-accounts/list-accounts.service.ts': {
     route: 'account:list',
