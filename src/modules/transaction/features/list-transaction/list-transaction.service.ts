@@ -2,6 +2,7 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -33,6 +34,7 @@ export class ListTransactionsService implements Service<
   constructor(
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly cache: CacheProvider,
   ) {}
 
@@ -70,14 +72,14 @@ export class ListTransactionsService implements Service<
   }
 
   private async list(request: Request): Promise<Either<Error, Response>> {
-    const workspaceTimezone = 'America/Sao_Paulo'; // TODO: o ideal é vir do payload do JWT ou Workspace
+    const timezone = await this.workspaceTimezone.execute(request.workspaceId);
 
     const start = request.startDate
-      ? this.dateProvider.startOfDay(request.startDate, workspaceTimezone)
+      ? this.dateProvider.startOfDay(request.startDate, timezone)
       : undefined;
 
     const end = request.endDate
-      ? this.dateProvider.endOfDay(request.endDate, workspaceTimezone)
+      ? this.dateProvider.endOfDay(request.endDate, timezone)
       : undefined;
 
     const { transactions, total } =
