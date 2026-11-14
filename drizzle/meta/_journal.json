@@ -162,6 +162,13 @@
       "when": 1794621499016,
       "tag": "0037_budget_suggestion_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794695993794,
+      "tag": "0038_recurring_transaction_fk_set_null",
+      "breakpoints": true
     }
   ]
 }
