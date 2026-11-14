@@ -7,6 +7,7 @@ import { Module } from '@nestjs/common';
 import { DateModule } from '@providers/date/Date.module';
 import { GetAvailableToSpendController } from './features/get-available-to-spend/get-available-to-spend.controller';
 import { GetAvailableToSpendService } from './features/get-available-to-spend/get-available-to-spend.handler';
+import { BudgetSuggestionInsightService } from './services/budget-suggestion-insight.service';
 import { CardBillDueInsightService } from './services/card-bill-due-insight.service';
 import { ProjectionShortfallInsightService } from './services/projection-shortfall-insight.service';
 
@@ -24,6 +25,7 @@ import { ProjectionShortfallInsightService } from './services/projection-shortfa
     GetAvailableToSpendService,
     CardBillDueInsightService,
     ProjectionShortfallInsightService,
+    BudgetSuggestionInsightService,
   ],
 })
 export class DashboardModule {}

@@ -24,6 +24,7 @@ import {
   resolveInsight,
   type InsightSource,
 } from '../../services/insight-source-guard';
+import { BudgetSuggestionInsightService } from '../../services/budget-suggestion-insight.service';
 import { ProjectionShortfallInsightService } from '../../services/projection-shortfall-insight.service';
 import {
   buildSpendableFigure,
@@ -65,6 +66,7 @@ export class GetAvailableToSpendService implements Service<
     private readonly goalRepository: GoalRepository,
     private readonly cardBillDueInsight: CardBillDueInsightService,
     private readonly projectionShortfallInsight: ProjectionShortfallInsightService,
+    private readonly budgetSuggestionInsight: BudgetSuggestionInsightService,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
     private readonly cache: CacheProvider,
@@ -201,6 +203,10 @@ export class GetAvailableToSpendService implements Service<
       {
         code: 'UNALLOCATED_INCOME',
         resolve: sync(() => unallocatedIncomeInsight(budget)),
+      },
+      {
+        code: 'BUDGET_SUGGESTION_READY',
+        resolve: () => this.budgetSuggestionInsight.execute({ workspaceId }),
       },
     ];
   }

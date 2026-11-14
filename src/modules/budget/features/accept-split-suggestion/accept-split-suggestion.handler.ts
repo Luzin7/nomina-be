@@ -1,0 +1,114 @@
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import {
+  BudgetSuggestionChangedError,
+  BudgetSuggestionUnavailableError,
+} from '@modules/budget/errors';
+import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import {
+  ResolveBudgetSuggestionService,
+  type BudgetSuggestion,
+} from '@modules/budget/services/resolve-budget-suggestion.service';
+import { toAllocationInputs } from '@modules/budget/valueObjects/SplitAllocationLayout';
+import { type SuggestionDecisionOutcome } from '@modules/budget/valueObjects/SuggestionDecisions';
+import { Injectable } from '@nestjs/common';
+import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { Service } from '@shared/core/contracts/Service';
+import { Either, left, right } from '@shared/core/errors/Either';
+import { AcceptSplitSuggestionRequest } from './accept-split-suggestion.dto';
+
+type Request = AcceptSplitSuggestionRequest &
+  Pick<TokenPayloadSchema, 'workspaceId'>;
+
+const acceptedOf = (month: string): SuggestionDecisionOutcome => ({
+  kind: 'split',
+  status: 'accepted',
+  month,
+});
+
+const isAccepted = ({ split }: BudgetSuggestion): boolean =>
+  split.status === 'accepted';
+
+@Injectable()
+export class AcceptSplitSuggestionService implements Service<
+  Request,
+  Error,
+  SuggestionDecisionOutcome
+> {
+  constructor(
+    private readonly resolveSuggestion: ResolveBudgetSuggestionService,
+    private readonly budgetRepository: BudgetRepository,
+    private readonly cache: CacheProvider,
+  ) {}
+
+  async execute({
+    workspaceId,
+    fingerprint,
+  }: Request): Promise<Either<Error, SuggestionDecisionOutcome>> {
+    const resolved = await this.resolveSuggestion.execute({ workspaceId });
+    if (resolved.isLeft()) return left(resolved.value);
+
+    const { split, month, monthStart } = resolved.value;
+    if (split.status === 'accepted') return right(acceptedOf(month));
+    if (split.status !== 'pending') {
+      return left(new BudgetSuggestionUnavailableError());
+    }
+    if (split.fingerprint !== fingerprint) {
+      return left(new BudgetSuggestionChangedError());
+    }
+
+    const allocations = toAllocationInputs(split.allocations);
+    if (allocations.length === 0) {
+      return left(new BudgetSuggestionUnavailableError());
+    }
+
+    const outcome = await this.budgetRepository.saveSnapshotWithDecision({
+      workspaceId,
+      effectiveFrom: monthStart,
+      expectedMonthlyIncome: split.incomeBasisCents,
+      decision: {
+        workspaceId,
+        kind: 'split',
+        month,
+        decision: 'accepted',
+        incomeCents: split.incomeBasisCents,
+        bracketVersion: split.bracket?.version ?? null,
+      },
+      write: { kind: 'split', allocations },
+      isStillCurrent: () => this.isStillCurrent(workspaceId, fingerprint),
+    });
+    if (outcome === 'drifted') return left(new BudgetSuggestionChangedError());
+    if (outcome === 'already-decided') return this.settled(workspaceId);
+
+    await invalidateLedgerReads(
+      this.cache,
+      workspaceId,
+      'accept-split-suggestion',
+    );
+
+    return right(acceptedOf(month));
+  }
+
+  private async isStillCurrent(
+    workspaceId: string,
+    fingerprint: string,
+  ): Promise<boolean> {
+    const resolved = await this.resolveSuggestion.execute({ workspaceId });
+    if (resolved.isLeft()) return false;
+
+    const { split } = resolved.value;
+
+    return split.status === 'pending' && split.fingerprint === fingerprint;
+  }
+
+  private async settled(
+    workspaceId: string,
+  ): Promise<Either<Error, SuggestionDecisionOutcome>> {
+    const resolved = await this.resolveSuggestion.execute({ workspaceId });
+    if (resolved.isLeft()) return left(resolved.value);
+
+    return isAccepted(resolved.value)
+      ? right(acceptedOf(resolved.value.month))
+      : left(new BudgetSuggestionUnavailableError());
+  }
+}

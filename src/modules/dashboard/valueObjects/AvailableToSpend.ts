@@ -7,7 +7,8 @@ export type InsightCode =
   | 'CARD_BILL_DUE'
   | 'PROJECTION_SHORTFALL'
   | 'CATEGORY_BREACH'
-  | 'UNALLOCATED_INCOME';
+  | 'UNALLOCATED_INCOME'
+  | 'BUDGET_SUGGESTION_READY';
 
 export type InsightSeverity = 'high' | 'medium' | 'low';
 

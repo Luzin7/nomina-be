@@ -210,6 +210,92 @@ describe('GetBudgetStatusService', () => {
     });
   });
 
+  it('pins the exact status response of a null-income snapshot', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        monthlyIncome: null,
+        allocations: makeSnapshot().allocations.map((allocation) => ({
+          ...allocation,
+          percentageOfIncome: null,
+        })),
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    if (!result.isRight()) throw result.value;
+    expect(BudgetPresenter.toStatus(result.value)).toEqual({
+      exists: true,
+      mode: 'percentage',
+      monthlyIncomeCents: null,
+      effectiveFrom: NOVEMBER_START,
+      allocations: [
+        {
+          categoryId: 'cat-1',
+          categoryName: 'Moradia',
+          groupName: 'Custos fixos',
+          targetCents: 60_000,
+          spentCents: 0,
+          remainingCents: 60_000,
+          percentageOfIncome: null,
+          percentageUsed: 0,
+        },
+        {
+          categoryId: 'cat-2',
+          categoryName: 'Lazer',
+          groupName: 'Conforto',
+          targetCents: 40_000,
+          spentCents: 0,
+          remainingCents: 40_000,
+          percentageOfIncome: null,
+          percentageUsed: 0,
+        },
+      ],
+      pillars: [
+        {
+          groupName: 'Custos fixos',
+          targetCents: 60_000,
+          spentCents: 0,
+          percentage: null,
+        },
+        {
+          groupName: 'Conforto',
+          targetCents: 40_000,
+          spentCents: 0,
+          percentage: null,
+        },
+      ],
+      unallocatedSpent: 0,
+      totalTargetCents: 100_000,
+      unallocatedIncomeCents: 0,
+      allocationState: 'balanced',
+      totalSpent: 0,
+      projection: {
+        expectedIncome: 1000,
+        expectedExpense: 600,
+        expectedBalance: 400,
+        realized: { totalIncome: 500, totalExpense: 200 },
+        scheduled: { totalIncome: 0, totalExpense: 0 },
+        recurringNotYetGenerated: { totalIncome: 0, totalExpense: 0 },
+        fixedBillsDue: 50,
+        accountedExpense: 200,
+        variableRemaining: 100,
+        paceDaily: 10,
+        paceRemaining: 100,
+        paceBalance: 50,
+        daysRemaining: 10,
+        usualExpense: 550,
+        basisMonths: 3,
+        hasHistory: true,
+      },
+    });
+  });
+
   it('passes the projection through unchanged', async () => {
     repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
 

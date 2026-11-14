@@ -31,6 +31,9 @@ const PRESET_RULES: Record<string, PresetRule> = {
   'Outros Gastos': { groupName: 'Outros', weight: 3 },
 };
 
+export const presetWeightOf = (categoryName: string): number =>
+  (PRESET_RULES[categoryName] ?? DEFAULT_RULE).weight;
+
 const TOTAL_PERCENTAGE = 100;
 
 function distributePercentages(weights: number[]): number[] {

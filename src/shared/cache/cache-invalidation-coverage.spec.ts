@@ -113,6 +113,12 @@ const WRITES: Record<string, Kind[]> = {
   'account/features/update-account/update-account.service.ts': ['ledger'],
   'account/features/delete-account/delete-account.handler.ts': ['ledger'],
   'account/features/set-autopay/set-autopay.service.ts': ['ledger'],
+  'budget/features/accept-income-suggestion/accept-income-suggestion.handler.ts':
+    ['ledger'],
+  'budget/features/accept-split-suggestion/accept-split-suggestion.handler.ts':
+    ['ledger'],
+  'budget/features/reject-budget-suggestion/reject-budget-suggestion.handler.ts':
+    ['ledger'],
   'budget/features/save-config/save-config.handler.ts': ['ledger'],
   'card-cycle/features/save-card-cycle-budget/save-card-cycle-budget.handler.ts':
     ['ledger'],
