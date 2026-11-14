@@ -1,3 +1,4 @@
+import { AccountModule } from '@modules/account/Account.module';
 import { DatabaseModule } from '@infra/databases/Database.module';
 import { UserModule } from '@modules/user/User.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
@@ -20,15 +21,29 @@ import { FindTransactionByIdService } from './features/find-transaction/find-tra
 import { ListRecurringTransactionsController } from './features/list-recurring-transactions/list-recurring-transactions.controller';
 import { ListRecurringTransactionsService } from './features/list-recurring-transactions/list-recurring-transactions.service';
 import { ListTransactionController } from './features/list-transaction/list-transaction.controller';
+import { ListTransactionTotalsController } from './features/list-transaction-totals/list-transaction-totals.controller';
+import { ListTransactionTotalsService } from './features/list-transaction-totals/list-transaction-totals.service';
 import { ListTransactionsService } from './features/list-transaction/list-transaction.service';
+import { RecurringSummaryController } from './features/recurring-summary/recurring-summary.controller';
+import { RecurringSummaryService } from './features/recurring-summary/recurring-summary.service';
 import { SetTransactionStatusController } from './features/set-transaction-status/set-transaction-status.controller';
 import { SetTransactionStatusService } from './features/set-transaction-status/set-transaction-status.service';
+import { AcceptRecurringSuggestionController } from './features/recurring-suggestions/accept-recurring-suggestion.controller';
+import { AcceptRecurringSuggestionService } from './features/recurring-suggestions/accept-recurring-suggestion.service';
+import { DismissRecurringSuggestionController } from './features/recurring-suggestions/dismiss-recurring-suggestion.controller';
+import { DismissRecurringSuggestionService } from './features/recurring-suggestions/dismiss-recurring-suggestion.service';
+import { ListRecurringSuggestionsController } from './features/recurring-suggestions/list-recurring-suggestions.controller';
+import { ListRecurringSuggestionsService } from './features/recurring-suggestions/list-recurring-suggestions.service';
+import { MarkRecurringSuggestionsShownController } from './features/recurring-suggestions/mark-recurring-suggestions-shown.controller';
+import { MarkRecurringSuggestionsShownService } from './features/recurring-suggestions/mark-recurring-suggestions-shown.service';
 import { ToggleActiveRecurringTransactionController } from './features/toggle-active-recurring-transaction/toggle-active-recurring-transaction.controller';
 import { ToggleActiveRecurringTransactionService } from './features/toggle-active-recurring-transaction/toggle-active-recurring-transaction.service';
 import { UpdateRecurringTransactionController } from './features/update-recurring-transaction/update-recurring-transaction.controller';
 import { UpdateRecurringTransactionService } from './features/update-recurring-transaction/update-recurring-transaction.service';
 import { UpdateTransactionController } from './features/update-transaction/update-transaction.controller';
 import { UpdateTransactionService } from './features/update-transaction/update-transaction.service';
+import { AutoPayCardInvoicesJobController } from './jobs/auto-pay-card-invoices/auto-pay-card-invoices.controller';
+import { AutoPayCardInvoicesJobService } from './jobs/auto-pay-card-invoices/auto-pay-card-invoices.service';
 import { GenerateRecurringTransactionsJobController } from './jobs/generate-recurring-transactions/generate-recurring-transactions.controller';
 import { GenerateRecurringTransactionsJobService } from './jobs/generate-recurring-transactions/generate-recurring-transactions.service';
 import { ReconcileBalancesJobController } from './jobs/reconcile-balances/reconcile-balances.controller';
@@ -43,6 +58,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     CreateTransactionController,
     DeleteTransactionController,
     ListTransactionController,
+    ListTransactionTotalsController,
     ListRecurringTransactionsController,
     FindTransactionController,
     UpdateTransactionController,
@@ -52,17 +68,30 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     GenerateRecurringTransactionsJobController,
     ReconcileBalancesJobController,
     SettleCardInstallmentsJobController,
+    AutoPayCardInvoicesJobController,
     UpdateRecurringTransactionController,
     DeleteRecurringTransactionController,
+    RecurringSummaryController,
     FindRecurringTransactionController,
     ToggleActiveRecurringTransactionController,
+    ListRecurringSuggestionsController,
+    AcceptRecurringSuggestionController,
+    DismissRecurringSuggestionController,
+    MarkRecurringSuggestionsShownController,
   ],
-  imports: [DatabaseModule, UserModule, WorkspaceModule, DateModule],
+  imports: [
+    DatabaseModule,
+    UserModule,
+    WorkspaceModule,
+    DateModule,
+    AccountModule,
+  ],
   providers: [
     CreateTransactionService,
     DeleteTransactionService,
     FindTransactionByIdService,
     ListTransactionsService,
+    ListTransactionTotalsService,
     UpdateTransactionService,
     SetTransactionStatusService,
     CreateRecurringTransactionService,
@@ -71,7 +100,12 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     DeleteRecurringTransactionService,
     ListRecurringTransactionsService,
     FindRecurringTransactionService,
+    RecurringSummaryService,
     ToggleActiveRecurringTransactionService,
+    ListRecurringSuggestionsService,
+    AcceptRecurringSuggestionService,
+    DismissRecurringSuggestionService,
+    MarkRecurringSuggestionsShownService,
     {
       provide: NextGenerationDateCalculator,
       useClass: CalculateNextGenerationDateService,
@@ -79,6 +113,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     GenerateRecurringTransactionsJobService,
     ReconcileBalancesJobService,
     SettleCardInstallmentsJobService,
+    AutoPayCardInvoicesJobService,
   ],
 })
 export class TransactionModule {}

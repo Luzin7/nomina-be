@@ -18,6 +18,10 @@ function makeRow(overrides: Partial<AccountRow> = {}): AccountRow {
     closingDaysBeforeDue: 7,
     dueDay: null,
     creditLimit: null,
+    autoPayEnabled: false,
+    autoPayConfirmedAt: null,
+    autoPayEnabledAt: null,
+    autoPaySourceAccountId: null,
     ...overrides,
   };
 }
@@ -55,18 +59,21 @@ function makeCreditCard(): CreditCard {
 }
 
 function makeRepository(returnedRow: AccountRow) {
-  const set = jest.fn().mockReturnValue({
-    where: jest.fn().mockReturnValue({
-      returning: jest.fn().mockResolvedValue([returnedRow]),
-    }),
+  const where = jest.fn().mockReturnValue({
+    returning: jest.fn().mockResolvedValue([returnedRow]),
   });
+  const set = jest.fn().mockReturnValue({ where });
   const update = jest.fn().mockReturnValue({ set });
 
   const drizzle = {
     db: { update },
   } as unknown as DrizzleService;
 
-  return { repository: new AccountRepositoryImplementation(drizzle), set };
+  return {
+    repository: new AccountRepositoryImplementation(drizzle),
+    set,
+    where,
+  };
 }
 
 describe('AccountRepositoryImplementation.update', () => {
@@ -93,5 +100,61 @@ describe('AccountRepositoryImplementation.update', () => {
       'name',
     ]);
     expect(set.mock.calls[0][0]).not.toHaveProperty('balance');
+  });
+});
+
+describe('AccountRepositoryImplementation autopay persistence', () => {
+  function makeEnabledCard() {
+    const card = makeCreditCard();
+    card.enableAutoPay('src-1', new Date('2026-11-01T10:00:00Z'));
+    return card;
+  }
+
+  it('general update never writes autopay columns', async () => {
+    const { repository, set } = makeRepository(
+      makeRow({ type: AccountType.CREDIT_CARD, dueDay: 20 }),
+    );
+
+    await repository.update(makeEnabledCard());
+
+    const keys = Object.keys(set.mock.calls[0][0]);
+    expect(keys.filter((key) => key.startsWith('autoPay'))).toEqual([]);
+  });
+
+  it('updateAutoPay writes only the three autopay columns', async () => {
+    const { repository, set, where } = makeRepository(makeRow());
+
+    await repository.updateAutoPay(makeEnabledCard());
+
+    expect(set.mock.calls[0][0]).toEqual({
+      autoPayEnabled: true,
+      autoPayConfirmedAt: new Date('2026-11-01T10:00:00Z'),
+      autoPayEnabledAt: new Date('2026-11-01T10:00:00Z'),
+      autoPaySourceAccountId: 'src-1',
+    });
+    expect(where).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AccountRepositoryImplementation.findAllByWorkspaceId', () => {
+  it('lists a card without dueDay together with the other accounts', async () => {
+    const rows = [
+      makeRow({ id: 'acc-1' }),
+      makeRow({ id: 'acc-2', type: AccountType.CREDIT_CARD, dueDay: null }),
+    ];
+    const drizzle = {
+      db: {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockResolvedValue(rows),
+          }),
+        }),
+      },
+    } as unknown as DrizzleService;
+    const repository = new AccountRepositoryImplementation(drizzle);
+
+    const accounts = await repository.findAllByWorkspaceId('ws-1');
+
+    expect(accounts.map((account) => account.id)).toEqual(['acc-1', 'acc-2']);
   });
 });

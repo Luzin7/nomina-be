@@ -75,6 +75,8 @@ describe('GenerateRecurringTransactionsJobService', () => {
         .mockImplementation(
           async (transactions: Transaction[]) => transactions.length,
         ),
+      findSummaryRules: jest.fn(),
+      findCompletedRecurringExpense: jest.fn(),
     } as jest.Mocked<RecurringTransactionRepository>;
 
     nextGenerationDateCalculator = {

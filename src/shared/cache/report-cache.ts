@@ -1,19 +1,26 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { bumpGeneration } from './generation-counter';
 
-export const REPORT_CACHE_TTL_SECONDS = 6 * 60 * 60;
+export const LEDGER_CACHE_TTL_SECONDS = 30 * 60;
+export const LEDGER_LIVE_CACHE_TTL_SECONDS = 15 * 60;
 
-export const reportGenerationKey = (workspaceId: string): string =>
+export const ledgerGenerationKey = (workspaceId: string): string =>
   `cache-gen:report:${workspaceId}`;
 
-export const readReportGeneration = (
+export const readLedgerGeneration = (
   cache: CacheProvider,
   workspaceId: string,
 ): Promise<number | null> =>
-  cache.readCounter(reportGenerationKey(workspaceId), Date.now());
+  cache.readCounter(ledgerGenerationKey(workspaceId), Date.now());
 
-export async function bumpReportGeneration(
+export const invalidateLedgerReads = (
   cache: CacheProvider,
   workspaceId: string,
-): Promise<void> {
-  await cache.incrementCounter(reportGenerationKey(workspaceId), Date.now());
-}
+  operation: string,
+): Promise<void> =>
+  bumpGeneration({
+    cache,
+    counterKey: ledgerGenerationKey(workspaceId),
+    workspaceId,
+    operation,
+  });

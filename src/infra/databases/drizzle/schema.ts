@@ -1,15 +1,24 @@
-import { BalanceMovementCause } from '@constants/enums';
+import {
+  BalanceMovementCause,
+  BUDGET_MODE_DEFAULT,
+  type BudgetMode,
+} from '@constants/enums';
 import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import { sql } from 'drizzle-orm';
 import {
   AnyPgColumn,
   bigint,
   boolean,
+  check,
+  date,
   index,
   integer,
+  numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
@@ -111,6 +120,10 @@ export const workspaces = pgTable('workspaces', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
     .defaultNow()
     .notNull(),
+  lastBillDetectionAt: timestamp('last_bill_detection_at', {
+    withTimezone: true,
+    mode: 'date',
+  }),
 });
 
 export const workspaceUsers = pgTable(
@@ -193,6 +206,17 @@ export const accounts = pgTable(
       .notNull(),
     dueDay: integer('due_day'),
     creditLimit: bigint('credit_limit', { mode: 'number' }),
+    autoPayEnabled: boolean('auto_pay_enabled').default(false).notNull(),
+    autoPayConfirmedAt: timestamp('auto_pay_confirmed_at', {
+      withTimezone: true,
+    }),
+    autoPayEnabledAt: timestamp('auto_pay_enabled_at', {
+      withTimezone: true,
+    }),
+    autoPaySourceAccountId: text('auto_pay_source_account_id').references(
+      (): AnyPgColumn => accounts.id,
+      { onDelete: 'set null' },
+    ),
   },
   (table) => [
     index('idx_account_ws').on(table.workspaceId),
@@ -216,6 +240,7 @@ export const categories = pgTable(
     name: text('name').notNull(),
     type: text('type').notNull(),
     isSystemCategory: boolean('is_system_category').default(false).notNull(),
+    isHidden: boolean('is_hidden').default(false).notNull(),
     parentId: text('parent_id').references((): AnyPgColumn => categories.id),
   },
   (table) => [
@@ -343,6 +368,239 @@ export const transactions = pgTable(
   ],
 );
 
+export const cardInvoiceSettlements = pgTable(
+  'card_invoice_settlements',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    cardAccountId: text('card_account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    invoicePeriodMonth: integer('invoice_period_month').notNull(),
+    invoicePeriodYear: integer('invoice_period_year').notNull(),
+    transactionId: text('transaction_id').references(() => transactions.id, {
+      onDelete: 'cascade',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('unq_card_invoice_settlement').on(
+      table.cardAccountId,
+      table.invoicePeriodMonth,
+      table.invoicePeriodYear,
+    ),
+    index('idx_card_invoice_settlement_ws').on(table.workspaceId),
+  ],
+);
+
+export const recurringSuggestions = pgTable(
+  'recurring_suggestions',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    categoryId: text('category_id')
+      .notNull()
+      .references(() => categories.id),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id),
+    suggestedTitle: text('suggested_title').notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+    dayOfMonth: integer('day_of_month').notNull(),
+    status: text('status').notNull(),
+    recurringId: text('recurring_id').references(
+      () => recurringTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    shownAt: timestamp('shown_at', { withTimezone: true, mode: 'date' }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', {
+      withTimezone: true,
+      mode: 'date',
+    }).$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index('idx_recurring_suggestion_ws_status').on(
+      table.workspaceId,
+      table.status,
+    ),
+    index('idx_recurring_suggestion_ws_category').on(
+      table.workspaceId,
+      table.categoryId,
+    ),
+  ],
+);
+
+export const recurringSuggestionTransactions = pgTable(
+  'recurring_suggestion_transactions',
+  {
+    suggestionId: text('suggestion_id')
+      .notNull()
+      .references(() => recurringSuggestions.id, { onDelete: 'cascade' }),
+    transactionId: text('transaction_id')
+      .notNull()
+      .references(() => transactions.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    uniqueIndex('unq_recurring_suggestion_transaction').on(table.transactionId),
+    index('idx_recurring_suggestion_transaction_suggestion').on(
+      table.suggestionId,
+    ),
+  ],
+);
+
+export const budgets = pgTable(
+  'budgets',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    effectiveFrom: timestamp('effective_from', {
+      withTimezone: true,
+      mode: 'date',
+    }).notNull(),
+    monthlyIncome: bigint('monthly_income', { mode: 'number' }),
+    mode: text('mode')
+      .$type<BudgetMode>()
+      .notNull()
+      .default(BUDGET_MODE_DEFAULT),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_budget_ws_effective_from').on(
+      table.workspaceId,
+      table.effectiveFrom,
+    ),
+    index('idx_budget_ws').on(table.workspaceId),
+  ],
+);
+
+export const budgetAllocations = pgTable(
+  'budget_allocations',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    budgetId: text('budget_id')
+      .notNull()
+      .references(() => budgets.id, { onDelete: 'cascade' }),
+    categoryId: text('category_id')
+      .notNull()
+      .references(() => categories.id),
+    groupName: text('group_name').notNull(),
+    groupOrder: integer('group_order').notNull(),
+    categoryOrder: integer('category_order').notNull(),
+    percentageOfIncome: integer('percentage_of_income'),
+    targetCents: bigint('target_cents', { mode: 'number' }).notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_budget_allocation_budget_category').on(
+      table.budgetId,
+      table.categoryId,
+    ),
+    index('idx_budget_allocation_budget').on(table.budgetId),
+    index('idx_budget_allocation_category').on(table.categoryId),
+  ],
+);
+
+export const budgetParameters = pgTable(
+  'budget_parameters',
+  {
+    key: text('key').notNull(),
+    effectiveFrom: date('effective_from', { mode: 'string' }).notNull(),
+    valueCents: bigint('value_cents', { mode: 'number' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.key, table.effectiveFrom] })],
+);
+
+export const budgetIncomeBrackets = pgTable(
+  'budget_income_brackets',
+  {
+    version: integer('version').notNull(),
+    position: integer('position').notNull(),
+    maxMinimumWages: numeric('max_minimum_wages', {
+      precision: 6,
+      scale: 2,
+    }),
+    essentialsBp: integer('essentials_bp').notNull(),
+    lifestyleBp: integer('lifestyle_bp').notNull(),
+    savingsBp: integer('savings_bp').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.version, table.position] }),
+    check(
+      'chk_budget_income_bracket_bp_total',
+      sql`${table.essentialsBp} + ${table.lifestyleBp} + ${table.savingsBp} = 10000`,
+    ),
+  ],
+);
+
+export const budgetCategoryGroups = pgTable(
+  'budget_category_groups',
+  {
+    categoryName: text('category_name').primaryKey(),
+    budgetGroup: text('budget_group').notNull(),
+  },
+  (table) => [
+    check(
+      'chk_budget_category_group_value',
+      sql`${table.budgetGroup} IN ('essentials', 'lifestyle', 'savings')`,
+    ),
+  ],
+);
+
+export const budgetSuggestionDecisions = pgTable(
+  'budget_suggestion_decisions',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    month: date('month', { mode: 'string' }).notNull(),
+    decision: text('decision').notNull(),
+    incomeCents: bigint('income_cents', { mode: 'number' }),
+    bracketVersion: integer('bracket_version'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('unq_budget_suggestion_decision_ws_kind_month').on(
+      table.workspaceId,
+      table.kind,
+      table.month,
+    ),
+    check(
+      'chk_budget_suggestion_decision_kind',
+      sql`${table.kind} IN ('income', 'split')`,
+    ),
+    check(
+      'chk_budget_suggestion_decision_value',
+      sql`${table.decision} IN ('accepted', 'rejected')`,
+    ),
+  ],
+);
+
 export const balanceMovements = pgTable(
   'balance_movements',
   {
@@ -369,6 +627,102 @@ export const balanceMovements = pgTable(
 );
 
 // --------------------------------------------------------
+// OBJETIVOS
+// --------------------------------------------------------
+
+export const goals = pgTable(
+  'goals',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    targetCents: bigint('target_cents', { mode: 'number' })
+      .default(0)
+      .notNull(),
+    currentCents: bigint('current_cents', { mode: 'number' })
+      .default(0)
+      .notNull(),
+    monthlyAporteCents: bigint('monthly_aporte_cents', { mode: 'number' })
+      .default(0)
+      .notNull(),
+    linkedAccountId: text('linked_account_id').references(() => accounts.id, {
+      onDelete: 'set null',
+    }),
+    categoryId: text('category_id').references(() => categories.id, {
+      onDelete: 'set null',
+    }),
+    isEmergency: boolean('is_emergency').default(false).notNull(),
+    isSystem: boolean('is_system').default(false).notNull(),
+    dismissedAt: timestamp('dismissed_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_goal_ws_emergency')
+      .on(table.workspaceId)
+      .where(sql`${table.isEmergency}`),
+    index('idx_goal_ws').on(table.workspaceId),
+    check('chk_goal_target_cents_non_negative', sql`${table.targetCents} >= 0`),
+    check(
+      'chk_goal_current_cents_non_negative',
+      sql`${table.currentCents} >= 0`,
+    ),
+    check(
+      'chk_goal_monthly_aporte_cents_non_negative',
+      sql`${table.monthlyAporteCents} >= 0`,
+    ),
+  ],
+);
+
+export const goalContributions = pgTable(
+  'goal_contributions',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    goalId: text('goal_id')
+      .notNull()
+      .references(() => goals.id, { onDelete: 'cascade' }),
+    amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
+    sourceAccountId: text('source_account_id').references(() => accounts.id, {
+      onDelete: 'set null',
+    }),
+    contributedAt: timestamp('contributed_at', {
+      withTimezone: true,
+      mode: 'date',
+    })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_goal_contribution_ws_goal_contributed_at').on(
+      table.workspaceId,
+      table.goalId,
+      table.contributedAt.desc(),
+    ),
+    check(
+      'chk_goal_contribution_amount_cents_positive',
+      sql`${table.amountCents} > 0`,
+    ),
+  ],
+);
+
+// --------------------------------------------------------
 // FATURAMENTO (SAAS)
 // --------------------------------------------------------
 
@@ -386,3 +740,62 @@ export const subscriptions = pgTable('subscriptions', {
     mode: 'date',
   }).notNull(),
 });
+
+export const cardCyclePeriods = pgTable(
+  'card_cycle_periods',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    dueDate: text('due_date').notNull(),
+    periodStart: text('period_start').notNull(),
+    periodEnd: text('period_end').notNull(),
+    dueDay: integer('due_day').notNull(),
+    closingDaysBeforeDue: integer('closing_days_before_due').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_card_cycle_period_account_due').on(
+      table.accountId,
+      table.dueDate,
+    ),
+    index('idx_card_cycle_period_ws_account').on(
+      table.workspaceId,
+      table.accountId,
+    ),
+  ],
+);
+
+export const cardCycleBudgets = pgTable(
+  'card_cycle_budgets',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    effectiveFrom: text('effective_from').notNull(),
+    limitCents: bigint('limit_cents', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('unq_card_cycle_budget_account_effective').on(
+      table.accountId,
+      table.effectiveFrom,
+    ),
+  ],
+);

@@ -1,15 +1,15 @@
 import {
   BusinessRuleDomainError,
-  ForbiddenDomainError,
+  PlanLimitExceededDomainError,
 } from '@shared/core/errors/DomainError';
 
-export class SubscriptionNotActiveError extends ForbiddenDomainError {
+export class SubscriptionNotActiveError extends PlanLimitExceededDomainError {
   constructor() {
     super('A assinatura do responsável pelo Workspace não está ativa.');
   }
 }
 
-export class PlanLimitReachedError extends ForbiddenDomainError {
+export class PlanLimitReachedError extends PlanLimitExceededDomainError {
   constructor(currentCount: number, limit: number) {
     super(
       `Limite de plano atingido (${currentCount}/${limit}). Upgrade necessário para continuar.`,
@@ -17,7 +17,7 @@ export class PlanLimitReachedError extends ForbiddenDomainError {
   }
 }
 
-export class WorkspaceMemberLimitReachedError extends ForbiddenDomainError {
+export class WorkspaceMemberLimitReachedError extends PlanLimitExceededDomainError {
   constructor(limit: number) {
     super(`Seu plano permite até ${limit} pessoas por workspace.`);
   }

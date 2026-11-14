@@ -8,7 +8,7 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { ToggleActiveRecurringTransactionRequest } from './toggle-active-recurring-transaction.dto';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 
 type Request = ToggleActiveRecurringTransactionRequest &
   Pick<TokenPayloadBase, 'workspaceId'>;
@@ -48,7 +48,11 @@ export class ToggleActiveRecurringTransactionService implements Service<
 
     const updated = await this.recurringRepository.update(recurring);
 
-    await bumpReportGeneration(this.redisService, workspaceId);
+    await invalidateLedgerReads(
+      this.redisService,
+      workspaceId,
+      'toggle-active-recurring-transaction',
+    );
 
     return right(updated);
   }

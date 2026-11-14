@@ -1,5 +1,18 @@
 import { TransactionType } from '@constants/enums';
 import { Category } from '@modules/category/entities/Category';
+import { CategoryReferenceCounts } from '@modules/category/errors';
+
+export type CategoryDeleteResult =
+  | { deleted: true }
+  | { deleted: false; references: CategoryReferenceCounts };
+
+export type CategoryVisibility = 'visible' | 'all';
+
+export type CategoryListFilters = {
+  type?: TransactionType;
+  parentId?: string | null;
+  visibility?: CategoryVisibility;
+};
 
 export abstract class CategoryRepository {
   abstract create(category: Category): Promise<Category>;
@@ -9,6 +22,11 @@ export abstract class CategoryRepository {
   abstract delete(id: string): Promise<void>;
 
   abstract findById(id: string): Promise<Category | null>;
+
+  abstract findVisibleById(
+    id: string,
+    workspaceId: string,
+  ): Promise<Category | null>;
 
   abstract countByWorkspaceId(workspaceId: string): Promise<number>;
   abstract findUniqueByAttributes(
@@ -20,10 +38,7 @@ export abstract class CategoryRepository {
 
   abstract findManyByWorkspaceId(
     workspaceId: string,
-    filters?: {
-      type?: TransactionType;
-      parentId?: string | null;
-    },
+    filters?: CategoryListFilters,
     page?: number,
     limit?: number,
   ): Promise<{
@@ -35,6 +50,15 @@ export abstract class CategoryRepository {
   abstract countChildren(categoryId: string): Promise<number>;
 
   abstract countTransactions(categoryId: string): Promise<number>;
+
+  abstract countBudgetAllocations(categoryId: string): Promise<number>;
+
+  abstract countRecurringTransactions(categoryId: string): Promise<number>;
+
+  abstract deleteIfUnreferenced(
+    categoryId: string,
+    workspaceId: string,
+  ): Promise<CategoryDeleteResult>;
 
   abstract reassignChildren(
     categoryId: string,

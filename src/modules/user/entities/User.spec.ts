@@ -37,6 +37,34 @@ describe('User entity', () => {
       expect(result.isLeft()).toBe(true);
     });
 
+    it.each([['a@b.c'], ['john.doe+tag@sub.example.com']])(
+      'should accept email "%s"',
+      (email) => {
+        expect(User.create(makeProps({ email })).isRight()).toBe(true);
+      },
+    );
+
+    it.each([
+      ['two@@signs.com'],
+      ['a@b@c.com'],
+      ['with space@example.com'],
+      ['user@nodot'],
+      ['user@.com'],
+      ['user@domain.'],
+      ['a@....'],
+      ['a@b..'],
+      [`a@${'a'.repeat(260)}.com`],
+    ])('should reject malformed email "%s"', (email) => {
+      expect(User.create(makeProps({ email })).isLeft()).toBe(true);
+    });
+
+    it.each([
+      ['dots', `a@${'.'.repeat(100000)}`],
+      ['repeated labels', `a@${'a.'.repeat(100000)}`],
+    ])('should reject pathological email (%s)', (_label, email) => {
+      expect(User.create(makeProps({ email })).isLeft()).toBe(true);
+    });
+
     it('should default createdAt when not provided', () => {
       const result = User.create(makeProps());
       expect(result.isRight()).toBe(true);

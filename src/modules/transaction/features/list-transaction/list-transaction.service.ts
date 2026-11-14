@@ -1,8 +1,20 @@
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { Transaction } from '@modules/transaction/entities/Transaction';
+import { resolveListDayRange } from '@modules/transaction/services/resolve-list-day-range';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { createStructuredCodec } from '@shared/cache/cache-codec';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { hashFilters } from '@shared/cache/filter-hash';
+import { readThrough } from '@shared/cache/read-through';
+import {
+  LEDGER_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
+} from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, right } from '@shared/core/errors/Either';
 import { ListTransactionsRequest } from './list-transaction.dto';
@@ -23,26 +35,59 @@ export class ListTransactionsService implements Service<
   constructor(
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
+    private readonly cache: CacheProvider,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Response>> {
-    const workspaceTimezone = 'America/Sao_Paulo'; // TODO: o ideal é vir do payload do JWT ou Workspace
+    const [ledger, category] = await Promise.all([
+      readLedgerGeneration(this.cache, request.workspaceId),
+      readCategoryGeneration(this.cache, request.workspaceId),
+    ]);
 
-    const start = request.startDate
-      ? this.dateProvider.startOfDay(request.startDate, workspaceTimezone)
-      : undefined;
+    return readThrough({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'transaction:list',
+        version: 'v1',
+        workspaceId: request.workspaceId,
+        generations: { ledger, category },
+        parts: [
+          hashFilters({
+            startDate: request.startDate,
+            endDate: request.endDate,
+            type: request.type,
+            categoryId: request.categoryId,
+            accountId: request.accountId,
+            title: request.title,
+            status: request.status,
+          }),
+          request.page,
+          request.pageSize,
+        ],
+      }),
+      ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
+      codec: createStructuredCodec<Response>([Transaction]),
+      load: () => this.list(request),
+    });
+  }
 
-    const end = request.endDate
-      ? this.dateProvider.endOfDay(request.endDate, workspaceTimezone)
-      : undefined;
+  private async list(request: Request): Promise<Either<Error, Response>> {
+    const timezone = await this.workspaceTimezone.execute(request.workspaceId);
+
+    const { startDate, endDate } = resolveListDayRange(this.dateProvider, {
+      startDate: request.startDate,
+      endDate: request.endDate,
+      timezone,
+    });
 
     const { transactions, total } =
       await this.transactionRepository.listTransactionsByWorkspaceId({
         workspaceId: request.workspaceId,
         page: request.page,
         pageSize: request.pageSize,
-        startDate: start,
-        endDate: end,
+        startDate,
+        endDate,
         type: request.type,
         categoryId: request.categoryId,
         accountId: request.accountId,

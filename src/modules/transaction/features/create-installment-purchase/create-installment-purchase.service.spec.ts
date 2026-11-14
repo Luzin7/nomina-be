@@ -8,6 +8,7 @@ import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { InvestmentAccount } from '@modules/account/entities/InvestmentAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { Category } from '@modules/category/entities/Category';
+import { CategoryNotFoundError } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import {
   InstallmentCountOutOfRangeError,
@@ -149,6 +150,16 @@ describe('CreateInstallmentPurchaseService', () => {
     const { recurring, firstInstallment } = result.value;
     expect(recurring.amount).toBe(3333n);
     expect(firstInstallment.amount).toBe(3334n);
+  });
+
+  it('should return a 422 domain error when the category is not found', async () => {
+    categoryRepository.findById.mockResolvedValue(null);
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(CategoryNotFoundError);
+    expect(transactionRepository.createInstallmentPlan).not.toHaveBeenCalled();
   });
 
   it('should reject an investment account', async () => {

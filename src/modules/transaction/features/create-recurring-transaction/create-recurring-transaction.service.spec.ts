@@ -8,6 +8,7 @@ import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { Category } from '@modules/category/entities/Category';
+import { CategoryNotFoundError } from '@modules/category/errors';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -77,6 +78,8 @@ describe('CreateRecurringTransactionService', () => {
       findNeedingGenerationByWorkspaceId: jest.fn(),
       listNeedingGeneration: jest.fn(),
       createGeneratedTransactions: jest.fn().mockResolvedValue(0),
+      findSummaryRules: jest.fn(),
+      findCompletedRecurringExpense: jest.fn(),
     } as jest.Mocked<RecurringTransactionRepository>;
 
     accountRepository = {
@@ -89,6 +92,7 @@ describe('CreateRecurringTransactionService', () => {
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
     categoryRepository = {
@@ -97,12 +101,17 @@ describe('CreateRecurringTransactionService', () => {
       delete: jest.fn(),
       findById: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
       findUniqueByAttributes: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       countChildren: jest.fn(),
       countTransactions: jest.fn(),
       reassignChildren: jest.fn(),
       findManyByIds: jest.fn(),
+      countBudgetAllocations: jest.fn(),
+      countRecurringTransactions: jest.fn(),
+      findVisibleById: jest.fn(),
+      deleteIfUnreferenced: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
     dateProvider = {
@@ -179,6 +188,18 @@ describe('CreateRecurringTransactionService', () => {
 
     expect(result.isLeft()).toBe(true);
     expect(result.value).toBeInstanceOf(UnauthorizedError);
+  });
+
+  it('should return a 422 domain error when the category is not found', async () => {
+    accountRepository.findById.mockResolvedValue(makeAccount());
+    categoryRepository.findById.mockResolvedValue(null);
+
+    const result = await service.execute(
+      makeRequest({ categoryId: 'cat-missing' }),
+    );
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(CategoryNotFoundError);
   });
 
   it('should return left(UnauthorizedError) when category belongs to another workspace', async () => {

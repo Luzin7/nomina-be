@@ -10,6 +10,7 @@ import {
   LedgerMonth,
   RecurringRuleSnapshot,
 } from '@modules/report/valueObjects/MonthProjection';
+import type { PendingInstallment } from '@modules/report/valueObjects/ProjectionHorizon';
 import { SYSTEM_CATEGORY_LIST } from '@modules/category/constants/system-categories';
 import { Injectable } from '@nestjs/common';
 import {
@@ -44,6 +45,7 @@ const INCOME_OR_EXPENSE = ['INCOME', 'EXPENSE'];
 type RecurringRuleRow = {
   id: string;
   type: string;
+  categoryId: string | null;
   amount: number;
   frequency: string;
   interval: number;
@@ -66,6 +68,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
     const isPending = eq(transactions.status, 'PENDING');
     const isCompleted = eq(transactions.status, 'COMPLETED');
     const isExpense = eq(transactions.type, 'EXPENSE');
+    const isIncome = eq(transactions.type, 'INCOME');
     const isPlain = and(
       isExpense,
       isNull(transactions.recurringId),
@@ -77,6 +80,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
     const rows = await this.drizzle.db
       .select({
         month: sql<string>`to_char(${localDay}, 'YYYY-MM')`,
+        totalIncome: sumWhere(and(isCompleted, isIncome)!),
         totalExpense: sumWhere(and(isCompleted, isExpense)!),
         pendingIncome: sumWhere(
           and(isPending, eq(transactions.type, 'INCOME'))!,
@@ -107,6 +111,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
 
     return rows.map((row) => ({
       key: row.month,
+      totalIncome: row.totalIncome,
       totalExpense: row.totalExpense,
       pending: {
         totalIncome: row.pendingIncome,
@@ -131,6 +136,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
       .select({
         id: recurringTransactions.id,
         type: recurringTransactions.type,
+        categoryId: recurringTransactions.categoryId,
         amount: recurringTransactions.amount,
         frequency: recurringTransactions.frequency,
         interval: recurringTransactions.interval,
@@ -165,6 +171,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
     return rows.map((row) => ({
       id: row.id,
       type: row.type as RecurringRuleSnapshot['type'],
+      categoryId: row.categoryId,
       amount: row.amount,
       frequency: row.frequency as RecurrenceFrequency,
       interval: row.interval,
@@ -174,6 +181,37 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
       materializedDates: row.materializedDates.map(
         (epochMs) => new Date(epochMs),
       ),
+    }));
+  }
+
+  async findPendingInstallments(
+    workspaceId: string,
+    range: DateRange,
+  ): Promise<PendingInstallment[]> {
+    const rows = await this.drizzle.db
+      .select({
+        date: transactions.date,
+        amount: transactions.amount,
+        type: transactions.type,
+        recurringId: transactions.recurringId,
+        installmentNumber: transactions.installmentNumber,
+        installmentCount: transactions.installmentCount,
+      })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.workspaceId, workspaceId),
+          eq(transactions.status, 'PENDING'),
+          inArray(transactions.type, INCOME_OR_EXPENSE),
+          gte(transactions.date, range.start),
+          lte(transactions.date, range.end),
+        ),
+      )
+      .orderBy(transactions.date);
+
+    return rows.map((row) => ({
+      ...row,
+      type: row.type as PendingInstallment['type'],
     }));
   }
 }
