@@ -25,7 +25,7 @@ export type HorizonMonthWindow = {
 };
 
 export type PlanSnapshot = {
-  monthlyIncomeCents: number;
+  monthlyIncomeCents: number | null;
   targetCents: number;
   mode: BudgetMode;
 };
@@ -68,7 +68,7 @@ export type HorizonMonthPlan =
   | { exists: false }
   | {
       exists: true;
-      monthlyIncomeCents: number;
+      monthlyIncomeCents: number | null;
       targetCents: number;
       mode: BudgetMode;
     };

@@ -108,6 +108,34 @@ describe('toHTTPProjectionHorizon', () => {
     });
   });
 
+  it('keeps a plan without income as a null monthlyIncome', () => {
+    const result = toHTTPProjectionHorizon({
+      projection: {
+        ...projection,
+        months: [
+          {
+            ...projection.months[0],
+            plan: {
+              exists: true,
+              monthlyIncomeCents: null,
+              targetCents: 250000,
+              mode: 'fixed',
+            },
+          },
+        ],
+      },
+      horizon: 1,
+      generatedAt: new Date('2026-10-15T12:00:00.000Z'),
+    });
+
+    expect(result.months[0].plan).toEqual({
+      exists: true,
+      monthlyIncome: null,
+      target: 2500,
+      mode: 'fixed',
+    });
+  });
+
   it('keeps zeroed insufficient months as real zeros', () => {
     const result = toHTTPProjectionHorizon({
       projection,

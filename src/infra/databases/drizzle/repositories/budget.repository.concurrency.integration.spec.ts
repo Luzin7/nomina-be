@@ -155,7 +155,7 @@ describe('BudgetRepositoryImplementation against a real postgres', () => {
     expect(allocations).toHaveLength(2);
     expect(
       allocations.reduce(
-        (total, allocation) => total + allocation.percentageOfIncome,
+        (total, allocation) => total + (allocation.percentageOfIncome ?? 0),
         0,
       ),
     ).toBe(100);

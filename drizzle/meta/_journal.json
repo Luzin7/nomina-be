@@ -148,6 +148,20 @@
       "when": 1794595643866,
       "tag": "0035_windy_phantom_reporter",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794621492223,
+      "tag": "0036_strong_sharon_ventura",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794621499016,
+      "tag": "0037_budget_suggestion_seed",
+      "breakpoints": true
     }
   ]
 }

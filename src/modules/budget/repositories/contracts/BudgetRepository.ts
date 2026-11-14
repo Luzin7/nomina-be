@@ -14,7 +14,7 @@ export type BudgetAllocationRecord = {
   groupName: string;
   groupOrder: number;
   categoryOrder: number;
-  percentageOfIncome: number;
+  percentageOfIncome: number | null;
   targetCents: number;
 };
 
@@ -22,7 +22,7 @@ export type BudgetSnapshot = {
   id: string;
   workspaceId: string;
   effectiveFrom: Date;
-  monthlyIncome: number;
+  monthlyIncome: number | null;
   mode: BudgetMode;
   allocations: BudgetAllocationRecord[];
 };
@@ -46,7 +46,7 @@ export type SavedBudgetSnapshot = {
 };
 
 export type BudgetSnapshotTarget = {
-  monthlyIncomeCents: number;
+  monthlyIncomeCents: number | null;
   targetCents: number;
   mode: BudgetMode;
 };

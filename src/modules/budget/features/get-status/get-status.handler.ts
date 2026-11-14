@@ -33,7 +33,7 @@ export type BudgetStatusAllocation = {
   targetCents: number;
   spentCents: number;
   remainingCents: number;
-  percentageOfIncome: number;
+  percentageOfIncome: number | null;
   percentageUsed: number;
 };
 
@@ -41,7 +41,7 @@ export type BudgetStatusPillar = {
   groupName: string;
   targetCents: number;
   spentCents: number;
-  percentage: number;
+  percentage: number | null;
 };
 
 export type BudgetStatusResponse =
@@ -49,7 +49,7 @@ export type BudgetStatusResponse =
   | {
       exists: true;
       mode: BudgetMode;
-      monthlyIncomeCents: number;
+      monthlyIncomeCents: number | null;
       effectiveFrom: Date;
       allocations: BudgetStatusAllocation[];
       pillars: BudgetStatusPillar[];
@@ -60,6 +60,11 @@ export type BudgetStatusResponse =
       totalSpent: number;
       projection: MonthProjection | null;
     };
+
+const sumPercentages = (
+  current: number | null,
+  next: number | null,
+): number | null => (current === null || next === null ? null : current + next);
 
 @Injectable()
 export class GetBudgetStatusService implements Service<
@@ -94,7 +99,7 @@ export class GetBudgetStatusService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'budget:status',
-        version: 'v1',
+        version: 'v2',
         workspaceId,
         generations: { ledger, category },
         parts: [`${year}-${month}`, localDay],
@@ -162,7 +167,10 @@ export class GetBudgetStatusService implements Service<
 
       pillar.targetCents += allocation.targetCents;
       pillar.spentCents += spentCents;
-      pillar.percentage += allocation.percentageOfIncome;
+      pillar.percentage = sumPercentages(
+        pillar.percentage,
+        allocation.percentageOfIncome,
+      );
       pillars.set(allocation.groupName, pillar);
 
       return {
@@ -194,10 +202,10 @@ export class GetBudgetStatusService implements Service<
       pillars: [...pillars.values()],
       unallocatedSpent,
       totalTargetCents,
-      unallocatedIncomeCents: Math.max(
-        0,
-        snapshot.monthlyIncome - totalTargetCents,
-      ),
+      unallocatedIncomeCents:
+        snapshot.monthlyIncome === null
+          ? 0
+          : Math.max(0, snapshot.monthlyIncome - totalTargetCents),
       allocationState: resolveAllocationState(
         snapshot.monthlyIncome,
         totalTargetCents,

@@ -89,7 +89,7 @@ export class GetProjectionService implements Service<Request, Error, Response> {
       cache: this.cache,
       key: buildCacheKey({
         route: 'projection',
-        version: 'v1',
+        version: 'v2',
         workspaceId,
         generations: { ledger, goal },
         parts: [horizon, localDay],
