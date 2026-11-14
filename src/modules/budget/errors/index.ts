@@ -79,3 +79,25 @@ export class InvalidBudgetTargetError extends BusinessRuleDomainError {
     );
   }
 }
+
+export class BudgetSuggestionChangedError extends ConflictDomainError {
+  constructor() {
+    super(
+      'A sugestão mudou desde que você a abriu. Atualize a página e confira os novos valores.',
+    );
+  }
+}
+
+export class BudgetSuggestionUnavailableError extends BusinessRuleDomainError {
+  constructor() {
+    super('Não há uma sugestão pendente para esta decisão.');
+  }
+}
+
+export class BudgetSuggestionParametersInvalidError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'Os parâmetros de sugestão de orçamento estão ausentes ou inválidos.',
+    );
+  }
+}

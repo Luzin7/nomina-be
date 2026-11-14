@@ -175,10 +175,10 @@ describe('available to spend without a budget snapshot against a real database',
       ]),
     );
     expect(calls).toEqual({
-      resolveSnapshot: 2,
+      resolveSnapshot: 3,
       findCompletedExpenseByLocalDay: 1,
       findActiveRecurringRules: 3,
-      findMonthLedger: 3,
+      findMonthLedger: 4,
     });
   });
 });

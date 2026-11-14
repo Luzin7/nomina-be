@@ -10,6 +10,10 @@ import {
 } from '@modules/budget/features/get-status/get-status.handler';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
+import {
+  ResolveBudgetSuggestionService,
+  type BudgetSuggestion,
+} from '@modules/budget/services/resolve-budget-suggestion.service';
 import { ResolveMonthPlanService } from '@modules/report/services/resolve-month-plan.service';
 import type { ResolvedMonthPlan } from '@modules/report/services/resolve-month-plan.service';
 import type { ProvisionalBasis } from '@modules/report/valueObjects/ProvisionalPlan';
@@ -23,12 +27,21 @@ import { Logger } from '@nestjs/common';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { left, right } from '@shared/core/errors/Either';
 import { CardBillDueInsightService } from '../../services/card-bill-due-insight.service';
+import { BudgetSuggestionInsightService } from '../../services/budget-suggestion-insight.service';
 import { ProjectionShortfallInsightService } from '../../services/projection-shortfall-insight.service';
 import { GetAvailableToSpendService } from './get-available-to-spend.handler';
 
 const TIMEZONE = 'America/Sao_Paulo';
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const REQUEST = { workspaceId: 'ws-1', sub: 'user-1' };
+
+const NO_SUGGESTION: BudgetSuggestion = {
+  month: '2026-11',
+  monthStart: new Date('2026-11-01T03:00:00.000Z'),
+  basisMonths: 0,
+  income: { status: 'unavailable' },
+  split: { status: 'unavailable' },
+};
 
 const makeProjection = (
   overrides: Partial<MonthProjection> = {},
@@ -172,6 +185,7 @@ describe('GetAvailableToSpendService', () => {
   let listAccounts: jest.Mocked<ListAccountsService>;
   let getInvoice: jest.Mocked<GetCreditCardInvoiceService>;
   let getProjection: jest.Mocked<GetProjectionService>;
+  let resolveSuggestion: jest.Mocked<ResolveBudgetSuggestionService>;
   let warn: jest.SpyInstance;
 
   let currentBudget: BudgetStatusResponse;
@@ -219,6 +233,24 @@ describe('GetAvailableToSpendService', () => {
       ...overrides,
     });
 
+  const makeBudgetSuggestionInsight = () =>
+    new BudgetSuggestionInsightService(resolveSuggestion);
+
+  const givenPendingIncomeSuggestion = () =>
+    resolveSuggestion.execute.mockResolvedValue(
+      right({
+        ...NO_SUGGESTION,
+        income: {
+          status: 'pending',
+          incomeCents: 500_000,
+          base: 'median',
+          incomeMonths: 3,
+          zeroIncomeMonths: 0,
+          fingerprint: 'income',
+        },
+      }),
+    );
+
   beforeEach(() => {
     getBudgetStatus = {
       execute: jest.fn(),
@@ -241,6 +273,9 @@ describe('GetAvailableToSpendService', () => {
     getProjection = {
       execute: jest.fn(),
     } as unknown as jest.Mocked<GetProjectionService>;
+    resolveSuggestion = {
+      execute: jest.fn().mockResolvedValue(right(NO_SUGGESTION)),
+    } as unknown as jest.Mocked<ResolveBudgetSuggestionService>;
     const workspaceTimezone = {
       execute: jest.fn().mockResolvedValue(TIMEZONE),
     } as unknown as GetWorkspaceTimezoneService;
@@ -261,6 +296,7 @@ describe('GetAvailableToSpendService', () => {
       goalRepository,
       new CardBillDueInsightService(listAccounts, getInvoice),
       new ProjectionShortfallInsightService(getProjection),
+      makeBudgetSuggestionInsight(),
       workspaceTimezone,
       dateProvider,
       cache,
@@ -459,6 +495,7 @@ describe('GetAvailableToSpendService', () => {
           goalRepository,
           new CardBillDueInsightService(listAccounts, getInvoice),
           new ProjectionShortfallInsightService(getProjection),
+          makeBudgetSuggestionInsight(),
           workspaceTimezone,
           dateProvider,
           new InMemoryCacheProvider(),
@@ -663,6 +700,7 @@ describe('GetAvailableToSpendService', () => {
         goalRepository,
         new CardBillDueInsightService(listAccounts, getInvoice),
         new ProjectionShortfallInsightService(getProjection),
+        makeBudgetSuggestionInsight(),
         workspaceTimezone,
         dateProvider,
         new InMemoryCacheProvider(),
@@ -748,6 +786,28 @@ describe('GetAvailableToSpendService', () => {
         month: 11,
         year: 2026,
       });
+    });
+
+    it('BUDGET_SUGGESTION_READY when nothing else applies', async () => {
+      givenPendingIncomeSuggestion();
+
+      const response = await run();
+
+      expect(response.insight).toEqual({
+        code: 'BUDGET_SUGGESTION_READY',
+        severity: 'low',
+        args: { kind: 'income' },
+        href: '/budget',
+      });
+    });
+
+    it('ranks BUDGET_SUGGESTION_READY below UNALLOCATED_INCOME', async () => {
+      givenPendingIncomeSuggestion();
+      givenBudget(makeBudget({ unallocatedIncomeCents: 800 }));
+
+      const response = await run();
+
+      expect(response.insight?.code).toBe('UNALLOCATED_INCOME');
     });
 
     it('PROJECTION_SHORTFALL', async () => {
@@ -896,6 +956,7 @@ describe('GetAvailableToSpendService', () => {
         goalRepository,
         new CardBillDueInsightService(listAccounts, getInvoice),
         new ProjectionShortfallInsightService(getProjection),
+        makeBudgetSuggestionInsight(),
         { execute: jest.fn().mockResolvedValue(TIMEZONE) } as never,
         dateProvider,
         new InMemoryCacheProvider(),

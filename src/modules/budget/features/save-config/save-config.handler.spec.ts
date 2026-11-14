@@ -179,6 +179,14 @@ describe('SaveBudgetConfigService', () => {
     expect(repository.saveSnapshot).not.toHaveBeenCalled();
   });
 
+  it('always writes a positive integer income to the snapshot', async () => {
+    await service.execute({ workspaceId: 'ws-1', ...makeRequest() });
+
+    expect(savedInputs).toHaveLength(1);
+    expect(savedInputs[0].monthlyIncome).toEqual(expect.any(Number));
+    expect(savedInputs[0].monthlyIncome).toBeGreaterThan(0);
+  });
+
   it('rejects a write beyond the next month', async () => {
     const result = await service.execute({
       workspaceId: 'ws-1',

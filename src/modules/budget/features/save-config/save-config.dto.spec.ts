@@ -54,4 +54,16 @@ describe('SaveBudgetConfigPipe', () => {
       }),
     ).toThrow(BadRequestException);
   });
+
+  it.each([null, 0, undefined])(
+    'rejects a monthly income of %s so a snapshot never gets a null income',
+    (monthlyIncome) => {
+      expect(() =>
+        SaveBudgetConfigPipe.transform({
+          ...PERCENTAGE_PAYLOAD,
+          monthlyIncome,
+        }),
+      ).toThrow(BadRequestException);
+    },
+  );
 });

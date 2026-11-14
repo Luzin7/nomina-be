@@ -81,7 +81,7 @@ const completedRows = (month: LedgerMonth): PlainExpense[] =>
 const isActiveMonth = (month: LedgerMonth): boolean =>
   new Set(completedRows(month).map((row) => row.day)).size >= MIN_ACTIVE_DAYS;
 
-const selectBasisMonths = (
+export const selectBasisMonths = (
   ledger: LedgerMonth[],
   currentKey: string,
 ): LedgerMonth[] => {

@@ -1,4 +1,6 @@
 import { toHTTPProjection } from '@modules/report/presenters/MonthProjection.presenter';
+import { type BudgetSuggestion } from '@modules/budget/services/resolve-budget-suggestion.service';
+import { type SuggestionDecisionOutcome } from '@modules/budget/valueObjects/SuggestionDecisions';
 import { BudgetStatusResponse } from '../features/get-status/get-status.handler';
 import { BudgetSetupResponse } from '../features/get-setup/get-setup.handler';
 import { SaveBudgetConfigResponse } from '../features/save-config/save-config.handler';
@@ -63,5 +65,19 @@ export class BudgetPresenter {
         groupName: allocation.groupName,
       })),
     };
+  }
+
+  static toSuggestion({
+    month,
+    monthStart,
+    basisMonths,
+    income,
+    split,
+  }: BudgetSuggestion) {
+    return { month, monthStart, basisMonths, income, split };
+  }
+
+  static toDecision({ kind, status, month }: SuggestionDecisionOutcome) {
+    return { kind, status, month };
   }
 }
