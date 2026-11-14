@@ -166,8 +166,15 @@
     {
       "idx": 38,
       "version": "7",
-      "when": 1794695993794,
-      "tag": "0038_recurring_transaction_fk_set_null",
+      "when": 1794698462553,
+      "tag": "0038_normalize_recurring_fk_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794698537597,
+      "tag": "0039_recurring_transaction_fk_set_null",
       "breakpoints": true
     }
   ]
