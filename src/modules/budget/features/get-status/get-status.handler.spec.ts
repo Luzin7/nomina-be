@@ -172,6 +172,44 @@ describe('GetBudgetStatusService', () => {
     expect(after.isRight() && after.value.exists).toBe(true);
   });
 
+  it('reports a snapshot without income as null income and null percentages', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        monthlyIncome: null,
+        allocations: makeSnapshot().allocations.map((allocation) => ({
+          ...allocation,
+          percentageOfIncome: null,
+        })),
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.monthlyIncomeCents).toBeNull();
+    expect(result.value.unallocatedIncomeCents).toBe(0);
+    expect(result.value.allocationState).toBe('balanced');
+    expect(result.value.totalTargetCents).toBe(100_000);
+    expect(
+      result.value.allocations.map(
+        (allocation) => allocation.percentageOfIncome,
+      ),
+    ).toEqual([null, null]);
+    expect(result.value.pillars.map((pillar) => pillar.percentage)).toEqual([
+      null,
+      null,
+    ]);
+    expect(BudgetPresenter.toStatus(result.value)).toMatchObject({
+      monthlyIncomeCents: null,
+    });
+  });
+
   it('passes the projection through unchanged', async () => {
     repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
 

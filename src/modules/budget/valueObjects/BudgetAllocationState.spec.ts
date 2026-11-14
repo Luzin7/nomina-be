@@ -9,6 +9,10 @@ describe('resolveAllocationState', () => {
     expect(resolveAllocationState(100_000, 80_000)).toBe('under');
   });
 
+  it('is balanced when there is no income to compare against', () => {
+    expect(resolveAllocationState(null, 130_000)).toBe('balanced');
+  });
+
   it('is over when the plan exceeds the income', () => {
     expect(resolveAllocationState(100_000, 130_000)).toBe('over');
   });

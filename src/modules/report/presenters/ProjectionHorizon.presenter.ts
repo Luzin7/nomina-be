@@ -54,7 +54,10 @@ export function toHTTPProjectionHorizon({
       plan: month.plan.exists
         ? {
             exists: true,
-            monthlyIncome: toDecimal(month.plan.monthlyIncomeCents),
+            monthlyIncome:
+              month.plan.monthlyIncomeCents === null
+                ? null
+                : toDecimal(month.plan.monthlyIncomeCents),
             target: toDecimal(month.plan.targetCents),
             mode: month.plan.mode,
           }

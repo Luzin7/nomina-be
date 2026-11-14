@@ -10,9 +10,12 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   integer,
+  numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -471,7 +474,7 @@ export const budgets = pgTable(
       withTimezone: true,
       mode: 'date',
     }).notNull(),
-    monthlyIncome: bigint('monthly_income', { mode: 'number' }).notNull(),
+    monthlyIncome: bigint('monthly_income', { mode: 'number' }),
     mode: text('mode')
       .$type<BudgetMode>()
       .notNull()
@@ -504,7 +507,7 @@ export const budgetAllocations = pgTable(
     groupName: text('group_name').notNull(),
     groupOrder: integer('group_order').notNull(),
     categoryOrder: integer('category_order').notNull(),
-    percentageOfIncome: integer('percentage_of_income').notNull(),
+    percentageOfIncome: integer('percentage_of_income'),
     targetCents: bigint('target_cents', { mode: 'number' }).notNull(),
   },
   (table) => [
@@ -514,6 +517,87 @@ export const budgetAllocations = pgTable(
     ),
     index('idx_budget_allocation_budget').on(table.budgetId),
     index('idx_budget_allocation_category').on(table.categoryId),
+  ],
+);
+
+export const budgetParameters = pgTable(
+  'budget_parameters',
+  {
+    key: text('key').notNull(),
+    effectiveFrom: date('effective_from', { mode: 'string' }).notNull(),
+    valueCents: bigint('value_cents', { mode: 'number' }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.key, table.effectiveFrom] })],
+);
+
+export const budgetIncomeBrackets = pgTable(
+  'budget_income_brackets',
+  {
+    version: integer('version').notNull(),
+    position: integer('position').notNull(),
+    maxMinimumWages: numeric('max_minimum_wages', {
+      precision: 6,
+      scale: 2,
+    }),
+    essentialsBp: integer('essentials_bp').notNull(),
+    lifestyleBp: integer('lifestyle_bp').notNull(),
+    savingsBp: integer('savings_bp').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.version, table.position] }),
+    check(
+      'chk_budget_income_bracket_bp_total',
+      sql`${table.essentialsBp} + ${table.lifestyleBp} + ${table.savingsBp} = 10000`,
+    ),
+  ],
+);
+
+export const budgetCategoryGroups = pgTable(
+  'budget_category_groups',
+  {
+    categoryName: text('category_name').primaryKey(),
+    budgetGroup: text('budget_group').notNull(),
+  },
+  (table) => [
+    check(
+      'chk_budget_category_group_value',
+      sql`${table.budgetGroup} IN ('essentials', 'lifestyle', 'savings')`,
+    ),
+  ],
+);
+
+export const budgetSuggestionDecisions = pgTable(
+  'budget_suggestion_decisions',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    month: date('month', { mode: 'string' }).notNull(),
+    decision: text('decision').notNull(),
+    incomeCents: bigint('income_cents', { mode: 'number' }),
+    bracketVersion: integer('bracket_version'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique('unq_budget_suggestion_decision_ws_kind_month').on(
+      table.workspaceId,
+      table.kind,
+      table.month,
+    ),
+    check(
+      'chk_budget_suggestion_decision_kind',
+      sql`${table.kind} IN ('income', 'split')`,
+    ),
+    check(
+      'chk_budget_suggestion_decision_value',
+      sql`${table.decision} IN ('accepted', 'rejected')`,
+    ),
   ],
 );
 

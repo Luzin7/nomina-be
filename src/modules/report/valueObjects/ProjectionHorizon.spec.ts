@@ -265,6 +265,30 @@ describe('projectHorizon', () => {
     );
   });
 
+  it('reports a resolved plan without income as null income', () => {
+    const result = projectHorizon(
+      bundle({
+        budgetSnapshots: [
+          {
+            monthKey: '2026-11',
+            snapshot: {
+              monthlyIncomeCents: null,
+              targetCents: 250000,
+              mode: 'fixed',
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(result.months[1].plan).toEqual({
+      exists: true,
+      monthlyIncomeCents: null,
+      targetCents: 250000,
+      mode: 'fixed',
+    });
+  });
+
   it('groups pending installments into their local month and keeps them equal to the scheduled totals', () => {
     const result = projectHorizon(
       bundle({

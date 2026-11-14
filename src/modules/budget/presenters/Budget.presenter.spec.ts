@@ -104,6 +104,22 @@ describe('BudgetPresenter', () => {
     expect('totalTarget' in status).toBe(false);
   });
 
+  it('keeps a null income and null percentages null', () => {
+    const base = makeStatus(null);
+    if (!base.exists) return;
+    const status = BudgetPresenter.toStatus({
+      ...base,
+      monthlyIncomeCents: null,
+      allocations: [{ ...base.allocations[0], percentageOfIncome: null }],
+      pillars: [{ ...base.pillars[0], percentage: null }],
+    });
+
+    if (!status.exists) return;
+    expect(status.monthlyIncomeCents).toBeNull();
+    expect(status.allocations[0].percentageOfIncome).toBeNull();
+    expect(status.pillars[0].percentage).toBeNull();
+  });
+
   it('returns the saved config without echoing the allocations', () => {
     const config = BudgetPresenter.toConfig({
       id: 'budget-1',
