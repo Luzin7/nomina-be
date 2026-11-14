@@ -37,20 +37,31 @@ export type SplitSuggestion = {
   unmappedCategoryIds: string[];
 };
 
-const BASIS_POINTS = 10_000;
-
 const sum = (values: number[]): number =>
   values.reduce((total, value) => total + value, 0);
 
-const distribute = (totalCents: number, weights: number[]): number[] => {
+const CENTS_PER_REAL = 100;
+
+const distribute = (totalUnits: number, weights: number[]): number[] => {
   const totalWeight = sum(weights);
   if (totalWeight === 0) return weights.map(() => 0);
-  const shares = weights.map((weight) =>
-    Math.floor((totalCents * weight) / totalWeight),
-  );
-  const largest = weights.indexOf(Math.max(...weights));
-  shares[largest] += totalCents - sum(shares);
+  const exact = weights.map((weight) => (totalUnits * weight) / totalWeight);
+  const shares = exact.map(Math.floor);
+  const byFraction = exact
+    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+  for (let left = totalUnits - sum(shares), at = 0; left > 0; left--, at++) {
+    shares[byFraction[at % byFraction.length].index] += 1;
+  }
   return shares;
+};
+
+const roundToReais = (cents: number): number =>
+  Math.round(cents / CENTS_PER_REAL) * CENTS_PER_REAL;
+
+const wholeReaisKeepingPositive = (cents: number, wasPositive: boolean) => {
+  const rounded = roundToReais(cents);
+  return wasPositive && rounded <= 0 ? CENTS_PER_REAL : rounded;
 };
 
 function actualByRoot(input: SplitSuggestionInput): Map<string, number> {
@@ -111,20 +122,28 @@ function idealByCategory(
 ): Map<string, number> {
   const ideals = new Map<string, number>();
   if (input.incomeBasisCents === null || input.bracket === null) return ideals;
-  for (const group of GROUP_KEYS) {
+  const incomeReais = Math.floor(input.incomeBasisCents / CENTS_PER_REAL);
+  const leftoverCents = input.incomeBasisCents % CENTS_PER_REAL;
+  const groupReais = distribute(
+    incomeReais,
+    GROUP_KEYS.map((group) => input.bracket!.shares[group]),
+  );
+  GROUP_KEYS.forEach((group, groupIndex) => {
     const members = candidates.filter((candidate) => candidate.group === group);
-    if (members.length === 0) continue;
-    const groupIdeal = Math.round(
-      (input.incomeBasisCents * input.bracket.shares[group]) / BASIS_POINTS,
-    );
+    if (members.length === 0) return;
     const hasSpend = members.some((member) => member.actualCents > 0);
     const weights = members.map((member) =>
       hasSpend ? member.actualCents : presetWeightOf(member.category.name),
     );
-    distribute(groupIdeal, weights).forEach((cents, index) =>
-      ideals.set(members[index].category.id, cents),
+    distribute(groupReais[groupIndex], weights).forEach((reais, index) =>
+      ideals.set(members[index].category.id, reais * CENTS_PER_REAL),
     );
-  }
+  });
+  const largest = [...ideals.entries()].reduce<[string, number] | null>(
+    (best, entry) => (best === null || entry[1] > best[1] ? entry : best),
+    null,
+  );
+  if (largest !== null) ideals.set(largest[0], largest[1] + leftoverCents);
   return ideals;
 }
 
@@ -133,8 +152,14 @@ const glide = (
   idealCents: number,
   step: number,
   steps: number,
-): number =>
-  Math.round(currentCents + (idealCents - currentCents) / (steps - step + 1));
+): number => {
+  const remaining = steps - step + 1;
+  if (remaining <= 1) return idealCents;
+  return wholeReaisKeepingPositive(
+    currentCents + (idealCents - currentCents) / remaining,
+    currentCents > 0,
+  );
+};
 
 export function buildSplitSuggestion(
   input: SplitSuggestionInput,
@@ -155,7 +180,7 @@ export function buildSplitSuggestion(
       idealCents,
       suggestedCents:
         idealCents === null
-          ? actualCents
+          ? wholeReaisKeepingPositive(actualCents, actualCents > 0)
           : glide(currentCents, idealCents, input.step, input.steps),
     };
   });

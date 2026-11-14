@@ -161,10 +161,10 @@ describe('buildSplitSuggestion', () => {
   });
 
   it.each([
-    [1, 333_333, 383_333, 33_333],
+    [1, 333_300, 383_300, 33_300],
     [2, 340_000, 380_000, 40_000],
     [3, 350_000, 375_000, 50_000],
-    [4, 366_667, 366_667, 66_667],
+    [4, 366_700, 366_700, 66_700],
     [5, 400_000, 350_000, 100_000],
     [6, 500_000, 300_000, 200_000],
   ])(
@@ -200,5 +200,60 @@ describe('buildSplitSuggestion', () => {
     expect(
       result.allocations.find((a) => a.categoryId === 'secret'),
     ).toBeUndefined();
+  });
+  describe('whole reais', () => {
+    const allocationsOf = (input: SplitSuggestionInput) =>
+      buildSplitSuggestion(input).allocations;
+    const lastStep = { step: 6, steps: 6 };
+
+    it('sums to the income and keeps every limit a multiple of 100', () => {
+      const result = allocationsOf(
+        makeInput({ incomeBasisCents: 1_234_500, ...lastStep }),
+      );
+
+      expect(result.reduce((t, a) => t + a.suggestedCents, 0)).toBe(1_234_500);
+      expect(result.map((a) => a.suggestedCents % 100)).toEqual([0, 0, 0]);
+    });
+
+    it('puts the leftover cents on the largest allocation when income is not whole reais', () => {
+      const result = allocationsOf(
+        makeInput({ incomeBasisCents: 1_234_567, ...lastStep }),
+      );
+
+      expect(result.reduce((t, a) => t + a.suggestedCents, 0)).toBe(1_234_567);
+      expect(result.map((a) => a.suggestedCents % 100)).toEqual([67, 0, 0]);
+    });
+
+    it('keeps ideals in whole reais on intermediate steps', () => {
+      const result = allocationsOf(
+        makeInput({ incomeBasisCents: 1_234_567, step: 1, steps: 6 }),
+      );
+
+      expect(result.map((a) => a.suggestedCents % 100)).toEqual([0, 0, 0]);
+    });
+
+    it('rounds the observed spending to whole reais half up without income', () => {
+      const result = allocationsOf(
+        makeInput({
+          incomeBasisCents: null,
+          bracket: null,
+          spendByMonth: [{ housing: 79_732, leisure: 12_350 }],
+        }),
+      );
+
+      expect(result.map((a) => a.suggestedCents)).toEqual([79_700, 12_400]);
+    });
+
+    it('never rounds a positive observed spending down to zero', () => {
+      const result = allocationsOf(
+        makeInput({
+          incomeBasisCents: null,
+          bracket: null,
+          spendByMonth: [{ housing: 20, leisure: 400_000 }],
+        }),
+      );
+
+      expect(result.map((a) => a.suggestedCents)).toEqual([100, 400_000]);
+    });
   });
 });
