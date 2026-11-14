@@ -176,6 +176,20 @@
       "when": 1794698537597,
       "tag": "0039_recurring_transaction_fk_set_null",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794700360034,
+      "tag": "0040_align_fk_catalogue_with_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794700360774,
+      "tag": "0041_fk_actions_match_production",
+      "breakpoints": true
     }
   ]
 }
