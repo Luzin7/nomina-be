@@ -10,10 +10,9 @@ WHERE contype = 'f'
 
 SELECT count(*) AS orphan_transactions
 FROM transactions t
+LEFT JOIN recurring_transactions r ON r.id = t.recurring_transaction_id
 WHERE t.recurring_transaction_id IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM recurring_transactions r WHERE r.id = t.recurring_transaction_id
-  );
+  AND r.id IS NULL;
 
 SELECT (SELECT count(*) FROM transactions) AS transactions_rows,
        (SELECT count(*) FROM recurring_transactions) AS recurring_transactions_rows,
