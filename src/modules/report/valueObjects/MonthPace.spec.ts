@@ -13,6 +13,7 @@ function makeInput(overrides: Partial<MonthPaceInput> = {}): MonthPaceInput {
     today: 15,
     spentByDay: {},
     planTotalCents: 876_000,
+    planSource: 'declared',
     fixedByDay: {},
     ...overrides,
   };
@@ -123,10 +124,21 @@ describe('buildMonthPace', () => {
   });
 
   it('nulls every plan field without a budget', () => {
-    const pace = buildMonthPace(makeInput({ planTotalCents: null }));
+    const pace = buildMonthPace(
+      makeInput({ planTotalCents: null, planSource: null }),
+    );
 
     expect(pace.planTotalCents).toBeNull();
+    expect(pace.planSource).toBeNull();
     expect(pace.days.every((entry) => entry.planCents === null)).toBe(true);
+  });
+});
+
+describe('buildMonthPace plan source', () => {
+  it('carries the provisional source through', () => {
+    const pace = buildMonthPace(makeInput({ planSource: 'provisional' }));
+
+    expect(pace.planSource).toBe('provisional');
   });
 });
 

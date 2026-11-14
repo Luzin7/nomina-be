@@ -229,7 +229,7 @@ const sumRuleOccurrences = (
   return total;
 };
 
-const sumNotYetGeneratedOccurrences = (
+export const sumNotYetGeneratedOccurrences = (
   input: Pick<
     MonthProjectionInput,
     'month' | 'recurringRules' | 'nextOccurrence'

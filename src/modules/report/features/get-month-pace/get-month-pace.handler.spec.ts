@@ -7,6 +7,7 @@ import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { LEDGER_LIVE_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
+import { ResolveMonthPlanService } from '../../services/resolve-month-plan.service';
 import { GetMonthPaceService } from './get-month-pace.handler';
 
 const WORKSPACE_ID = 'ws-1';
@@ -57,6 +58,7 @@ describe('GetMonthPaceService', () => {
     } as unknown as jest.Mocked<BudgetRepository>;
     monthProjectionRepository = {
       findActiveRecurringRules: jest.fn().mockResolvedValue([]),
+      findMonthLedger: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<MonthProjectionRepository>;
     workspaceTimezone = {
       execute: jest.fn().mockResolvedValue(SAO_PAULO),
@@ -66,6 +68,12 @@ describe('GetMonthPaceService', () => {
     cache = new InMemoryCacheProvider();
 
     service = new GetMonthPaceService(
+      new ResolveMonthPlanService(
+        budgetRepository,
+        monthProjectionRepository,
+        workspaceTimezone,
+        dateProvider,
+      ),
       budgetRepository,
       monthProjectionRepository,
       workspaceTimezone,
@@ -104,13 +112,64 @@ describe('GetMonthPaceService', () => {
     expect(pace.days[29].planCents).toBe(876_000);
   });
 
-  it('nulls the plan fields when there is no budget snapshot', async () => {
+  it('marks a snapshot plan as declared', async () => {
+    const pace = await run();
+
+    expect(pace.planSource).toBe('declared');
+  });
+
+  it('nulls the plan fields for a past month without a budget snapshot', async () => {
+    budgetRepository.resolveSnapshot.mockResolvedValue(null);
+
+    const pace = await run(10);
+
+    expect(pace.planTotalCents).toBeNull();
+    expect(pace.planSource).toBeNull();
+    expect(pace.days.every((entry) => entry.planCents === null)).toBe(true);
+  });
+
+  it('nulls the plan fields in the current month when nothing was observed', async () => {
     budgetRepository.resolveSnapshot.mockResolvedValue(null);
 
     const pace = await run();
 
     expect(pace.planTotalCents).toBeNull();
-    expect(pace.days.every((entry) => entry.planCents === null)).toBe(true);
+    expect(pace.planSource).toBeNull();
+  });
+
+  it('plans provisionally in the current month without a snapshot', async () => {
+    budgetRepository.resolveSnapshot.mockResolvedValue(null);
+    monthProjectionRepository.findMonthLedger.mockResolvedValue([
+      {
+        key: '2026-11',
+        totalIncome: 0,
+        totalExpense: 0,
+        pending: { totalIncome: 0, totalExpense: 0 },
+        plainExpenses: [
+          { day: 14, categoryId: 'c', amount: 7_000, pending: false },
+        ],
+      },
+    ]);
+    budgetRepository.findCompletedExpenseByLocalDay.mockResolvedValue([
+      { day: 14, totalCents: 7_000 },
+    ]);
+
+    const pace = await run();
+
+    expect(pace.planSource).toBe('provisional');
+    expect(pace.planTotalCents).toBe(7_000 + 1_000 * 15);
+    expect(pace.days[29].planCents).toBe(pace.planTotalCents);
+  });
+
+  it('keeps a past month without a snapshot null even with spending', async () => {
+    budgetRepository.resolveSnapshot.mockResolvedValue(null);
+    budgetRepository.findCompletedExpenseByLocalDay.mockResolvedValue([
+      { day: 14, totalCents: 7_000 },
+    ]);
+
+    const pace = await run(10);
+
+    expect(pace.planSource).toBeNull();
   });
 
   it('makes the plan jump on the day of a rent rule', async () => {
@@ -190,7 +249,7 @@ describe('GetMonthPaceService', () => {
 
     expect([...cache.values.keys()]).toEqual([
       expect.stringMatching(
-        /^report:month-pace:v1:ws-1:g\d+:2026-11:2026-11-15$/,
+        /^report:month-pace:v2:ws-1:g\d+:2026-11:2026-11-15$/,
       ),
     ]);
   });
