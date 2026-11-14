@@ -330,6 +330,7 @@ export const transactions = pgTable(
     installmentCount: integer('installment_count'),
     recurringId: text('recurring_transaction_id').references(
       () => recurringTransactions.id,
+      { onDelete: 'set null' },
     ),
     destinationAccountId: text('destination_account_id').references(
       () => accounts.id,
