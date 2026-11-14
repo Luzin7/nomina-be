@@ -43,6 +43,7 @@ import { RecurringSuggestionMapper } from '../mappers/recurring-suggestion.mappe
 import { RecurringTransactionMapper } from '../mappers/recurring-transaction.mapper';
 import * as schema from '../schema';
 import { localMonthKey } from '@utils/localMonth';
+import { randomUUID } from 'node:crypto';
 
 const SYSTEM_CATEGORY_IDS = SYSTEM_CATEGORY_LIST.map((category) => category.id);
 
@@ -50,6 +51,20 @@ type SuggestionRow = typeof schema.recurringSuggestions.$inferSelect;
 type DbTransaction = Parameters<
   Parameters<DrizzleService['db']['transaction']>[0]
 >[0];
+
+type MatchedPattern = { id: string; pattern: DetectedBillSuggestion };
+
+type LinkRow = typeof schema.recurringSuggestionTransactions.$inferInsert;
+
+const isSettled = (match: SuggestionRow | undefined): boolean =>
+  match?.status === RecurringSuggestionStatus.DISMISSED ||
+  match?.status === RecurringSuggestionStatus.ACCEPTED;
+
+const toLinkRows = (
+  suggestionId: string,
+  transactionIds: string[],
+): LinkRow[] =>
+  transactionIds.map((transactionId) => ({ suggestionId, transactionId }));
 
 const isSamePattern = (
   suggestion: SuggestionRow,
@@ -182,14 +197,31 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
         .orderBy(asc(schema.recurringSuggestions.createdAt));
 
       const claimed = new Set<string>();
+      const toInsert: DetectedBillSuggestion[] = [];
+      const toUpdate: MatchedPattern[] = [];
+      const links: LinkRow[] = [];
 
       for (const pattern of patterns) {
         const match = existing.find(
           (row) => !claimed.has(row.id) && isSamePattern(row, pattern),
         );
         if (match) claimed.add(match.id);
-        await this.persistPattern(tx, workspaceId, pattern, match ?? null, now);
+        if (isSettled(match)) continue;
+
+        if (match) {
+          toUpdate.push({ id: match.id, pattern });
+          links.push(...toLinkRows(match.id, pattern.transactionIds));
+          continue;
+        }
+        toInsert.push(pattern);
       }
+
+      await this.updatePatterns(tx, workspaceId, toUpdate, now);
+      const inserted = await this.insertPatterns(tx, workspaceId, toInsert);
+      for (const { id, pattern } of inserted) {
+        links.push(...toLinkRows(id, pattern.transactionIds));
+      }
+      await this.insertLinks(tx, links);
 
       await tx
         .update(schema.workspaces)
@@ -206,51 +238,49 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
     );
   }
 
-  private async persistPattern(
+  private async updatePatterns(
     tx: DbTransaction,
     workspaceId: string,
-    pattern: DetectedBillSuggestion,
-    match: SuggestionRow | null,
+    matched: MatchedPattern[],
     now: Date,
   ): Promise<void> {
-    if (match?.status === RecurringSuggestionStatus.DISMISSED) return;
-    if (match?.status === RecurringSuggestionStatus.ACCEPTED) return;
+    if (matched.length === 0) return;
 
-    const suggestionId = match
-      ? await this.updatePattern(tx, match.id, pattern, now)
-      : await this.insertPattern(tx, workspaceId, pattern);
+    const rows = sql.join(
+      matched.map(
+        ({ id, pattern }) =>
+          sql`(${id}::text, ${pattern.accountId}::text, ${pattern.suggestedTitle}::text, ${pattern.amount}::bigint, ${pattern.dayOfMonth}::int)`,
+      ),
+      sql`, `,
+    );
 
-    await this.linkTransactions(tx, suggestionId, pattern.transactionIds);
+    await tx.execute(sql`
+      UPDATE recurring_suggestions AS s
+      SET account_id = v.account_id,
+          suggested_title = v.suggested_title,
+          amount = v.amount,
+          day_of_month = v.day_of_month,
+          updated_at = ${now.toISOString()}::timestamptz
+      FROM (VALUES ${rows}) AS v(id, account_id, suggested_title, amount, day_of_month)
+      WHERE s.id = v.id AND s.workspace_id = ${workspaceId}
+    `);
   }
 
-  private async updatePattern(
-    tx: DbTransaction,
-    suggestionId: string,
-    pattern: DetectedBillSuggestion,
-    now: Date,
-  ): Promise<string> {
-    await tx
-      .update(schema.recurringSuggestions)
-      .set({
-        accountId: pattern.accountId,
-        suggestedTitle: pattern.suggestedTitle,
-        amount: pattern.amount,
-        dayOfMonth: pattern.dayOfMonth,
-        updatedAt: now,
-      })
-      .where(eq(schema.recurringSuggestions.id, suggestionId));
-
-    return suggestionId;
-  }
-
-  private async insertPattern(
+  private async insertPatterns(
     tx: DbTransaction,
     workspaceId: string,
-    pattern: DetectedBillSuggestion,
-  ): Promise<string> {
-    const [created] = await tx
-      .insert(schema.recurringSuggestions)
-      .values({
+    patterns: DetectedBillSuggestion[],
+  ): Promise<{ id: string; pattern: DetectedBillSuggestion }[]> {
+    if (patterns.length === 0) return [];
+
+    const keyed = patterns.map((pattern) => ({
+      id: randomUUID(),
+      pattern,
+    }));
+
+    await tx.insert(schema.recurringSuggestions).values(
+      keyed.map(({ id, pattern }) => ({
+        id,
         workspaceId,
         categoryId: pattern.categoryId,
         accountId: pattern.accountId,
@@ -258,27 +288,21 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
         amount: pattern.amount,
         dayOfMonth: pattern.dayOfMonth,
         status: RecurringSuggestionStatus.PENDING,
-      })
-      .returning({ id: schema.recurringSuggestions.id });
+      })),
+    );
 
-    return created.id;
+    return keyed;
   }
 
-  private async linkTransactions(
+  private async insertLinks(
     tx: DbTransaction,
-    suggestionId: string,
-    transactionIds: string[],
+    links: LinkRow[],
   ): Promise<void> {
-    if (transactionIds.length === 0) return;
+    if (links.length === 0) return;
 
     await tx
       .insert(schema.recurringSuggestionTransactions)
-      .values(
-        transactionIds.map((transactionId) => ({
-          suggestionId,
-          transactionId,
-        })),
-      )
+      .values(links)
       .onConflictDoNothing();
   }
 

@@ -43,6 +43,7 @@ describe('RecurringSuggestionRepositoryImplementation against a real postgres', 
   let container: StartedPostgreSqlContainer;
   let queryClient: postgres.Sql;
   let db: Database;
+  let statements: string[] = [];
   let repository: RecurringSuggestionRepositoryImplementation;
 
   beforeAll(async () => {
@@ -54,6 +55,7 @@ describe('RecurringSuggestionRepositoryImplementation against a real postgres', 
       max: 5,
       onnotice: () => undefined,
       connection: { TimeZone: 'UTC' },
+      debug: (_connection, query) => statements.push(query),
     });
     db = drizzle(queryClient, { schema });
 
@@ -71,6 +73,7 @@ describe('RecurringSuggestionRepositoryImplementation against a real postgres', 
   });
 
   beforeEach(async () => {
+    statements = [];
     await db.execute(
       sql`TRUNCATE workspaces, categories, accounts, transactions,
         recurring_transactions, recurring_suggestions,
@@ -180,6 +183,100 @@ describe('RecurringSuggestionRepositoryImplementation against a real postgres', 
     expect(await countRows(schema.recurringSuggestionTransactions)).toBe(
       patterns[0].transactionIds.length,
     );
+  });
+
+  it('inserts all suggestions and links with one statement per table', async () => {
+    const { workspaceId, accountId } = await seedWorkspace();
+    const categoryIds = [randomUUID(), randomUUID(), randomUUID()];
+    await db.insert(schema.categories).values(
+      categoryIds.map((id, index) => ({
+        id,
+        workspaceId,
+        name: `Conta ${index}`,
+        type: TransactionType.EXPENSE,
+      })),
+    );
+    for (const categoryId of categoryIds) {
+      await seedBillTransactions(workspaceId, accountId, categoryId);
+    }
+    statements = [];
+
+    const patterns = await runDetection(workspaceId);
+    const suggestionInserts = statements.filter((statement) =>
+      /insert into "recurring_suggestions"/i.test(statement),
+    );
+    const linkInserts = statements.filter((statement) =>
+      /insert into "recurring_suggestion_transactions"/i.test(statement),
+    );
+    const views = await repository.findPendingByWorkspace(workspaceId);
+    const links = await db
+      .select()
+      .from(schema.recurringSuggestionTransactions);
+
+    expect(patterns).toHaveLength(3);
+    expect(suggestionInserts).toHaveLength(1);
+    expect(linkInserts).toHaveLength(1);
+    expect(views).toHaveLength(3);
+    expect(links).toHaveLength(9);
+    for (const pattern of patterns) {
+      const view = views.find(
+        (item) => item.suggestion.categoryId === pattern.categoryId,
+      );
+      const linked = links
+        .filter((link) => link.suggestionId === view?.suggestion.id)
+        .map((link) => link.transactionId);
+      expect(linked.sort()).toEqual([...pattern.transactionIds].sort());
+    }
+  });
+
+  it('updates all matched suggestions with one statement', async () => {
+    const { workspaceId, accountId } = await seedWorkspace();
+    const otherAccountId = randomUUID();
+    await db.insert(schema.accounts).values({
+      id: otherAccountId,
+      workspaceId,
+      name: 'Conta nova',
+      type: AccountType.CHECKING,
+    });
+    const categoryIds = [randomUUID(), randomUUID(), randomUUID()];
+    await db.insert(schema.categories).values(
+      categoryIds.map((id, index) => ({
+        id,
+        workspaceId,
+        name: `Conta ${index}`,
+        type: TransactionType.EXPENSE,
+      })),
+    );
+    for (const categoryId of categoryIds) {
+      await seedBillTransactions(workspaceId, accountId, categoryId);
+    }
+    await runDetection(workspaceId);
+    const before = await repository.findPendingByWorkspace(workspaceId);
+    await db
+      .update(schema.transactions)
+      .set({ accountId: otherAccountId })
+      .where(eq(schema.transactions.workspaceId, workspaceId));
+    await db
+      .update(schema.workspaces)
+      .set({ lastBillDetectionAt: null })
+      .where(eq(schema.workspaces.id, workspaceId));
+    statements = [];
+
+    await runDetection(workspaceId);
+    const updates = statements.filter((statement) =>
+      /update\s+"?recurring_suggestions"?\s/i.test(statement),
+    );
+    const after = await repository.findPendingByWorkspace(workspaceId);
+
+    expect(updates).toHaveLength(1);
+    expect(after.map((view) => view.suggestion.id).sort()).toEqual(
+      before.map((view) => view.suggestion.id).sort(),
+    );
+    expect(after.map((view) => view.suggestion.accountId)).toEqual([
+      otherAccountId,
+      otherAccountId,
+      otherAccountId,
+    ]);
   });
 
   it('refreshes account and title when the pattern moves', async () => {
