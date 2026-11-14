@@ -2,6 +2,7 @@ import { readCategoryGeneration } from '@modules/category/services/category-list
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { GetBudgetStatusService } from '@modules/budget/features/get-status/get-status.handler';
 import type { BudgetStatusResponse } from '@modules/budget/features/get-status/get-status.handler';
+import { ResolveMonthPlanService } from '@modules/report/services/resolve-month-plan.service';
 import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { readGoalGeneration } from '@modules/goal/services/goal-cache';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
@@ -59,6 +60,7 @@ export class GetAvailableToSpendService implements Service<
 
   constructor(
     private readonly getBudgetStatus: GetBudgetStatusService,
+    private readonly resolveMonthPlan: ResolveMonthPlanService,
     private readonly findMonthSummary: FindMonthSummaryService,
     private readonly goalRepository: GoalRepository,
     private readonly cardBillDueInsight: CardBillDueInsightService,
@@ -88,7 +90,7 @@ export class GetAvailableToSpendService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'dashboard:available-to-spend',
-        version: 'v2',
+        version: 'v3',
         workspaceId,
         generations: { ledger, goal, category },
         parts: [today],
@@ -104,11 +106,13 @@ export class GetAvailableToSpendService implements Service<
   ): Promise<Either<Error, AvailableToSpendResponse>> {
     const [year, month] = today.split('-').map(Number);
 
-    const [budget, goalAportesCents] = await Promise.all([
+    const [budget, plan, goalAportesCents] = await Promise.all([
       this.getBudgetStatus.execute({ workspaceId, sub, month, year }),
+      this.resolveMonthPlan.execute({ workspaceId, month, year, today }),
       this.goalRepository.sumMonthlyAporteCents(workspaceId),
     ]);
     if (budget.isLeft()) return left(budget.value);
+    if (plan.isLeft()) return left(plan.value);
 
     const projectionResult = await this.currentProjectionOf(budget.value, {
       workspaceId,
@@ -119,6 +123,7 @@ export class GetAvailableToSpendService implements Service<
     const projection = projectionResult.value;
     const figure = buildSpendableFigure({
       budget: budget.value,
+      plan: plan.value,
       recurringNotYetGeneratedCents:
         projection.recurringNotYetGenerated.totalExpense,
       goalAportesCents,

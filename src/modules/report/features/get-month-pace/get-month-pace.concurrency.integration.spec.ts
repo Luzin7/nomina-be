@@ -19,6 +19,7 @@ import {
   startPostgres,
 } from '@shared/cache/test-helpers/freshness-harness';
 import { randomUUID } from 'node:crypto';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { GetMonthPaceService } from './get-month-pace.handler';
 
 const TIMEZONE = 'America/Sao_Paulo';
@@ -215,5 +216,32 @@ describe('month pace against a real database', () => {
 
     expect(onLastDay).toBe(700);
     expect(days.at(-1)?.spentCents).toBe(700);
+  });
+
+  it('plans the current month provisionally without a budget and reads it identically twice', async () => {
+    const seed = await seedWorkspace();
+    const now = app.get(DateProvider).now();
+    const today = app.get(DateProvider).format(now, 'YYYY-MM-DD', TIMEZONE);
+    const current = {
+      month: Number(today.slice(5, 7)),
+      year: Number(today.slice(0, 4)),
+    };
+    await spend(seed, now.toISOString(), 9_000);
+    const read = async () =>
+      unwrap<{
+        planTotalCents: number | null;
+        planSource: string | null;
+      }>(
+        await app
+          .get(GetMonthPaceService)
+          .execute({ workspaceId: seed.workspaceId, ...current }),
+      );
+
+    const first = await read();
+    const second = await read();
+
+    expect(first.planSource).toBe('provisional');
+    expect(first.planTotalCents).toBeGreaterThanOrEqual(9_000);
+    expect(second).toEqual(first);
   });
 });

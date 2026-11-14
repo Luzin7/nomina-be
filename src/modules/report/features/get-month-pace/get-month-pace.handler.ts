@@ -6,6 +6,7 @@ import {
   buildMonthPace,
   expenseOccurrencesByDay,
   MonthPace,
+  MonthPlanSource,
 } from '@modules/report/valueObjects/MonthPace';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
@@ -18,16 +19,31 @@ import {
   readLedgerGeneration,
 } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
-import { Either, right } from '@shared/core/errors/Either';
+import { Either, left, right } from '@shared/core/errors/Either';
 import { nextOccurrence } from '@utils/installmentSchedule';
 import { daysInMonth } from '@utils/calendarMonth';
+import {
+  ResolveMonthPlanService,
+  type ResolvedMonthPlan,
+} from '../../services/resolve-month-plan.service';
 import { GetMonthPaceRequest } from './get-month-pace.dto';
 
 type Request = GetMonthPaceRequest & Pick<TokenPayloadSchema, 'workspaceId'>;
 
+const planFieldsOf = (
+  plan: ResolvedMonthPlan,
+): { planTotalCents: number | null; planSource: MonthPlanSource | null } => {
+  if (plan.source === 'declared' || plan.source === 'provisional') {
+    return { planTotalCents: plan.planTotalCents, planSource: plan.source };
+  }
+
+  return { planTotalCents: null, planSource: null };
+};
+
 @Injectable()
 export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
   constructor(
+    private readonly resolveMonthPlan: ResolveMonthPlanService,
     private readonly budgetRepository: BudgetRepository,
     private readonly monthProjectionRepository: MonthProjectionRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
@@ -47,7 +63,7 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
       cache: this.cache,
       key: buildCacheKey({
         route: 'report:month-pace',
-        version: 'v1',
+        version: 'v2',
         workspaceId,
         generations: { ledger },
         parts: [
@@ -56,7 +72,7 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
         ],
       }),
       ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
-      load: async () => right(await this.compute(request, now, timezone)),
+      load: () => this.compute(request, now, timezone),
     });
   }
 
@@ -64,15 +80,20 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
     { workspaceId, month, year }: Request,
     now: Date,
     timezone: string,
-  ): Promise<MonthPace> {
+  ): Promise<Either<Error, MonthPace>> {
     const monthKey = `${year}-${String(month).padStart(2, '0')}`;
     const referenceDate = `${monthKey}-01`;
     const start = this.dateProvider.startOfMonth(referenceDate, timezone);
     const end = this.dateProvider.endOfMonth(referenceDate, timezone);
     const totalDays = daysInMonth(year, month);
 
-    const [snapshot, spentRows, rules] = await Promise.all([
-      this.budgetRepository.resolveSnapshot(workspaceId, start),
+    const [plan, spentRows, rules] = await Promise.all([
+      this.resolveMonthPlan.execute({
+        workspaceId,
+        month,
+        year,
+        today: this.dateProvider.format(now, 'YYYY-MM-DD', timezone),
+      }),
       this.budgetRepository.findCompletedExpenseByLocalDay({
         workspaceId,
         start,
@@ -85,35 +106,35 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
       }),
     ]);
 
-    return buildMonthPace({
-      month: monthKey,
-      daysInMonth: totalDays,
-      today: this.resolveToday(monthKey, now, timezone, totalDays),
-      spentByDay: Object.fromEntries(
-        spentRows.map(({ day, totalCents }) => [day, totalCents]),
-      ),
-      planTotalCents: snapshot
-        ? snapshot.allocations.reduce(
-            (total, allocation) => total + allocation.targetCents,
-            0,
-          )
-        : null,
-      fixedByDay: expenseOccurrencesByDay({
-        rules,
-        month: { start, end },
-        nextOccurrence: (date, rule) =>
-          nextOccurrence(
-            {
-              startDate: date,
-              frequency: rule.frequency,
-              interval: rule.interval,
-              timezone: RECURRING_GENERATION_TIMEZONE,
-            },
-            this.dateProvider,
-          ),
-        dayOf: (date) => Number(this.dateProvider.format(date, 'D', timezone)),
+    if (plan.isLeft()) return left(plan.value);
+
+    return right(
+      buildMonthPace({
+        month: monthKey,
+        daysInMonth: totalDays,
+        today: this.resolveToday(monthKey, now, timezone, totalDays),
+        spentByDay: Object.fromEntries(
+          spentRows.map(({ day, totalCents }) => [day, totalCents]),
+        ),
+        ...planFieldsOf(plan.value),
+        fixedByDay: expenseOccurrencesByDay({
+          rules,
+          month: { start, end },
+          nextOccurrence: (date, rule) =>
+            nextOccurrence(
+              {
+                startDate: date,
+                frequency: rule.frequency,
+                interval: rule.interval,
+                timezone: RECURRING_GENERATION_TIMEZONE,
+              },
+              this.dateProvider,
+            ),
+          dayOf: (date) =>
+            Number(this.dateProvider.format(date, 'D', timezone)),
+        }),
       }),
-    });
+    );
   }
 
   private resolveToday(

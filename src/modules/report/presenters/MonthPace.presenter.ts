@@ -7,6 +7,7 @@ export class MonthPacePresenter {
       daysInMonth: pace.daysInMonth,
       today: pace.today,
       planTotalCents: pace.planTotalCents,
+      planSource: pace.planSource,
       days: pace.days.map(({ day, spentCents, planCents }) => ({
         day,
         spentCents,

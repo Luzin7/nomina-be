@@ -15,6 +15,7 @@ import { FindMonthSummaryController } from './features/get-month-summary/get-mon
 import { FindMonthSummaryService } from './features/get-month-summary/get-month-summary.service';
 import { GetProjectionController } from './features/get-projection/get-projection.controller';
 import { GetProjectionService } from './features/get-projection/get-projection.handler';
+import { ResolveMonthPlanService } from './services/resolve-month-plan.service';
 
 @Module({
   imports: [DatabaseModule, DateModule, RedisModule, WorkspaceModule],
@@ -33,7 +34,12 @@ import { GetProjectionService } from './features/get-projection/get-projection.h
     FindMonthSummaryService,
     GetProjectionService,
     GetMonthPaceService,
+    ResolveMonthPlanService,
   ],
-  exports: [FindMonthSummaryService, GetProjectionService],
+  exports: [
+    FindMonthSummaryService,
+    GetProjectionService,
+    ResolveMonthPlanService,
+  ],
 })
 export class ReportModule {}

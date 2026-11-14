@@ -8,7 +8,11 @@ import {
   BudgetStatusResponse,
   GetBudgetStatusService,
 } from '@modules/budget/features/get-status/get-status.handler';
+import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
+import { ResolveMonthPlanService } from '@modules/report/services/resolve-month-plan.service';
+import type { ResolvedMonthPlan } from '@modules/report/services/resolve-month-plan.service';
+import type { ProvisionalBasis } from '@modules/report/valueObjects/ProvisionalPlan';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import { GetProjectionService } from '@modules/report/features/get-projection/get-projection.handler';
 import { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
@@ -119,6 +123,27 @@ const makeBudget = (
   ...overrides,
 });
 
+const declaredPlanOf = (budget: BudgetStatusResponse): ResolvedMonthPlan =>
+  budget.exists && budget.totalTargetCents > 0
+    ? { source: 'declared', planTotalCents: budget.totalTargetCents }
+    : { source: 'nothing-observed', recurringDueCents: 0, spentCents: 0 };
+
+const makeBasis = (
+  overrides: Partial<ProvisionalBasis> = {},
+): ProvisionalBasis => ({
+  confidence: 'observed',
+  frozen: false,
+  recurringExpenseCents: 0,
+  recurringDueCents: 0,
+  dailyRateCents: 1_000,
+  observedDays: 14,
+  activeDays: 10,
+  minActiveDays: 5,
+  windowStart: '2026-11-01',
+  windowEnd: '2026-11-15',
+  ...overrides,
+});
+
 const makeHorizonMonth = (
   overrides: Partial<HorizonMonth> = {},
 ): HorizonMonth =>
@@ -141,6 +166,7 @@ describe('GetAvailableToSpendService', () => {
   let service: GetAvailableToSpendService;
   let cache: InMemoryCacheProvider;
   let getBudgetStatus: jest.Mocked<GetBudgetStatusService>;
+  let resolveMonthPlan: jest.Mocked<ResolveMonthPlanService>;
   let findMonthSummary: jest.Mocked<FindMonthSummaryService>;
   let goalRepository: jest.Mocked<GoalRepository>;
   let listAccounts: jest.Mocked<ListAccountsService>;
@@ -152,7 +178,10 @@ describe('GetAvailableToSpendService', () => {
   const givenBudget = (budget: BudgetStatusResponse) => {
     currentBudget = budget;
     getBudgetStatus.execute.mockResolvedValue(right(budget));
+    givenPlan(declaredPlanOf(budget));
   };
+  const givenPlan = (plan: ResolvedMonthPlan) =>
+    resolveMonthPlan.execute.mockResolvedValue(right(plan));
   const givenProjection = (recurringExpense: number, daysRemaining = 3) => {
     if (!currentBudget.exists) throw new Error('budget snapshot required');
     givenBudget({
@@ -197,6 +226,9 @@ describe('GetAvailableToSpendService', () => {
     findMonthSummary = {
       execute: jest.fn(),
     } as unknown as jest.Mocked<FindMonthSummaryService>;
+    resolveMonthPlan = {
+      execute: jest.fn(),
+    } as unknown as jest.Mocked<ResolveMonthPlanService>;
     goalRepository = {
       sumMonthlyAporteCents: jest.fn().mockResolvedValue(0),
     } as unknown as jest.Mocked<GoalRepository>;
@@ -224,6 +256,7 @@ describe('GetAvailableToSpendService', () => {
     cache = new InMemoryCacheProvider();
     service = new GetAvailableToSpendService(
       getBudgetStatus,
+      resolveMonthPlan,
       findMonthSummary,
       goalRepository,
       new CardBillDueInsightService(listAccounts, getInvoice),
@@ -257,7 +290,13 @@ describe('GetAvailableToSpendService', () => {
       expect(response).toMatchObject({
         month: '2026-11',
         daysRemaining: 3,
-        budget: { exists: true, totalTargetCents: 1_500, totalSpentCents: 500 },
+        budget: {
+          exists: true,
+          source: 'declared',
+          provisional: false,
+          totalTargetCents: 1_500,
+          totalSpentCents: 500,
+        },
         remainingBudgetCents: 1_000,
         reservations: {
           recurringNotYetGeneratedCents: 200,
@@ -309,6 +348,11 @@ describe('GetAvailableToSpendService', () => {
 
     it('uses null instead of zero without a budget snapshot and still computes reservations', async () => {
       givenBudget({ exists: false });
+      givenPlan({
+        source: 'nothing-observed',
+        recurringDueCents: 200,
+        spentCents: 0,
+      });
       givenSummary(makeSummary(200));
       goalRepository.sumMonthlyAporteCents.mockResolvedValue(300);
 
@@ -317,7 +361,7 @@ describe('GetAvailableToSpendService', () => {
       expect(response).toEqual({
         month: '2026-11',
         daysRemaining: 3,
-        budget: { exists: false },
+        budget: { exists: false, recurringDueCents: 200, totalSpentCents: 0 },
         remainingBudgetCents: null,
         reservations: {
           recurringNotYetGeneratedCents: 200,
@@ -410,6 +454,7 @@ describe('GetAvailableToSpendService', () => {
             dateProvider,
             new InMemoryCacheProvider(),
           ),
+          resolveMonthPlan,
           findMonthSummary,
           goalRepository,
           new CardBillDueInsightService(listAccounts, getInvoice),
@@ -469,6 +514,191 @@ describe('GetAvailableToSpendService', () => {
 
       expect(getInvoice.execute).toHaveBeenCalledTimes(1);
       expect(withParcels).toBe(baseline);
+    });
+  });
+
+  describe('provisional plan', () => {
+    it('derives the figure from the provisional plan and exposes its basis', async () => {
+      const basis = makeBasis();
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'provisional',
+        planTotalCents: 10_000,
+        basis,
+        spentCents: 4_000,
+      });
+      givenSummary(makeSummary(200));
+      goalRepository.sumMonthlyAporteCents.mockResolvedValue(300);
+
+      const response = await run();
+
+      expect(response).toMatchObject({
+        budget: {
+          exists: true,
+          source: 'provisional',
+          provisional: true,
+          totalTargetCents: 10_000,
+          totalSpentCents: 4_000,
+          basis,
+        },
+        remainingBudgetCents: 6_000,
+        spendableCents: 5_500,
+        perDayCents: 1_833,
+        state: 'within-budget',
+      });
+    });
+
+    it('is over budget when spending passes a frozen provisional plan', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'provisional',
+        planTotalCents: 10_000,
+        basis: makeBasis({ frozen: true }),
+        spentCents: 12_000,
+      });
+      givenSummary(makeSummary());
+
+      const response = await run();
+
+      expect(response).toMatchObject({
+        spendableCents: -2_000,
+        perDayCents: null,
+        state: 'over-budget',
+        insight: { code: 'OVER_BUDGET' },
+      });
+    });
+
+    it('keeps no-budget with the recurring due and spent when nothing was observed', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'nothing-observed',
+        recurringDueCents: 700,
+        spentCents: 0,
+      });
+      givenSummary(makeSummary(700));
+
+      const response = await run();
+
+      expect(response).toMatchObject({
+        budget: { exists: false, recurringDueCents: 700, totalSpentCents: 0 },
+        spendableCents: null,
+        perDayCents: null,
+        state: 'no-budget',
+      });
+    });
+
+    it('does not carry source or basis on a declared plan', async () => {
+      const response = await run();
+
+      expect(response.budget).not.toHaveProperty('basis');
+    });
+
+    it('asks the plan for the workspace month in its timezone', async () => {
+      await run();
+
+      expect(resolveMonthPlan.execute).toHaveBeenCalledWith({
+        workspaceId: 'ws-1',
+        month: 11,
+        year: 2026,
+        today: '2026-11-15',
+      });
+    });
+
+    it('returns the plan error', async () => {
+      const failure = new Error('plan down');
+      resolveMonthPlan.execute.mockResolvedValue(left(failure));
+
+      const result = await service.execute(REQUEST);
+
+      expect(result.value).toBe(failure);
+    });
+
+    it('keeps the no-budget figure when the plan is none', async () => {
+      givenBudget({ exists: false });
+      givenPlan({ source: 'none' });
+      givenSummary(makeSummary(200));
+
+      const response = await run();
+
+      expect(response).toMatchObject({
+        budget: { exists: false, recurringDueCents: 200, totalSpentCents: 0 },
+        state: 'no-budget',
+      });
+    });
+
+    it('still returns a figure when the clock crosses local midnight on the last day of the month', async () => {
+      const dateProvider = new DayJsDateProvider();
+      jest
+        .spyOn(dateProvider, 'now')
+        .mockReturnValueOnce(new Date('2026-12-01T02:59:59.000Z'))
+        .mockReturnValue(new Date('2026-12-01T03:00:00.000Z'));
+      const workspaceTimezone = {
+        execute: jest.fn().mockResolvedValue(TIMEZONE),
+      } as unknown as GetWorkspaceTimezoneService;
+      const budgetRepository = {
+        resolveSnapshot: jest.fn().mockResolvedValue(null),
+        findCompletedExpenseByLocalDay: jest
+          .fn()
+          .mockResolvedValue([{ day: 30, totalCents: 5_000 }]),
+      } as unknown as BudgetRepository;
+      const monthProjectionRepository = {
+        findMonthLedger: jest.fn().mockResolvedValue([
+          {
+            key: '2026-11',
+            plainExpenses: [{ day: 30, amount: 5_000, pending: false }],
+          },
+        ]),
+        findActiveRecurringRules: jest.fn().mockResolvedValue([]),
+      } as unknown as MonthProjectionRepository;
+      givenBudget({ exists: false });
+      const crossing = new GetAvailableToSpendService(
+        getBudgetStatus,
+        new ResolveMonthPlanService(
+          budgetRepository,
+          monthProjectionRepository,
+          workspaceTimezone,
+          dateProvider,
+        ),
+        findMonthSummary,
+        goalRepository,
+        new CardBillDueInsightService(listAccounts, getInvoice),
+        new ProjectionShortfallInsightService(getProjection),
+        workspaceTimezone,
+        dateProvider,
+        new InMemoryCacheProvider(),
+      );
+
+      const result = await crossing.execute(REQUEST);
+
+      expect(result.value).toMatchObject({
+        month: '2026-11',
+        budget: { exists: true, source: 'provisional', totalSpentCents: 5_000 },
+      });
+    });
+
+    it('is identical when run twice', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'provisional',
+        planTotalCents: 10_000,
+        basis: makeBasis(),
+        spentCents: 4_000,
+      });
+
+      const first = await run();
+      const second = await run();
+
+      expect(second).toEqual(first);
+    });
+
+    it('keys the cache under v3', async () => {
+      await service.execute(REQUEST);
+
+      expect([...cache.values.keys()]).toEqual([
+        expect.stringMatching(
+          /^dashboard:available-to-spend:v3:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
+        ),
+      ]);
     });
   });
 
@@ -661,6 +891,7 @@ describe('GetAvailableToSpendService', () => {
         .mockReturnValue(new Date('2026-11-27T12:00:00.000Z'));
       const rolling = new GetAvailableToSpendService(
         getBudgetStatus,
+        resolveMonthPlan,
         findMonthSummary,
         goalRepository,
         new CardBillDueInsightService(listAccounts, getInvoice),

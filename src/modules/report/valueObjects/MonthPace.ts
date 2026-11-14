@@ -6,11 +6,14 @@ export type MonthPaceDay = {
   planCents: number | null;
 };
 
+export type MonthPlanSource = 'declared' | 'provisional';
+
 export type MonthPace = {
   month: string;
   daysInMonth: number;
   today: number;
   planTotalCents: number | null;
+  planSource: MonthPlanSource | null;
   days: MonthPaceDay[];
 };
 
@@ -20,6 +23,7 @@ export type MonthPaceInput = {
   today: number;
   spentByDay: Record<number, number>;
   planTotalCents: number | null;
+  planSource: MonthPlanSource | null;
   fixedByDay: Record<number, number>;
 };
 
@@ -97,7 +101,7 @@ function cumulativePlan(
 }
 
 export function buildMonthPace(input: MonthPaceInput): MonthPace {
-  const { month, daysInMonth, today, planTotalCents } = input;
+  const { month, daysInMonth, today, planTotalCents, planSource } = input;
   const spent = cumulativeSpent(input);
   const plan =
     planTotalCents === null ? null : cumulativePlan(input, planTotalCents);
@@ -107,6 +111,7 @@ export function buildMonthPace(input: MonthPaceInput): MonthPace {
     daysInMonth,
     today,
     planTotalCents,
+    planSource,
     days: days(daysInMonth).map((day) => ({
       day,
       spentCents: spent[day - 1],
