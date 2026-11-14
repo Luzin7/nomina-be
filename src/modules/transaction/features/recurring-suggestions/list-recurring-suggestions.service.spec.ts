@@ -83,6 +83,7 @@ describe('ListRecurringSuggestionsService', () => {
     const result = await service.execute({ workspaceId: 'ws-1' });
 
     expect(result.isRight()).toBe(true);
+    expect(timezoneService.execute).toHaveBeenCalledTimes(1);
     expect(repository.persistDetection).toHaveBeenCalledTimes(1);
     expect(repository.persistDetection).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: 'ws-1', patterns: [] }),
@@ -110,7 +111,7 @@ describe('ListRecurringSuggestionsService', () => {
     }
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith(
-      'Failed to detect recurring suggestions for workspace ws-1',
+      'Failed to detect recurring suggestions for workspace ws-1: Error',
     );
     expect(spy.mock.calls.flat().join(' ')).not.toMatch(/150000|Aluguel/);
   });
@@ -121,6 +122,8 @@ describe('ListRecurringSuggestionsService', () => {
       categoryName: 'Moradia',
       accountName: 'Conta corrente',
     };
+    const spy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    errorSpy = spy;
     timezoneService.execute.mockRejectedValue(new Error('cache down'));
     repository.findPendingByWorkspace.mockResolvedValue([view]);
 
@@ -131,5 +134,9 @@ describe('ListRecurringSuggestionsService', () => {
       expect(result.value.suggestions).toEqual([view]);
     }
     expect(repository.findDetectionState).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(
+      'Failed to detect recurring suggestions for workspace ws-1: WorkspaceTimezoneUnavailableError: Não foi possível resolver o fuso horário do workspace.',
+    );
   });
 });

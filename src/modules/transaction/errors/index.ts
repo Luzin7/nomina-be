@@ -245,3 +245,9 @@ export class BalanceReconciliationDivergenceError extends DomainError {
     this.divergences = divergences;
   }
 }
+
+export class WorkspaceTimezoneUnavailableError extends BusinessRuleDomainError {
+  constructor() {
+    super('Não foi possível resolver o fuso horário do workspace.');
+  }
+}
