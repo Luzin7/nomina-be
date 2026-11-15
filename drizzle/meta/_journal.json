@@ -197,6 +197,13 @@
       "when": 1794700778365,
       "tag": "0042_timestamps_with_timezone",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1794741660479,
+      "tag": "0043_fix_legacy_utc_midnight_transaction_dates",
+      "breakpoints": true
     }
   ]
 }
