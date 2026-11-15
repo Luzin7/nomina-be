@@ -1,5 +1,6 @@
 import {
   AccountType,
+  RecurrenceFrequency,
   TransactionStatus,
   TransactionType,
 } from '@constants/enums';
@@ -142,6 +143,38 @@ describe('migration 0043 legacy UTC midnight transaction dates', () => {
     expect((await readRow(midday)).date).toBe('2026-03-05T15:00:00Z');
     expect((await readRow(postCutoff)).date).toBe('2026-05-05T00:00:00Z');
     expect((await readRow(utcWorkspaceRow)).date).toBe('2026-03-05T00:00:00Z');
+  });
+
+  it('should leave a legacy row linked to a recurring transaction untouched', async () => {
+    const seed = await seedWorkspace();
+    const recurringId = randomUUID();
+    await db.insert(schema.recurringTransactions).values({
+      id: recurringId,
+      workspaceId: seed.workspaceId,
+      accountId: seed.accountId,
+      categoryId: seed.categoryId,
+      type: TransactionType.EXPENSE,
+      title: 'Recurring',
+      amount: 1_000,
+      frequency: RecurrenceFrequency.MONTHLY,
+      startDate: new Date('2026-03-01T00:00:00Z'),
+    });
+    const id = randomUUID();
+    await db.insert(schema.transactions).values({
+      id,
+      title: 'Transaction',
+      amount: 1_000,
+      type: TransactionType.EXPENSE,
+      status: TransactionStatus.COMPLETED,
+      date: new Date('2026-03-01T00:00:00Z'),
+      createdAt: LEGACY_CREATED_AT,
+      recurringId,
+      ...seed,
+    });
+
+    await runMigration('UTC');
+
+    expect((await readRow(id)).date).toBe('2026-03-01T00:00:00Z');
   });
 
   it('should not change updated_at', async () => {
