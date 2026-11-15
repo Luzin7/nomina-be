@@ -61,6 +61,11 @@ describe('AcceptSplitSuggestionService', () => {
     resolver = {
       execute: jest
         .fn()
+        .mockResolvedValue(
+          right(makeSuggestion(makePendingSplit({ fingerprint: 'stale' }))),
+        ),
+      resolveFresh: jest
+        .fn()
         .mockResolvedValue(right(makeSuggestion(makePendingSplit()))),
     } as unknown as jest.Mocked<ResolveBudgetSuggestionService>;
     budgetRepository = {
@@ -81,7 +86,7 @@ describe('AcceptSplitSuggestionService', () => {
     budgetRepository.saveSnapshotWithDecision.mockResolvedValue(outcome);
 
   const givenSplit = (split: SplitSuggestionState) =>
-    resolver.execute.mockResolvedValue(right(makeSuggestion(split)));
+    resolver.resolveFresh.mockResolvedValue(right(makeSuggestion(split)));
 
   it('writes the suggested allocations with the bracket version', async () => {
     const result = await accept();
@@ -221,7 +226,7 @@ describe('AcceptSplitSuggestionService', () => {
 
   it('succeeds when a concurrent request accepted first', async () => {
     givenOutcome('already-decided');
-    resolver.execute
+    resolver.resolveFresh
       .mockResolvedValueOnce(right(makeSuggestion(makePendingSplit())))
       .mockResolvedValueOnce(right(makeSuggestion({ status: 'accepted' })));
 
@@ -232,12 +237,24 @@ describe('AcceptSplitSuggestionService', () => {
 
   it('refuses when a concurrent request decided differently', async () => {
     givenOutcome('already-decided');
-    resolver.execute
+    resolver.resolveFresh
       .mockResolvedValueOnce(right(makeSuggestion(makePendingSplit())))
       .mockResolvedValueOnce(right(makeSuggestion({ status: 'rejected' })));
 
     const result = await accept();
 
     expect(result.value).toBeInstanceOf(BudgetSuggestionUnavailableError);
+  });
+
+  it('never reads the cached suggestion on any step of the write path', async () => {
+    givenOutcome('already-decided');
+    resolver.resolveFresh
+      .mockResolvedValueOnce(right(makeSuggestion(makePendingSplit())))
+      .mockResolvedValueOnce(right(makeSuggestion({ status: 'accepted' })));
+
+    await accept();
+    await budgetRepository.saveSnapshotWithDecision.mock.calls[0]?.[0].isStillCurrent();
+
+    expect(resolver.execute).not.toHaveBeenCalled();
   });
 });

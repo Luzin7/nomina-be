@@ -70,6 +70,10 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
   },
   'transaction/features/recurring-suggestions/list-recurring-suggestions.service.ts':
     { route: 'suggestion:list', kinds: ['ledger', 'category'] },
+  'budget/services/resolve-budget-suggestion.service.ts': {
+    route: 'budget:suggestion',
+    kinds: ['ledger', 'category'],
+  },
 };
 
 const CATEGORY_LIST_READ =
