@@ -141,4 +141,21 @@ describe('BudgetPresenter', () => {
       allocationState: 'under',
     });
   });
+
+  describe('toSuggestion', () => {
+    it('does not expose the plan fields', () => {
+      const presented = BudgetPresenter.toSuggestion({
+        month: '2026-11',
+        monthStart: new Date('2026-11-01T03:00:00.000Z'),
+        basisMonths: 3,
+        income: { status: 'set' },
+        split: { status: 'unavailable' },
+        plan: { allocations: [], planTotalCents: 0, basisMonths: 3 },
+        planEligible: true,
+      });
+
+      expect(presented).not.toHaveProperty('plan');
+      expect(presented).not.toHaveProperty('planEligible');
+    });
+  });
 });

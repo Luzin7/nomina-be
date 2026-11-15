@@ -26,4 +26,5 @@ export type LedgerMonth = {
   totalExpense: number;
   pending: PeriodTotals;
   plainExpenses: PlainExpense[];
+  completedCount: number;
 };

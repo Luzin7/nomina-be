@@ -80,6 +80,15 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
       or(isCompleted, gte(transactions.date, currentMonthStart)),
     )!;
 
+    const isCountable = and(
+      isCompleted,
+      inArray(transactions.type, INCOME_OR_EXPENSE),
+      or(
+        isNull(transactions.categoryId),
+        notInArray(transactions.categoryId, SYSTEM_CATEGORY_IDS),
+      ),
+    )!;
+
     const rows = await this.drizzle.db
       .select({
         month: sql<string>`to_char(${localDay}, 'YYYY-MM')`,
@@ -89,6 +98,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
           and(isPending, eq(transactions.type, 'INCOME'))!,
         ),
         pendingExpense: sumWhere(and(isPending, isExpense)!),
+        completedCount: sql<number>`(COUNT(*) FILTER (WHERE ${isCountable}))::int`,
         plainExpenses: sql<PlainExpenseTuple[]>`COALESCE(
           json_agg(
             json_build_array(
@@ -120,6 +130,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
         totalIncome: row.pendingIncome,
         totalExpense: row.pendingExpense,
       },
+      completedCount: row.completedCount,
       plainExpenses: row.plainExpenses.map(
         ([day, categoryId, amount, pending]) => ({
           day,

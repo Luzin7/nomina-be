@@ -27,7 +27,6 @@ const makePendingIncome = (
   ({
     status: 'pending',
     incomeCents: 500_000,
-    base: 'median',
     incomeMonths: 3,
     zeroIncomeMonths: 0,
     fingerprint: FINGERPRINT,
@@ -38,6 +37,8 @@ const makeSuggestion = (income: IncomeSuggestion): BudgetSuggestion => ({
   month: '2026-11',
   monthStart: MONTH_START,
   basisMonths: 3,
+  plan: null,
+  planEligible: false,
   income,
   split: { status: 'unavailable' },
 });

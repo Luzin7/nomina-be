@@ -1,5 +1,9 @@
 import { InvoiceCalendar } from './InvoiceCalendar';
-import { buildInvoiceStatement } from './InvoiceStatement';
+import { CardInvoiceTotals } from './CardInvoiceWindow';
+import {
+  buildInvoiceStatement,
+  buildInvoiceStatementFromTotals,
+} from './InvoiceStatement';
 
 const calendar = new InvoiceCalendar({ dueDay: 15, closingDaysBeforeDue: 5 });
 
@@ -108,5 +112,112 @@ describe('buildInvoiceStatement', () => {
 
     expect(statement.total).toBe(1600n);
     expect(statement.remaining).toBe(400n);
+  });
+});
+
+const makeTotals = (
+  overrides: Partial<CardInvoiceTotals> = {},
+): CardInvoiceTotals => ({
+  chargesBeforePeriod: 0n,
+  paymentsBeforePeriod: 0n,
+  chargesInPeriod: 0n,
+  paymentsInPeriod: 0n,
+  paymentsAfterClosing: 0n,
+  pendingCharges: 0n,
+  ...overrides,
+});
+
+describe('buildInvoiceStatementFromTotals', () => {
+  it('carries the balance of charges and payments before the period', () => {
+    expect(
+      buildInvoiceStatementFromTotals(
+        makeTotals({ chargesBeforePeriod: 1000n, paymentsBeforePeriod: 400n }),
+      ),
+    ).toEqual({
+      previousBalance: 600n,
+      charges: 0n,
+      payments: 0n,
+      total: 600n,
+      remaining: 600n,
+    });
+  });
+
+  it('adds charges and subtracts payments inside the period', () => {
+    expect(
+      buildInvoiceStatementFromTotals(
+        makeTotals({ chargesInPeriod: 5000n, paymentsInPeriod: 1500n }),
+      ),
+    ).toEqual({
+      previousBalance: 0n,
+      charges: 5000n,
+      payments: 1500n,
+      total: 3500n,
+      remaining: 3500n,
+    });
+  });
+
+  it('adds the previous balance to the period total', () => {
+    expect(
+      buildInvoiceStatementFromTotals(
+        makeTotals({
+          chargesBeforePeriod: 1000n,
+          paymentsBeforePeriod: 400n,
+          chargesInPeriod: 600n,
+          paymentsInPeriod: 100n,
+        }),
+      ),
+    ).toEqual({
+      previousBalance: 600n,
+      charges: 600n,
+      payments: 100n,
+      total: 1100n,
+      remaining: 1100n,
+    });
+  });
+
+  it('subtracts payments after closing from the remaining only', () => {
+    expect(
+      buildInvoiceStatementFromTotals(
+        makeTotals({ chargesInPeriod: 5000n, paymentsAfterClosing: 2000n }),
+      ),
+    ).toEqual({
+      previousBalance: 0n,
+      charges: 5000n,
+      payments: 0n,
+      total: 5000n,
+      remaining: 3000n,
+    });
+  });
+
+  it('clamps the remaining to zero when payments exceed the total', () => {
+    expect(
+      buildInvoiceStatementFromTotals(
+        makeTotals({ chargesInPeriod: 5000n, paymentsAfterClosing: 7000n }),
+      ).remaining,
+    ).toBe(0n);
+  });
+
+  it('ignores pending charges', () => {
+    expect(
+      buildInvoiceStatementFromTotals(
+        makeTotals({ chargesInPeriod: 5000n, pendingCharges: 900n }),
+      ),
+    ).toEqual({
+      previousBalance: 0n,
+      charges: 5000n,
+      payments: 0n,
+      total: 5000n,
+      remaining: 5000n,
+    });
+  });
+
+  it('returns zeros for a card without totals', () => {
+    expect(buildInvoiceStatementFromTotals(makeTotals())).toEqual({
+      previousBalance: 0n,
+      charges: 0n,
+      payments: 0n,
+      total: 0n,
+      remaining: 0n,
+    });
   });
 });
