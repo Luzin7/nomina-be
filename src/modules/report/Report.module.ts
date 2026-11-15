@@ -2,6 +2,7 @@ import { RedisModule } from '@infra/cache/Redis.module';
 import { DatabaseModule } from '@infra/databases/Database.module';
 import { Module } from '@nestjs/common';
 import { DateModule } from '@providers/date/Date.module';
+import { BudgetSuggestionModule } from '@modules/budget/BudgetSuggestion.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { BalanceEvolutionController } from './features/get-balance-evolution/get-balance-evolution.controller';
 import { BalanceEvolutionService } from './features/get-balance-evolution/get-balance-evolution.handler';
@@ -18,7 +19,13 @@ import { GetProjectionService } from './features/get-projection/get-projection.h
 import { ResolveMonthPlanService } from './services/resolve-month-plan.service';
 
 @Module({
-  imports: [DatabaseModule, DateModule, RedisModule, WorkspaceModule],
+  imports: [
+    BudgetSuggestionModule,
+    DatabaseModule,
+    DateModule,
+    RedisModule,
+    WorkspaceModule,
+  ],
   controllers: [
     CashFlowEvolutionController,
     GetExpensesByCategoryController,

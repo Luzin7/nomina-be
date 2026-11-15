@@ -1,14 +1,22 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import {
+  ResolveBudgetSuggestionService,
+  type BudgetSuggestion,
+} from '@modules/budget/services/resolve-budget-suggestion.service';
+import { left, right } from '@shared/core/errors/Either';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { RecurringRuleSnapshot } from '@modules/report/valueObjects/MonthProjection';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { LEDGER_LIVE_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { ResolveMonthPlanService } from '../../services/resolve-month-plan.service';
 import { GetMonthPaceService } from './get-month-pace.handler';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 const WORKSPACE_ID = 'ws-1';
 const SAO_PAULO = 'America/Sao_Paulo';
@@ -27,6 +35,16 @@ function makeSnapshot(totalTargetCents: number) {
     ],
   };
 }
+
+const NO_SUGGESTION: BudgetSuggestion = {
+  month: '2026-11',
+  monthStart: new Date('2026-11-01T03:00:00.000Z'),
+  basisMonths: 0,
+  income: { status: 'unavailable' },
+  split: { status: 'unavailable' },
+  plan: null,
+  planEligible: false,
+};
 
 function makeRentRule(): RecurringRuleSnapshot {
   return {
@@ -50,6 +68,7 @@ describe('GetMonthPaceService', () => {
   let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
   let dateProvider: DateProvider;
   let cache: InMemoryCacheProvider;
+  let resolveSuggestion: jest.Mocked<ResolveBudgetSuggestionService>;
 
   beforeEach(() => {
     budgetRepository = {
@@ -66,6 +85,9 @@ describe('GetMonthPaceService', () => {
     dateProvider = new DayJsDateProvider();
     jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
     cache = new InMemoryCacheProvider();
+    resolveSuggestion = {
+      execute: jest.fn().mockResolvedValue(right(NO_SUGGESTION)),
+    } as unknown as jest.Mocked<ResolveBudgetSuggestionService>;
 
     service = new GetMonthPaceService(
       new ResolveMonthPlanService(
@@ -73,6 +95,7 @@ describe('GetMonthPaceService', () => {
         monthProjectionRepository,
         workspaceTimezone,
         dateProvider,
+        resolveSuggestion,
       ),
       budgetRepository,
       monthProjectionRepository,
@@ -162,6 +185,24 @@ describe('GetMonthPaceService', () => {
     expect(pace.days[29].planCents).toBe(pace.planTotalCents);
   });
 
+  it('plans the suggested plan in the current month without a snapshot', async () => {
+    budgetRepository.resolveSnapshot.mockResolvedValue(null);
+    resolveSuggestion.execute.mockResolvedValue(
+      right({
+        ...NO_SUGGESTION,
+        basisMonths: 3,
+        planEligible: true,
+        plan: { allocations: [], planTotalCents: 450_000, basisMonths: 3 },
+      }),
+    );
+
+    const pace = await run();
+
+    expect(pace.planSource).toBe('suggested');
+    expect(pace.planTotalCents).toBe(450_000);
+    expect(pace.days[29].planCents).toBe(450_000);
+  });
+
   it('keeps a past month without a snapshot null even with spending', async () => {
     budgetRepository.resolveSnapshot.mockResolvedValue(null);
     budgetRepository.findCompletedExpenseByLocalDay.mockResolvedValue([
@@ -245,14 +286,33 @@ describe('GetMonthPaceService', () => {
     expect([...cache.ttls.values()]).toEqual([LEDGER_LIVE_CACHE_TTL_SECONDS]);
   });
 
-  it('keys the cache by ledger generation, month and local day', async () => {
+  it('keys the cache by ledger and category generation, month and local day', async () => {
     await run();
 
     expect([...cache.values.keys()]).toEqual([
       expect.stringMatching(
-        /^report:month-pace:v2:ws-1:g\d+:2026-11:2026-11-15$/,
+        /^report:month-pace:v5:ws-1:g\d+:c\d+:2026-11:2026-11-15$/,
       ),
     ]);
+  });
+
+  it('caches a pace built on a failed suggestion for 60 seconds', async () => {
+    budgetRepository.resolveSnapshot.mockResolvedValue(null);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    resolveSuggestion.execute.mockResolvedValue(left(new Error('down')));
+
+    const pace = await run();
+
+    expect(pace.planSource).not.toBe('suggested');
+    expect([...cache.ttls.values()]).toEqual([60]);
+  });
+
+  it('recomputes after the category generation moves', async () => {
+    await run();
+    await cache.incrementCounter('cache-gen:category:ws-1', Date.now());
+    await run();
+
+    expect(budgetRepository.resolveSnapshot).toHaveBeenCalledTimes(2);
   });
 
   it('recomputes after the ledger generation moves', async () => {

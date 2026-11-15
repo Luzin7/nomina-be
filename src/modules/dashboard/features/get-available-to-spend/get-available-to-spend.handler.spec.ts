@@ -564,6 +564,88 @@ describe('GetAvailableToSpendService', () => {
     });
   });
 
+  describe('suggested plan', () => {
+    it('derives the figure from the suggested plan totals', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'suggested',
+        planTotalCents: 10_000,
+        spentCents: 4_000,
+        basisMonths: 3,
+      });
+      givenSummary(makeSummary(200));
+      goalRepository.sumMonthlyAporteCents.mockResolvedValue(300);
+
+      const response = await run();
+
+      expect(response).toMatchObject({
+        budget: {
+          exists: true,
+          source: 'suggested',
+          provisional: false,
+          totalTargetCents: 10_000,
+          totalSpentCents: 4_000,
+          basisMonths: 3,
+        },
+        remainingBudgetCents: 6_000,
+        spendableCents: 5_500,
+        perDayCents: 1_833,
+        state: 'within-budget',
+      });
+    });
+
+    it('is over budget when spending passes the suggested plan', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'suggested',
+        planTotalCents: 10_000,
+        spentCents: 12_000,
+        basisMonths: 3,
+      });
+      givenSummary(makeSummary());
+
+      const response = await run();
+
+      expect(response).toMatchObject({
+        spendableCents: -2_000,
+        perDayCents: null,
+        state: 'over-budget',
+      });
+      expect(response.insight?.code).toBe('OVER_BUDGET');
+    });
+
+    it('caches a fallback built on a failed suggestion for 60 seconds', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'nothing-observed',
+        recurringDueCents: 0,
+        spentCents: 0,
+        degraded: true,
+      });
+      givenSummary(makeSummary());
+
+      await run();
+
+      expect([...cache.ttls.values()]).toEqual([60]);
+    });
+
+    it('keeps the suggestion insight while the hero is suggested', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'suggested',
+        planTotalCents: 10_000,
+        spentCents: 1_000,
+        basisMonths: 3,
+      });
+      givenSummary(makeSummary());
+      givenPendingIncomeSuggestion();
+
+      const response = await run();
+
+      expect(response.insight?.code).toBe('BUDGET_SUGGESTION_READY');
+    });
+  });
+
   describe('provisional plan', () => {
     it('derives the figure from the provisional plan and exposes its basis', async () => {
       const basis = makeBasis();
@@ -705,6 +787,7 @@ describe('GetAvailableToSpendService', () => {
           monthProjectionRepository,
           workspaceTimezone,
           dateProvider,
+          resolveSuggestion,
         ),
         findMonthSummary,
         goalRepository,
@@ -743,12 +826,12 @@ describe('GetAvailableToSpendService', () => {
       expect(second).toEqual(first);
     });
 
-    it('keys the cache under v4', async () => {
+    it('keys the cache under v5', async () => {
       await service.execute(REQUEST);
 
       expect([...cache.values.keys()]).toEqual([
         expect.stringMatching(
-          /^dashboard:available-to-spend:v4:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
+          /^dashboard:available-to-spend:v5:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
         ),
       ]);
     });

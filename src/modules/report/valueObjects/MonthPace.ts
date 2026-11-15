@@ -6,7 +6,7 @@ export type MonthPaceDay = {
   planCents: number | null;
 };
 
-export type MonthPlanSource = 'declared' | 'provisional';
+export type MonthPlanSource = 'declared' | 'suggested' | 'provisional';
 
 export type MonthPace = {
   month: string;
