@@ -50,6 +50,14 @@ async function matchProductionDateColumn(client: postgres.Sql) {
     ALTER TABLE transactions
     ALTER COLUMN date TYPE timestamp without time zone
     USING date AT TIME ZONE 'UTC'`;
+  await client`
+    ALTER TABLE recurring_transactions
+    ALTER COLUMN start_date TYPE timestamp without time zone
+    USING start_date AT TIME ZONE 'UTC',
+    ALTER COLUMN end_date TYPE timestamp without time zone
+    USING end_date AT TIME ZONE 'UTC',
+    ALTER COLUMN last_generated TYPE timestamp without time zone
+    USING last_generated AT TIME ZONE 'UTC'`;
 }
 
 describe('month projection repository against a real postgres', () => {
