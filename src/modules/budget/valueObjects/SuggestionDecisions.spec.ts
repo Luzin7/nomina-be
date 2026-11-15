@@ -152,14 +152,26 @@ describe('resolveSplitProgress', () => {
     ).toBe('rejected');
   });
 
-  it('keeps an initial rejection final', () => {
+  it('keeps rejected in the month of an initial rejection', () => {
+    const decisions = [
+      makeDecision({ month: '2026-11', decision: 'rejected' }),
+    ];
+
+    expect(resolveSplitProgress({ ...base, decisions })).toEqual({
+      status: 'rejected',
+      step: 1,
+    });
+  });
+
+  it('reopens the split the month after an initial rejection', () => {
     const decisions = [
       makeDecision({ month: '2026-08', decision: 'rejected' }),
     ];
 
-    expect(resolveSplitProgress({ ...base, decisions }).status).toBe(
-      'rejected',
-    );
+    expect(resolveSplitProgress({ ...base, decisions })).toEqual({
+      status: 'open',
+      step: 1,
+    });
   });
 
   it('skips only the month after a rejection following a no-income acceptance', () => {

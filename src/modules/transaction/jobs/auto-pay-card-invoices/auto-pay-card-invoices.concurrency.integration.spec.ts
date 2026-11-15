@@ -7,11 +7,13 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { DRIZZLE_TOKEN } from '@infra/databases/drizzle/drizzle.provider';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { AccountRepositoryImplementation } from '@infra/databases/drizzle/repositories/account.repository';
+import { CardInvoiceRepositoryImplementation } from '@infra/databases/drizzle/repositories/card-invoice.repository';
 import { CardInvoiceSettlementRepositoryImplementation } from '@infra/databases/drizzle/repositories/card-invoice-settlement.repository';
 import { TransactionRepositoryImplementation } from '@infra/databases/drizzle/repositories/transaction.repository';
 import * as schema from '@infra/databases/drizzle/schema';
 import { GetCreditCardInvoiceService } from '@modules/account/features/get-credit-card-invoice/get-credit-card-invoice.handler';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { CardInvoiceRepository } from '@modules/account/repositories/contracts/CardInvoiceRepository';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { PayCreditCardInvoiceService } from '@modules/transaction/features/pay-credit-card-invoice/pay-credit-card-invoice.service';
 import { CardInvoiceSettlementRepository } from '@modules/transaction/repositories/contracts/CardInvoiceSettlementRepository';
@@ -81,6 +83,10 @@ describe('auto pay card invoices against a real postgres', () => {
         {
           provide: AccountRepository,
           useClass: AccountRepositoryImplementation,
+        },
+        {
+          provide: CardInvoiceRepository,
+          useClass: CardInvoiceRepositoryImplementation,
         },
         {
           provide: TransactionRepository,

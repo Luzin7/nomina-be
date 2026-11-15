@@ -1,4 +1,3 @@
-import { TransactionStatus, TransactionType } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
   AccountNotFoundError,
@@ -6,19 +5,18 @@ import {
   CreditCardCycleNotConfiguredError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { CardInvoiceRepository } from '@modules/account/repositories/contracts/CardInvoiceRepository';
+import { cardInvoiceWindowOf } from '@modules/account/valueObjects/CardInvoiceWindow';
 import {
-  InvoiceBounds,
   InvoiceCalendar,
   InvoiceKey,
-  PlainDate,
 } from '@modules/account/valueObjects/InvoiceCalendar';
 import {
-  buildInvoiceStatement,
-  InvoiceStatement,
-  StatementEntryKind,
+  buildInvoiceStatementFromTotals,
+  InvoiceStatus,
+  invoiceStatusOf,
 } from '@modules/account/valueObjects/InvoiceStatement';
 import { Transaction } from '@modules/transaction/entities/Transaction';
-import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -29,7 +27,6 @@ import { GetCreditCardInvoiceRequest } from './get-credit-card-invoice.dto';
 
 type Request = GetCreditCardInvoiceRequest &
   TokenPayloadBase & { accountId: string };
-type InvoiceStatus = 'current' | 'closed' | 'overdue' | 'paid';
 
 type Response = {
   account: CreditCard;
@@ -47,46 +44,10 @@ type Response = {
   invoiceStatus: InvoiceStatus;
 };
 
-type DatedTransaction = { transaction: Transaction; date: PlainDate };
-
-type InvoiceStatusInput = {
-  statement: InvoiceStatement;
-  key: InvoiceKey;
-  currentKey: InvoiceKey;
-  dueDate: PlainDate;
-  today: PlainDate;
-};
-
 const invoiceKeyOf = (year: number, month: number): InvoiceKey =>
   `${year}-${String(month).padStart(2, '0')}`;
 
-const entryKindOf = (
-  transaction: Transaction,
-  accountId: string,
-): StatementEntryKind => {
-  if (transaction.destinationAccountId === accountId) return 'payment';
-  if (transaction.type === TransactionType.INCOME) return 'payment';
-  return 'charge';
-};
-
-const isWithinPeriod = (date: PlainDate, bounds: InvoiceBounds): boolean =>
-  date >= bounds.periodStart && date <= bounds.periodEnd;
-
 const atLeastZero = (amount: bigint): bigint => (amount > 0n ? amount : 0n);
-
-const invoiceStatusOf = ({
-  statement,
-  key,
-  currentKey,
-  dueDate,
-  today,
-}: InvoiceStatusInput): InvoiceStatus => {
-  const hadAmountDue = statement.previousBalance > 0n || statement.charges > 0n;
-  if (hadAmountDue && statement.remaining === 0n) return 'paid';
-  if (key === currentKey) return 'current';
-  if (dueDate < today) return 'overdue';
-  return 'closed';
-};
 
 @Injectable()
 export class GetCreditCardInvoiceService implements Service<
@@ -96,7 +57,7 @@ export class GetCreditCardInvoiceService implements Service<
 > {
   constructor(
     private readonly accountRepository: AccountRepository,
-    private readonly transactionRepository: TransactionRepository,
+    private readonly cardInvoiceRepository: CardInvoiceRepository,
     private readonly dateProvider: DateProvider,
   ) {}
 
@@ -131,28 +92,17 @@ export class GetCreditCardInvoiceService implements Service<
         : currentKey;
     const bounds = calendar.bounds(key);
     const [year, month] = key.split('-').map(Number);
+    const window = cardInvoiceWindowOf(account, calendar, key, today);
 
-    const ledger = await this.datedLedgerOf(account, props.workspaceId);
-    const statement = buildInvoiceStatement({
-      calendar,
-      key,
-      today,
-      entries: ledger
-        .filter(
-          ({ transaction }) =>
-            transaction.status === TransactionStatus.COMPLETED,
-        )
-        .map(({ transaction, date }) => ({
-          date,
-          amount: transaction.amount,
-          kind: entryKindOf(transaction, account.id),
-        })),
-    });
-
-    const transactions = ledger
-      .filter(({ date }) => isWithinPeriod(date, bounds))
-      .map(({ transaction }) => transaction);
-    const pendingAmount = this.pendingChargesOf(transactions, account.id);
+    const [[totals], transactions] = await Promise.all([
+      this.cardInvoiceRepository.findTotals(props.workspaceId, [window]),
+      this.cardInvoiceRepository.findPeriodTransactions(
+        props.workspaceId,
+        window,
+      ),
+    ]);
+    const statement = buildInvoiceStatementFromTotals(totals);
+    const pendingAmount = totals.pendingCharges;
     const totalAmount = statement.remaining;
 
     return right({
@@ -179,37 +129,5 @@ export class GetCreditCardInvoiceService implements Service<
         today,
       }),
     });
-  }
-
-  private async datedLedgerOf(
-    account: CreditCard,
-    workspaceId: string,
-  ): Promise<DatedTransaction[]> {
-    const ledger = await this.transactionRepository.findCreditCardLedger(
-      account.id,
-      workspaceId,
-    );
-
-    return ledger.map((transaction) => ({
-      transaction,
-      date: this.dateProvider.format(
-        transaction.date,
-        'YYYY-MM-DD',
-        account.timezone,
-      ),
-    }));
-  }
-
-  private pendingChargesOf(
-    transactions: Transaction[],
-    accountId: string,
-  ): bigint {
-    return transactions
-      .filter(
-        (transaction) =>
-          transaction.status === TransactionStatus.PENDING &&
-          entryKindOf(transaction, accountId) === 'charge',
-      )
-      .reduce((sum, transaction) => sum + transaction.amount, 0n);
   }
 }

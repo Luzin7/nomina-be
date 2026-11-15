@@ -3,6 +3,7 @@ import { ReportModule } from '@modules/report/Report.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
 import { BudgetSuggestionModule } from '@modules/budget/BudgetSuggestion.module';
+import { ValidateBudgetAllocationsService } from '@modules/budget/services/validate-budget-allocations.service';
 import { DateModule } from '@providers/date/Date.module';
 import { AcceptIncomeSuggestionController } from './features/accept-income-suggestion/accept-income-suggestion.controller';
 import { AcceptIncomeSuggestionService } from './features/accept-income-suggestion/accept-income-suggestion.handler';
@@ -39,6 +40,7 @@ import { SaveBudgetConfigService } from './features/save-config/save-config.hand
     GetBudgetStatusService,
     SaveBudgetConfigService,
     GetBudgetSetupService,
+    ValidateBudgetAllocationsService,
     AcceptIncomeSuggestionService,
     AcceptSplitSuggestionService,
     RejectBudgetSuggestionService,

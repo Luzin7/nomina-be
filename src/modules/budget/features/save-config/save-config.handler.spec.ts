@@ -16,6 +16,7 @@ import {
   InvalidBudgetTargetError,
   MixedBudgetModeFieldsError,
 } from '@modules/budget/errors';
+import { ValidateBudgetAllocationsService } from '@modules/budget/services/validate-budget-allocations.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { SaveBudgetConfigRequest } from './save-config.dto';
@@ -51,8 +52,9 @@ function category(
   id: string,
   workspaceId: string | null = 'ws-1',
   isHidden = false,
+  parentId: string | null = null,
 ) {
-  return { id, name: `Category ${id}`, workspaceId, isHidden };
+  return { id, name: `Category ${id}`, workspaceId, parentId, isHidden };
 }
 
 function makeSnapshot(categoryIds: string[]) {
@@ -109,6 +111,7 @@ describe('SaveBudgetConfigService', () => {
 
     service = new SaveBudgetConfigService(
       repository,
+      new ValidateBudgetAllocationsService(repository),
       workspaceTimezone,
       dateProvider,
       new InMemoryCacheProvider(),
@@ -128,6 +131,28 @@ describe('SaveBudgetConfigService', () => {
       expect(result.value).toBeInstanceOf(EmptyBudgetAllocationsError);
     }
     expect(repository.saveSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('validates the allocation fields before looking up the timezone', async () => {
+    await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest({ allocations: [] }),
+    });
+
+    expect(workspaceTimezone.execute).not.toHaveBeenCalled();
+  });
+
+  it('saves a payload that contains a subcategory', async () => {
+    repository.findCategoriesByIds.mockResolvedValueOnce([
+      category('cat-1', 'ws-1', false, 'parent-1'),
+    ]);
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      ...makeRequest(),
+    });
+
+    expect(result.isRight()).toBe(true);
   });
 
   it.each([99, 101])('rejects a percentage sum of %i', async (sum) => {
