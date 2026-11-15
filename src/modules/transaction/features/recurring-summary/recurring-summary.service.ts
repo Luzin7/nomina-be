@@ -21,7 +21,7 @@ import {
 } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, right } from '@shared/core/errors/Either';
-import { nextOccurrence } from '@utils/installmentSchedule';
+import { nextOccurrenceAfter } from '@utils/installmentSchedule';
 
 const NEXT_DAYS_WINDOW = 30;
 const MAX_OCCURRENCE_STEPS = 1000;
@@ -145,13 +145,14 @@ const occurrencesInWindow = ({
       break;
     }
     if (cursor.getTime() >= start.getTime()) occurrences.push(cursor);
-    cursor = nextOccurrence(
+    cursor = nextOccurrenceAfter(
       {
-        startDate: cursor,
+        startDate: rule.startDate,
         frequency: rule.frequency,
         interval: rule.interval,
         timezone: RECURRING_GENERATION_TIMEZONE,
       },
+      cursor,
       dateProvider,
     );
   }

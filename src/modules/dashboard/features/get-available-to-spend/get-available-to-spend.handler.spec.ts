@@ -42,6 +42,8 @@ const NO_SUGGESTION: BudgetSuggestion = {
   basisMonths: 0,
   income: { status: 'unavailable' },
   split: { status: 'unavailable' },
+  plan: null,
+  planEligible: false,
 };
 
 const makeProjection = (
@@ -251,7 +253,6 @@ describe('GetAvailableToSpendService', () => {
         income: {
           status: 'pending',
           incomeCents: 500_000,
-          base: 'median',
           incomeMonths: 3,
           zeroIncomeMonths: 0,
           fingerprint: 'income',

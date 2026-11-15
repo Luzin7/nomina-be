@@ -29,6 +29,7 @@ const activeMonth = (key: string, prefix: string): LedgerMonth => ({
   totalIncome: 0,
   totalExpense: 5000,
   pending: { totalIncome: 0, totalExpense: 0 },
+  completedCount: 0,
   plainExpenses: [3, 10, 15, 20, 25].map((day) => ({
     day,
     categoryId: `${prefix}-${day}`,
@@ -42,6 +43,7 @@ const currentMonth: LedgerMonth = {
   totalIncome: 300000,
   totalExpense: 2000,
   pending: { totalIncome: 0, totalExpense: 5000 },
+  completedCount: 0,
   plainExpenses: [
     { day: 5, categoryId: 'out-1', amount: 1000, pending: false },
     { day: 9, categoryId: 'out-2', amount: 1000, pending: false },
@@ -97,6 +99,7 @@ const withExtraExpenseOnMonthThree = (): HorizonBundle => ({
       totalIncome: 0,
       totalExpense: 0,
       pending: { totalIncome: 0, totalExpense: 1500 },
+      completedCount: 0,
       plainExpenses: [],
     },
   ],
@@ -215,6 +218,7 @@ describe('projectHorizon', () => {
             totalIncome: 0,
             totalExpense: 0,
             pending: { totalIncome: 0, totalExpense: 7000 },
+            completedCount: 0,
             plainExpenses: [],
           },
         ],
@@ -299,6 +303,7 @@ describe('projectHorizon', () => {
             totalIncome: 0,
             totalExpense: 0,
             pending: { totalIncome: 0, totalExpense: 7000 },
+            completedCount: 0,
             plainExpenses: [],
           },
           {
@@ -306,6 +311,7 @@ describe('projectHorizon', () => {
             totalIncome: 0,
             totalExpense: 0,
             pending: { totalIncome: 3000, totalExpense: 0 },
+            completedCount: 0,
             plainExpenses: [],
           },
         ],

@@ -4,10 +4,7 @@ import {
   type BudgetSnapshot,
   type SuggestionParameters,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
-import {
-  inferIncome,
-  type IncomeBase,
-} from '@modules/budget/valueObjects/IncomeInference';
+import { inferIncome } from '@modules/budget/valueObjects/IncomeInference';
 import {
   resolveIncomeBracket,
   type ResolvedBracket,
@@ -16,20 +13,33 @@ import {
   buildSplitSuggestion,
   type SuggestedAllocation,
 } from '@modules/budget/valueObjects/SplitSuggestion';
+import { planTotalOf } from '@modules/budget/valueObjects/SplitAllocationLayout';
 import { fingerprintOf } from '@modules/budget/valueObjects/SuggestionFingerprint';
 import {
   resolveIncomeStatus,
   resolveSplitProgress,
   type IncomeStatus,
 } from '@modules/budget/valueObjects/SuggestionDecisions';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
-import { selectBasisMonths } from '@modules/report/valueObjects/MonthProjection';
+import {
+  isPlanEligible,
+  selectBasisMonths,
+} from '@modules/report/valueObjects/MonthProjection';
 import { LOOKBACK_MONTHS } from '@modules/report/valueObjects/ProjectionRules';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { captureException } from '@sentry/nestjs';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
+import {
+  LEDGER_LIVE_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
+} from '@shared/cache/report-cache';
+import { SingleFlight } from '@shared/cache/single-flight';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, right } from '@shared/core/errors/Either';
 
@@ -42,7 +52,6 @@ export type IncomeSuggestion =
   | {
       status: 'pending';
       incomeCents: number;
-      base: IncomeBase;
       incomeMonths: number;
       zeroIncomeMonths: number;
       fingerprint: string;
@@ -62,12 +71,25 @@ export type SplitSuggestionState =
     }
   | { status: 'accepted' | 'rejected' | 'complete' | 'unavailable' };
 
+export type SuggestedPlan = {
+  allocations: SuggestedAllocation[];
+  planTotalCents: number;
+  basisMonths: number;
+};
+
 export type BudgetSuggestion = {
   month: string;
   monthStart: Date;
   basisMonths: number;
   income: IncomeSuggestion;
   split: SplitSuggestionState;
+  plan: SuggestedPlan | null;
+  planEligible: boolean;
+};
+
+type SplitResolution = {
+  split: SplitSuggestionState;
+  plan: SuggestedPlan | null;
 };
 
 type SuggestionDecisions = Awaited<
@@ -82,6 +104,12 @@ type SplitSuggestionInput = {
   parameters: SuggestionParameters;
   decisions: SuggestionDecisions;
 };
+
+const unavailableOf = ({
+  status,
+}: ReturnType<typeof resolveSplitProgress>): SplitSuggestionState => ({
+  status: status === 'open' ? 'unavailable' : status,
+});
 
 const monthIndex = (key: string): number => {
   const [year, month] = key.split('-').map(Number);
@@ -101,13 +129,50 @@ export class ResolveBudgetSuggestionService implements Service<
     private readonly monthProjectionRepository: MonthProjectionRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
+    private readonly singleFlight: SingleFlight,
   ) {}
 
   async execute({
     workspaceId,
   }: Request): Promise<Either<Error, BudgetSuggestion>> {
+    const [ledger, category] = await Promise.all([
+      readLedgerGeneration(this.cache, workspaceId),
+      readCategoryGeneration(this.cache, workspaceId),
+    ]);
     const timezone = await this.workspaceTimezone.execute(workspaceId);
     const now = this.dateProvider.now();
+    const key = buildCacheKey({
+      route: 'budget:suggestion',
+      version: 'v4',
+      workspaceId,
+      generations: { ledger, category },
+      parts: [this.dateProvider.format(now, 'YYYY-MM-DD', timezone)],
+    });
+
+    return this.singleFlight.run(key, () =>
+      readThrough({
+        cache: this.cache,
+        key,
+        ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
+        load: () => this.resolve(workspaceId, timezone, now),
+      }),
+    );
+  }
+
+  async resolveFresh({
+    workspaceId,
+  }: Request): Promise<Either<Error, BudgetSuggestion>> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+
+    return this.resolve(workspaceId, timezone, this.dateProvider.now());
+  }
+
+  private async resolve(
+    workspaceId: string,
+    timezone: string,
+    now: Date,
+  ): Promise<Either<Error, BudgetSuggestion>> {
     const key = this.dateProvider.format(now, 'YYYY-MM', timezone);
     const start = this.dateProvider.startOfMonth(`${key}-01`, timezone);
 
@@ -149,7 +214,7 @@ export class ResolveBudgetSuggestionService implements Service<
       snapshot,
       key,
     });
-    const split = this.splitOf(
+    const { split, plan } = this.splitOf(
       {
         workspaceId,
         currentMonth: key,
@@ -167,6 +232,8 @@ export class ResolveBudgetSuggestionService implements Service<
       basisMonths: basisKeys.length,
       income,
       split,
+      plan,
+      planEligible: isPlanEligible(ledger, key),
     });
   }
 
@@ -205,18 +272,16 @@ export class ResolveBudgetSuggestionService implements Service<
       return { status: status === 'pending' ? 'unavailable' : status };
     }
 
-    const { incomeCents, base, incomeMonths, zeroIncomeMonths } = inferred;
+    const { incomeCents, incomeMonths, zeroIncomeMonths } = inferred;
 
     return {
       status: 'pending',
       incomeCents,
-      base,
       incomeMonths,
       zeroIncomeMonths,
       fingerprint: fingerprintOf({
         kind: 'income',
         incomeCents,
-        base,
         incomeMonths,
         zeroIncomeMonths,
       }),
@@ -228,7 +293,7 @@ export class ResolveBudgetSuggestionService implements Service<
     categories: Awaited<
       ReturnType<BudgetRepository['findSuggestionCategories']>
     >,
-  ): SplitSuggestionState {
+  ): SplitResolution {
     const { workspaceId, currentMonth, snapshot, basis, parameters } = input;
     const incomeBasisCents = snapshot?.monthlyIncome ?? null;
     const progress = resolveSplitProgress({
@@ -237,8 +302,8 @@ export class ResolveBudgetSuggestionService implements Service<
       hasIncomeBasis: incomeBasisCents !== null,
       steps: SPLIT_STEPS,
     });
-    if (progress.status !== 'open') return { status: progress.status };
-    if (basis.length === 0) return { status: 'unavailable' };
+    if (basis.length === 0)
+      return { split: unavailableOf(progress), plan: null };
 
     const bracket = this.bracketOf(workspaceId, incomeBasisCents, parameters);
     const { allocations, unmappedCategoryIds } = buildSplitSuggestion({
@@ -256,28 +321,42 @@ export class ResolveBudgetSuggestionService implements Service<
       step: progress.step,
       steps: SPLIT_STEPS,
     });
-    if (allocations.length === 0) return { status: 'unavailable' };
+    if (allocations.length === 0) {
+      return { split: unavailableOf(progress), plan: null };
+    }
+
+    const plan: SuggestedPlan = {
+      allocations,
+      planTotalCents: planTotalOf(allocations),
+      basisMonths: basis.length,
+    };
+    if (progress.status !== 'open') {
+      return { split: { status: progress.status }, plan };
+    }
 
     const bracketVersion = bracket ? parameters.bracketVersion : null;
 
     return {
-      status: 'pending',
-      step: progress.step,
-      steps: SPLIT_STEPS,
-      incomeBasisCents,
-      bracket:
-        bracket && bracketVersion !== null
-          ? { position: bracket.position, version: bracketVersion }
-          : null,
-      allocations,
-      unmappedCategoryIds,
-      fingerprint: fingerprintOf({
-        kind: 'split',
+      plan,
+      split: {
+        status: 'pending',
         step: progress.step,
+        steps: SPLIT_STEPS,
         incomeBasisCents,
-        bracketVersion,
+        bracket:
+          bracket && bracketVersion !== null
+            ? { position: bracket.position, version: bracketVersion }
+            : null,
         allocations,
-      }),
+        unmappedCategoryIds,
+        fingerprint: fingerprintOf({
+          kind: 'split',
+          step: progress.step,
+          incomeBasisCents,
+          bracketVersion,
+          allocations,
+        }),
+      },
     };
   }
 

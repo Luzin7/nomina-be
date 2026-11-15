@@ -1,4 +1,4 @@
-import { TransactionStatus, TransactionType } from '@constants/enums';
+import { TransactionType } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
 import { getErrorDetails } from '@shared/utils/error-details';
@@ -25,7 +25,6 @@ const MIGRATIONS_FOLDER = resolve(__dirname, '../../../../../drizzle');
 
 const JANUARY = new Date('2026-01-01T00:00:00.000Z');
 const MARCH = new Date('2026-03-01T00:00:00.000Z');
-const FEBRUARY_DAY = new Date('2026-02-10T12:00:00.000Z');
 
 const LOCK_NOT_AVAILABLE = '55P03';
 
@@ -157,23 +156,6 @@ describe('budget suggestion writes against a real postgres', () => {
       .select()
       .from(schema.budgetSuggestionDecisions)
       .where(eq(schema.budgetSuggestionDecisions.workspaceId, id));
-  }
-
-  async function insertTransaction(
-    overrides: Partial<typeof schema.transactions.$inferInsert>,
-  ) {
-    await db.insert(schema.transactions).values({
-      id: randomUUID(),
-      workspaceId,
-      accountId,
-      categoryId,
-      title: 'Linha',
-      amount: 10_000,
-      date: FEBRUARY_DAY,
-      type: TransactionType.EXPENSE,
-      status: TransactionStatus.COMPLETED,
-      ...overrides,
-    });
   }
 
   it('keeps one snapshot and one decision when the same income accept runs twice in parallel', async () => {
@@ -384,58 +366,5 @@ describe('budget suggestion writes against a real postgres', () => {
 
       expect(sqlState).toBe(LOCK_NOT_AVAILABLE);
     });
-  });
-
-  it('excludes the credit card payment, investment income and transfers from the inference totals', async () => {
-    const investmentsId = randomUUID();
-    await db.insert(schema.categories).values({
-      id: investmentsId,
-      workspaceId,
-      name: 'Investimentos',
-      type: TransactionType.INCOME,
-    });
-    const salaryId = randomUUID();
-    await db.insert(schema.categories).values({
-      id: salaryId,
-      workspaceId,
-      name: 'Salario',
-      type: TransactionType.INCOME,
-    });
-
-    await insertTransaction({ amount: 10_000 });
-    await insertTransaction({
-      amount: 90_000,
-      categoryId: SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
-    });
-    await insertTransaction({
-      amount: 80_000,
-      categoryId: SYSTEM_CATEGORY.TRANSFER.id,
-      type: TransactionType.TRANSFER,
-    });
-    await insertTransaction({
-      amount: 300_000,
-      categoryId: salaryId,
-      type: TransactionType.INCOME,
-    });
-    await insertTransaction({
-      amount: 70_000,
-      categoryId: investmentsId,
-      type: TransactionType.INCOME,
-    });
-
-    const totals = await repository.findInferenceTotals({
-      workspaceId,
-      start: JANUARY,
-      end: new Date('2026-03-31T23:59:59.999Z'),
-      timezone: 'UTC',
-    });
-
-    expect(totals).toEqual([
-      {
-        month: '2026-02',
-        incomeCents: 300_000,
-        expenseByCategory: { [categoryId]: 10_000 },
-      },
-    ]);
   });
 });
