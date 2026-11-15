@@ -14,6 +14,7 @@ import { Injectable } from '@nestjs/common';
 import { getErrorDetails } from '@shared/utils/error-details';
 import { and, desc, eq, lte, sql } from 'drizzle-orm';
 import * as schema from '../schema';
+import { instantOf, localDayIn } from '../sql-helpers';
 
 const UNIQUE_VIOLATION = '23505';
 
@@ -168,7 +169,7 @@ export class CardCycleRepositoryImplementation implements CardCycleRepository {
           eq(schema.transactions.accountId, input.accountId),
           eq(schema.transactions.type, TransactionType.EXPENSE),
           eq(schema.transactions.status, TransactionStatus.COMPLETED),
-          sql`(${schema.transactions.date} AT TIME ZONE ${input.timezone})::date BETWEEN ${input.periodStart}::date AND ${input.periodEnd}::date`,
+          sql`${localDayIn(instantOf(schema.transactions.date), sql`${input.timezone}`)} BETWEEN ${input.periodStart}::date AND ${input.periodEnd}::date`,
         ),
       );
 

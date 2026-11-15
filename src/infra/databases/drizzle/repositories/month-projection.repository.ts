@@ -1,6 +1,6 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
-import { localDayIn } from '@infra/databases/drizzle/sql-helpers';
+import { instantOf, localDayIn } from '@infra/databases/drizzle/sql-helpers';
 import {
   DateRange,
   MonthLedgerQuery,
@@ -43,8 +43,8 @@ const SYSTEM_CATEGORY_IDS = SYSTEM_CATEGORY_LIST.map((category) => category.id);
 
 const INCOME_OR_EXPENSE = ['INCOME', 'EXPENSE'];
 
-const epochMsInUtc = (column: AnyColumn) =>
-  sql<string>`(EXTRACT(EPOCH FROM (${column}::timestamp AT TIME ZONE 'UTC')) * 1000)::bigint`;
+const epochMsInUtc = (column: AnyColumn | SQL) =>
+  sql<string>`(EXTRACT(EPOCH FROM ${column}) * 1000)::bigint`;
 
 const epochMsToDate = (epochMs: string) => new Date(Number(epochMs));
 
@@ -67,10 +67,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
 
   async findMonthLedger(query: MonthLedgerQuery): Promise<LedgerMonth[]> {
     const { workspaceId, timezone, range, currentMonthStart } = query;
-    const localDay = localDayIn(
-      sql`(${transactions.date}::timestamp AT TIME ZONE 'UTC')`,
-      sql`${timezone}`,
-    );
+    const localDay = localDayIn(instantOf(transactions.date), sql`${timezone}`);
     const isPending = eq(transactions.status, 'PENDING');
     const isCompleted = eq(transactions.status, 'COMPLETED');
     const isExpense = eq(transactions.type, 'EXPENSE');
@@ -151,13 +148,13 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
         lastGeneratedEpochMs: epochMsInUtc(recurringTransactions.lastGenerated),
         materializedDates: sql<number[]>`COALESCE((
           SELECT json_agg(
-            (EXTRACT(EPOCH FROM (materialized.date::timestamp AT TIME ZONE 'UTC')) * 1000)::bigint
+            ${epochMsInUtc(sql`materialized.date`)}
             ORDER BY materialized.date
           )
           FROM transactions AS materialized
           WHERE materialized.recurring_transaction_id = recurring_transactions.id
-            AND (materialized.date::timestamp AT TIME ZONE 'UTC') >= ${month.start.toISOString()}::timestamptz
-            AND (materialized.date::timestamp AT TIME ZONE 'UTC') <= ${month.end.toISOString()}::timestamptz
+            AND ${instantOf(sql`materialized.date`)} >= ${month.start.toISOString()}::timestamptz
+            AND ${instantOf(sql`materialized.date`)} <= ${month.end.toISOString()}::timestamptz
         ), '[]'::json)`,
       })
       .from(recurringTransactions)

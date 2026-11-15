@@ -52,7 +52,7 @@ import { Either, left, right } from '@shared/core/errors/Either';
 import { AccountMapper } from '../mappers/account.mapper';
 import { RecurringTransactionMapper } from '../mappers/recurring-transaction.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
-import { localDayIn } from '@infra/databases/drizzle/sql-helpers';
+import { instantOf, localDayIn } from '@infra/databases/drizzle/sql-helpers';
 import * as schema from '../schema';
 import { ensureEntityId } from './ensure-entity-id';
 import {
@@ -697,7 +697,7 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
 
   private dueCardTransactionsFilter(now: Date) {
     const transactionDay = localDayIn(
-      sql`(${schema.transactions.date}::timestamp AT TIME ZONE 'UTC')`,
+      instantOf(schema.transactions.date),
       schema.accounts.timezone,
     );
     const today = localDayIn(

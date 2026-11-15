@@ -51,7 +51,7 @@ import {
   sum,
 } from 'drizzle-orm';
 import { getErrorDetails } from '@shared/utils/error-details';
-import { localDayIn } from '../sql-helpers';
+import { instantOf, localDayIn } from '../sql-helpers';
 import * as schema from '../schema';
 
 const INVESTMENTS_CATEGORY_NAME = 'Investimentos';
@@ -179,7 +179,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
     timezone,
   }: CompletedExpenseByLocalDayQuery): Promise<CompletedExpenseOfDay[]> {
     const localDay = localDayIn(
-      sql`(${schema.transactions.date}::timestamp AT TIME ZONE 'UTC')`,
+      instantOf(schema.transactions.date),
       sql`${timezone}`,
     );
     const dayOfMonth = sql<number>`EXTRACT(DAY FROM ${localDay})::int`;
@@ -237,7 +237,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
     timezone,
   }: InferenceTotalsQuery): Promise<InferenceMonthTotals[]> {
     const localMonth = sql<string>`to_char(${localDayIn(
-      sql`(${schema.transactions.date}::timestamp AT TIME ZONE 'UTC')`,
+      instantOf(schema.transactions.date),
       sql`${timezone}`,
     )}, 'YYYY-MM')`;
 
