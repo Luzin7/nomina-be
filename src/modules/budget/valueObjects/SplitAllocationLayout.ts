@@ -16,8 +16,13 @@ const GROUP_NAMES: Record<GroupKey, string> = {
 const groupOrderOf = (group: GroupKey | null): number =>
   group === null ? GROUP_KEYS.length : GROUP_KEYS.indexOf(group);
 
+export type AllocationLayoutSource = Pick<
+  SuggestedAllocation,
+  'categoryId' | 'group' | 'suggestedCents'
+>;
+
 export function toAllocationInputs(
-  allocations: SuggestedAllocation[],
+  allocations: AllocationLayoutSource[],
 ): SuggestedAllocationInput[] {
   const nextCategoryOrder = new Map<number, number>();
 

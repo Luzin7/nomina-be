@@ -1,5 +1,6 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Logger } from '@nestjs/common';
+import { performance } from 'node:perf_hooks';
 import { Either, right } from '@shared/core/errors/Either';
 import { CacheCodec, createStructuredCodec } from './cache-codec';
 
@@ -44,6 +45,28 @@ async function storeCached<R>(
   }
 }
 
+type MissOutcome = 'ok' | 'left' | 'error';
+
+async function loadWithTelemetry<L, R>(
+  key: string,
+  load: () => Promise<Either<L, R>>,
+): Promise<Either<L, R>> {
+  const startedAt = performance.now();
+  const eluStart = performance.eventLoopUtilization();
+  let outcome: MissOutcome = 'error';
+  try {
+    const result = await load();
+    outcome = result.isLeft() ? 'left' : 'ok';
+    return result;
+  } finally {
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    const { utilization } = performance.eventLoopUtilization(eluStart);
+    logger.log(
+      `read-through miss key=${key} outcome=${outcome} elapsedMs=${elapsedMs} elu=${utilization.toFixed(2)}`,
+    );
+  }
+}
+
 export async function readThrough<L, R>({
   cache,
   key,
@@ -57,7 +80,7 @@ export async function readThrough<L, R>({
   const cached = await readCached(cache, key, codec);
   if (cached !== null) return right(cached);
 
-  const result = await load();
+  const result = await loadWithTelemetry(key, load);
   if (result.isLeft()) return result;
 
   await storeCached(cache, key, result.value, ttlFor(result.value), codec);
