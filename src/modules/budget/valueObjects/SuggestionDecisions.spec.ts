@@ -162,6 +162,21 @@ describe('resolveSplitProgress', () => {
     );
   });
 
+  it('skips only the month after a rejection following a no-income acceptance', () => {
+    const decisions = [
+      makeDecision({ month: '2026-09', bracketVersion: null }),
+      makeDecision({ month: '2026-10', decision: 'rejected' }),
+    ];
+    const input = { ...base, decisions, hasIncomeBasis: false };
+
+    expect(
+      resolveSplitProgress({ ...input, currentMonth: '2026-10' }).status,
+    ).toBe('rejected');
+    expect(resolveSplitProgress({ ...input, currentMonth: '2026-11' })).toEqual(
+      { status: 'open', step: 1 },
+    );
+  });
+
   it('is complete once the last step was accepted', () => {
     const decisions = [
       makeDecision({ month: '2026-03', incomeCents: 500_000 }),
