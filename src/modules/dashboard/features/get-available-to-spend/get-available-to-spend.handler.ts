@@ -39,6 +39,8 @@ import {
   unallocatedIncomeInsight,
 } from '../../valueObjects/BudgetInsights';
 
+const DEGRADED_CACHE_TTL_SECONDS = 60;
+
 type Request = Pick<TokenPayloadSchema, 'workspaceId' | 'sub'>;
 
 type InsightContext = Request & {
@@ -106,7 +108,8 @@ export class GetAvailableToSpendService implements Service<
       }),
       ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
       load: () => this.compute(request, today, markDegraded),
-      shouldStore: () => !degraded,
+      ttlFor: () =>
+        degraded ? DEGRADED_CACHE_TTL_SECONDS : LEDGER_LIVE_CACHE_TTL_SECONDS,
     });
   }
 

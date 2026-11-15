@@ -11,7 +11,7 @@ interface ReadThroughInput<L, R> {
   ttlSeconds: number;
   load: () => Promise<Either<L, R>>;
   codec?: CacheCodec<R>;
-  shouldStore?: (value: R) => boolean;
+  ttlFor?: (value: R) => number;
 }
 
 async function readCached<R>(
@@ -50,7 +50,7 @@ export async function readThrough<L, R>({
   ttlSeconds,
   load,
   codec = createStructuredCodec<R>(),
-  shouldStore = () => true,
+  ttlFor = () => ttlSeconds,
 }: ReadThroughInput<L, R>): Promise<Either<L, R>> {
   if (key === null) return load();
 
@@ -60,8 +60,6 @@ export async function readThrough<L, R>({
   const result = await load();
   if (result.isLeft()) return result;
 
-  if (!shouldStore(result.value)) return result;
-
-  await storeCached(cache, key, result.value, ttlSeconds, codec);
+  await storeCached(cache, key, result.value, ttlFor(result.value), codec);
   return result;
 }

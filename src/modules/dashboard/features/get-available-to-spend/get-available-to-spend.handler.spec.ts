@@ -1100,18 +1100,18 @@ describe('GetAvailableToSpendService', () => {
         );
       });
 
-      it('does not cache a result with a failed source', async () => {
+      it('caches a result with a failed source for 60 seconds', async () => {
         getProjection.execute.mockRejectedValue(new TypeError('boom'));
 
         await run();
 
-        expect(cache.values.size).toBe(0);
+        expect([...cache.ttls.values()]).toEqual([60]);
       });
 
-      it('caches a result with no failed source', async () => {
+      it('caches a result with no failed source for 15 minutes', async () => {
         await run();
 
-        expect(cache.values.size).toBe(1);
+        expect([...cache.ttls.values()]).toEqual([900]);
       });
 
       it('still returns the insight when a source takes 300ms', async () => {
