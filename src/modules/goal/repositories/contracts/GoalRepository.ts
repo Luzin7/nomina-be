@@ -1,3 +1,5 @@
+import type { GoalProgressSource } from '@constants/enums';
+
 export type GoalRecord = {
   id: string;
   workspaceId: string;
@@ -6,6 +8,8 @@ export type GoalRecord = {
   currentCents: number;
   monthlyAporteCents: number;
   linkedAccountId: string | null;
+  progressSource: GoalProgressSource;
+  linkedAccountBalanceCents: number | null;
   categoryId: string | null;
   isEmergency: boolean;
   isSystem: boolean;
@@ -21,6 +25,7 @@ export type CreateGoalInput = {
   currentCents?: number;
   monthlyAporteCents?: number;
   linkedAccountId?: string | null;
+  progressSource?: GoalProgressSource;
   categoryId?: string | null;
 };
 
@@ -30,6 +35,7 @@ export type UpdateGoalInput = {
   currentCents?: number;
   monthlyAporteCents?: number;
   linkedAccountId?: string | null;
+  progressSource?: GoalProgressSource;
   categoryId?: string | null;
   dismissedAt?: Date | null;
 };
@@ -55,8 +61,8 @@ export abstract class GoalRepository {
   abstract findByIdForUpdate(
     id: string,
     workspaceId: string,
-    mutate: (current: GoalRecord) => UpdateGoalInput,
-  ): Promise<GoalRecord | null>;
+    mutate: (current: GoalRecord) => UpdateGoalInput | Error,
+  ): Promise<GoalRecord | Error | null>;
 
   abstract delete(id: string, workspaceId: string): Promise<boolean>;
 

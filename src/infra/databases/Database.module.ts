@@ -1,6 +1,8 @@
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { CardInvoiceRepository } from '@modules/account/repositories/contracts/CardInvoiceRepository';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import { CardInvoiceSettlementRepository } from '@modules/transaction/repositories/contracts/CardInvoiceSettlementRepository';
+import { CardRecurrenceRepository } from '@modules/account/repositories/contracts/CardRecurrenceRepository';
 import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { GoalContributionRepository } from '@modules/goal/repositories/contracts/GoalContributionRepository';
@@ -27,7 +29,9 @@ import { DrizzleService } from './drizzle/drizzle.service';
 import { AccountRepositoryImplementation } from './drizzle/repositories/account.repository';
 import { AuthSessionRepositoryImplementation } from './drizzle/repositories/auth-session.repository';
 import { BudgetRepositoryImplementation } from './drizzle/repositories/budget.repository';
+import { CardRecurrenceRepositoryImplementation } from './drizzle/repositories/card-recurrence.repository';
 import { CardCycleRepositoryImplementation } from './drizzle/repositories/card-cycle.repository';
+import { CardInvoiceRepositoryImplementation } from './drizzle/repositories/card-invoice.repository';
 import { CardInvoiceSettlementRepositoryImplementation } from './drizzle/repositories/card-invoice-settlement.repository';
 import { CategoryRepositoryImplementation } from './drizzle/repositories/category.repository';
 import { GoalContributionRepositoryImplementation } from './drizzle/repositories/goal-contribution.repository';
@@ -115,12 +119,20 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: SubscriptionRepositoryImplementation,
     },
     {
+      provide: CardRecurrenceRepository,
+      useClass: CardRecurrenceRepositoryImplementation,
+    },
+    {
       provide: CardCycleRepository,
       useClass: CardCycleRepositoryImplementation,
     },
     {
       provide: ReportRepository,
       useClass: ReportRepositoryImplementation,
+    },
+    {
+      provide: CardInvoiceRepository,
+      useClass: CardInvoiceRepositoryImplementation,
     },
     {
       provide: CardInvoiceSettlementRepository,
@@ -145,8 +157,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     GoalContributionRepository,
     BudgetRepository,
     CardCycleRepository,
+    CardRecurrenceRepository,
     SubscriptionRepository,
     ReportRepository,
+    CardInvoiceRepository,
     CardInvoiceSettlementRepository,
   ],
 })

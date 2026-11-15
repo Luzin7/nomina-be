@@ -247,6 +247,7 @@ export class GenerateRecurringTransactionsJobService {
 
     let targetDate = recurring.lastGenerated
       ? this.calculateNextDateService.execute({
+          anchorDate: recurring.startDate,
           baseDate: recurring.lastGenerated,
           frequency: recurring.frequency,
           interval: recurring.interval,
@@ -294,6 +295,7 @@ export class GenerateRecurringTransactionsJobService {
       recurring.markAsGenerated(targetDate);
 
       targetDate = this.calculateNextDateService.execute({
+        anchorDate: recurring.startDate,
         baseDate: targetDate,
         frequency: recurring.frequency,
         interval: recurring.interval,

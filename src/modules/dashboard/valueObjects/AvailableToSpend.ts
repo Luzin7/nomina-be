@@ -35,6 +35,14 @@ export type AvailableToSpendBudget =
     }
   | {
       exists: true;
+      source: 'suggested';
+      provisional: false;
+      totalTargetCents: number;
+      totalSpentCents: number;
+      basisMonths: number;
+    }
+  | {
+      exists: true;
       source: 'provisional';
       provisional: true;
       totalTargetCents: number;
@@ -95,6 +103,17 @@ const figureBudgetOf = (
       totalTargetCents: plan.planTotalCents,
       totalSpentCents: plan.spentCents,
       basis: plan.basis,
+    };
+  }
+
+  if (plan.source === 'suggested') {
+    return {
+      exists: true,
+      source: 'suggested',
+      provisional: false,
+      totalTargetCents: plan.planTotalCents,
+      totalSpentCents: plan.spentCents,
+      basisMonths: plan.basisMonths,
     };
   }
 

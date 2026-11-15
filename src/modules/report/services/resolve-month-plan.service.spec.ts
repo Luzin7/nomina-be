@@ -1,5 +1,12 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import {
+  ResolveBudgetSuggestionService,
+  type BudgetSuggestion,
+} from '@modules/budget/services/resolve-budget-suggestion.service';
+import { Logger } from '@nestjs/common';
+import { captureException } from '@sentry/nestjs';
+import { left, right } from '@shared/core/errors/Either';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import {
   LedgerMonth,
@@ -11,6 +18,8 @@ import {
   ResolveMonthPlanService,
   type ResolvedMonthPlan,
 } from './resolve-month-plan.service';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 const WORKSPACE_ID = 'ws-1';
 const SAO_PAULO = 'America/Sao_Paulo';
@@ -28,6 +37,19 @@ const makeSnapshot = (
   allocations: targets.map((targetCents) => ({ targetCents })),
 });
 
+const makeSuggestion = (
+  overrides: Partial<BudgetSuggestion> = {},
+): BudgetSuggestion => ({
+  month: '2026-11',
+  monthStart: new Date('2026-11-01T03:00:00.000Z'),
+  basisMonths: 3,
+  income: { status: 'set' },
+  split: { status: 'accepted' },
+  plan: { allocations: [], planTotalCents: 400_000, basisMonths: 3 },
+  planEligible: true,
+  ...overrides,
+});
+
 const makeLedgerMonth = (
   key: string,
   overrides: Partial<LedgerMonth> = {},
@@ -36,6 +58,7 @@ const makeLedgerMonth = (
   totalIncome: 0,
   totalExpense: 0,
   pending: { totalIncome: 0, totalExpense: 0 },
+  completedCount: 0,
   plainExpenses: [],
   ...overrides,
 });
@@ -65,17 +88,32 @@ describe('ResolveMonthPlanService', () => {
   let budgetRepository: jest.Mocked<BudgetRepository>;
   let monthProjectionRepository: jest.Mocked<MonthProjectionRepository>;
   let dateProvider: DayJsDateProvider;
+  let resolveSuggestion: jest.Mocked<ResolveBudgetSuggestionService>;
 
   beforeEach(() => {
     budgetRepository = {
       resolveSnapshot: jest.fn().mockResolvedValue(null),
       findCompletedExpenseByLocalDay: jest.fn().mockResolvedValue([]),
+      saveSnapshot: jest.fn(),
+      saveSnapshotWithDecision: jest.fn(),
+      saveDecision: jest.fn(),
     } as unknown as jest.Mocked<BudgetRepository>;
     monthProjectionRepository = {
       findMonthLedger: jest.fn().mockResolvedValue([]),
       findActiveRecurringRules: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<MonthProjectionRepository>;
     dateProvider = new DayJsDateProvider();
+    resolveSuggestion = {
+      execute: jest.fn().mockResolvedValue(
+        right(
+          makeSuggestion({
+            planEligible: false,
+            plan: null,
+            basisMonths: 0,
+          }),
+        ),
+      ),
+    } as unknown as jest.Mocked<ResolveBudgetSuggestionService>;
 
     service = new ResolveMonthPlanService(
       budgetRepository,
@@ -84,6 +122,7 @@ describe('ResolveMonthPlanService', () => {
         execute: jest.fn().mockResolvedValue(SAO_PAULO),
       } as unknown as GetWorkspaceTimezoneService,
       dateProvider,
+      resolveSuggestion,
     );
   });
 
@@ -106,6 +145,154 @@ describe('ResolveMonthPlanService', () => {
 
   const givenLedger = (...months: LedgerMonth[]) =>
     monthProjectionRepository.findMonthLedger.mockResolvedValue(months);
+
+  const givenSuggestion = (overrides: Partial<BudgetSuggestion> = {}) =>
+    resolveSuggestion.execute.mockResolvedValue(
+      right(makeSuggestion(overrides)),
+    );
+
+  describe('suggested source', () => {
+    beforeEach(() => {
+      budgetRepository.findCompletedExpenseByLocalDay.mockResolvedValue([
+        { day: 3, totalCents: 25_000 },
+        { day: 9, totalCents: 15_000 },
+      ]);
+    });
+
+    it('suggests the plan of an eligible workspace with the month spend', async () => {
+      givenSuggestion();
+
+      expect(await resolve()).toEqual({
+        source: 'suggested',
+        planTotalCents: 400_000,
+        spentCents: 40_000,
+        basisMonths: 3,
+      });
+    });
+
+    it('suggests from fewer than three basis months', async () => {
+      givenSuggestion({
+        plan: { allocations: [], planTotalCents: 250_000, basisMonths: 2 },
+      });
+
+      expect(await resolve()).toMatchObject({
+        source: 'suggested',
+        basisMonths: 2,
+      });
+    });
+
+    it('suggests on day 1 with no expense yet', async () => {
+      budgetRepository.findCompletedExpenseByLocalDay.mockResolvedValue([]);
+      givenSuggestion();
+
+      expect(await resolve(11, 2026, '2026-11-01')).toEqual({
+        source: 'suggested',
+        planTotalCents: 400_000,
+        spentCents: 0,
+        basisMonths: 3,
+      });
+    });
+
+    it('prefers the declared plan', async () => {
+      budgetRepository.resolveSnapshot.mockResolvedValue(
+        makeSnapshot([700]) as never,
+      );
+      givenSuggestion();
+
+      expect(await resolve()).toEqual({
+        source: 'declared',
+        planTotalCents: 700,
+      });
+      expect(resolveSuggestion.execute).not.toHaveBeenCalled();
+    });
+
+    it('does not suggest for a past month', async () => {
+      givenSuggestion();
+
+      expect(await resolve(10)).toEqual({ source: 'none' });
+      expect(resolveSuggestion.execute).not.toHaveBeenCalled();
+    });
+
+    it('falls back to provisional when the split was rejected', async () => {
+      givenSuggestion({ split: { status: 'rejected' } });
+      givenLedger(
+        makeLedgerMonth('2026-11', { plainExpenses: [plain(14, 3_000)] }),
+      );
+
+      expect((await resolve()).source).toBe('provisional');
+    });
+
+    it('falls back to provisional when not eligible', async () => {
+      givenSuggestion({ planEligible: false });
+      givenLedger(
+        makeLedgerMonth('2026-11', { plainExpenses: [plain(14, 3_000)] }),
+      );
+
+      expect((await resolve()).source).toBe('provisional');
+    });
+
+    it('falls back to provisional when eligible without a plan', async () => {
+      givenSuggestion({ plan: null, basisMonths: 0 });
+      givenLedger(
+        makeLedgerMonth('2026-11', { plainExpenses: [plain(14, 3_000)] }),
+      );
+
+      expect((await resolve()).source).toBe('provisional');
+    });
+
+    it('falls back to provisional, degraded, when the suggestion fails', async () => {
+      const failure = new Error('suggestion down');
+      const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      resolveSuggestion.execute.mockResolvedValue(left(failure));
+      givenLedger(
+        makeLedgerMonth('2026-11', { plainExpenses: [plain(14, 3_000)] }),
+      );
+
+      expect(await resolve()).toMatchObject({
+        source: 'provisional',
+        degraded: true,
+      });
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining(`workspaceId=${WORKSPACE_ID}`),
+      );
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining('suggestion down'),
+      );
+      expect(captureException).toHaveBeenCalledWith(failure, {
+        extra: { workspaceId: WORKSPACE_ID },
+      });
+    });
+
+    it('falls back to degraded nothing-observed when the suggestion throws', async () => {
+      const failure = new Error('redis down');
+      jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      resolveSuggestion.execute.mockRejectedValue(failure);
+
+      expect(await resolve()).toMatchObject({
+        source: 'nothing-observed',
+        degraded: true,
+      });
+      expect(captureException).toHaveBeenCalledWith(failure, {
+        extra: { workspaceId: WORKSPACE_ID },
+      });
+    });
+
+    it('does not mark a rejected fallback as degraded', async () => {
+      givenSuggestion({ split: { status: 'rejected' } });
+
+      expect(await resolve()).not.toHaveProperty('degraded');
+    });
+
+    it('never writes', async () => {
+      givenSuggestion();
+
+      await resolve();
+
+      expect(budgetRepository.saveSnapshot).not.toHaveBeenCalled();
+      expect(budgetRepository.saveSnapshotWithDecision).not.toHaveBeenCalled();
+      expect(budgetRepository.saveDecision).not.toHaveBeenCalled();
+    });
+  });
 
   it('declares the snapshot total without reading the ledger', async () => {
     budgetRepository.resolveSnapshot.mockResolvedValue(

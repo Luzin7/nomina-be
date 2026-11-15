@@ -66,6 +66,10 @@ export abstract class BaseAccount<
     return right(undefined);
   }
 
+  public canAdjustBalance(): boolean {
+    return true;
+  }
+
   public updateName(name: string) {
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       throw new Error('Nome inválido.');

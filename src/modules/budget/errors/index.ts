@@ -38,6 +38,12 @@ export class HiddenBudgetCategoryError extends BusinessRuleDomainError {
   }
 }
 
+export class NonRootBudgetCategoryError extends BusinessRuleDomainError {
+  constructor() {
+    super('Só categorias principais podem receber orçamento.');
+  }
+}
+
 export class HistoricalBudgetImmutableError extends BusinessRuleDomainError {
   constructor() {
     super('Não é possível alterar o orçamento de um mês passado.');

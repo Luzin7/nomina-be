@@ -51,6 +51,7 @@ const makeLedgerMonth = (
   totalIncome: 0,
   totalExpense: 0,
   pending: { totalIncome: 0, totalExpense: 0 },
+  completedCount: 0,
   plainExpenses: [],
   ...overrides,
 });
@@ -343,6 +344,16 @@ describe('RecurringSummaryService', () => {
         amountCents: 5000,
         type: 'EXPENSE',
       },
+    ]);
+  });
+
+  it('keeps a month-end rule on its anchor day after short months', async () => {
+    const summary = await run({
+      rules: [makeRule({ startDate: localMidnight('2026-01-31') })],
+    });
+
+    expect(summary.next30Days.map((entry) => entry.date)).toEqual([
+      '2026-09-30',
     ]);
   });
 

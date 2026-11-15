@@ -266,7 +266,7 @@ describe('transaction list installment position against a real postgres', () => 
 
     expect(positions['2026-01-31']).toEqual([1, INSTALLMENTS]);
     expect(positions['2026-02-28']).toEqual([2, INSTALLMENTS]);
-    expect(positions['2026-03-28']).toEqual([3, INSTALLMENTS]);
+    expect(positions['2026-03-31']).toEqual([3, INSTALLMENTS]);
   });
 
   it('should give the position of a weekly series with an interval of two', async () => {

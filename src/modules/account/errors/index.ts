@@ -104,3 +104,25 @@ export class AutopayConfigurationError extends BusinessRuleDomainError {
     super(`Pagamento automático não pode ser ativado: ${reason}`);
   }
 }
+
+export class AccountNotAdjustableError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'Só é possível ajustar o saldo de conta corrente, carteira ou investimento.',
+    );
+  }
+}
+
+export class IdempotencyKeyReusedError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'Essa chave de ajuste já foi usada com outros dados. Refaça o ajuste.',
+    );
+  }
+}
+
+export class BalanceChangedSinceReadError extends ConflictDomainError {
+  constructor() {
+    super('O saldo mudou desde que você abriu. Confira e tente de novo.');
+  }
+}

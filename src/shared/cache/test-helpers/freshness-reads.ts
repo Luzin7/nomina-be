@@ -62,7 +62,7 @@ export const FRESHNESS_READS: FreshnessRead[] = [
   },
   {
     name: 'month-pace',
-    domains: ['ledger'],
+    domains: ['ledger', 'category'],
     run: async ({ app, seed }) =>
       unwrap(
         await app.get(GetMonthPaceService).execute({

@@ -1,3 +1,4 @@
+import { GoalProgressSource } from '@constants/enums';
 import { ZodValidationPipe } from '@shared/pipes/ZodValidation';
 import { z } from 'zod';
 
@@ -9,6 +10,7 @@ const createGoalSchema = z.object({
   currentCents: moneySchema.optional(),
   monthlyAporteCents: moneySchema.optional(),
   linkedAccountId: z.string().min(1).optional(),
+  progressSource: z.nativeEnum(GoalProgressSource).optional(),
   categoryId: z.string().min(1).optional(),
 });
 

@@ -126,9 +126,4 @@ export abstract class TransactionRepository {
     now: Date,
     limit: number,
   ): Promise<DueCardTransactions>;
-
-  abstract findCreditCardLedger(
-    accountId: string,
-    workspaceId: string,
-  ): Promise<Transaction[]>;
 }

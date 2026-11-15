@@ -6,6 +6,33 @@ export type AccountListItem = {
   balanceUpdatedAt: Date | null;
 };
 
+export type AdjustBalanceInput = {
+  id: string;
+  accountId: string;
+  workspaceId: string;
+  actorId: string;
+  expectedBalanceCents: number;
+  targetBalanceCents: number;
+};
+
+export type BalanceAdjustmentRecord = {
+  id: string;
+  accountId: string;
+  expectedBalanceCents: number;
+  targetBalanceCents: number;
+  deltaCents: number;
+  movementSeq: number;
+  createdAt: Date;
+};
+
+export type AdjustBalanceOutcome =
+  | { status: 'account-not-found' }
+  | { status: 'key-reused' }
+  | { status: 'balance-changed' }
+  | { status: 'unchanged' }
+  | { status: 'applied'; adjustment: BalanceAdjustmentRecord }
+  | { status: 'replayed'; adjustment: BalanceAdjustmentRecord };
+
 export abstract class AccountRepository {
   abstract create(account: AnyAccount): Promise<AnyAccount>;
   abstract createWithOpeningMovement(
@@ -22,6 +49,16 @@ export abstract class AccountRepository {
   abstract update(account: AnyAccount): Promise<AnyAccount>;
   abstract updateAutoPay(card: CreditCard): Promise<void>;
   abstract delete(accountId: string): Promise<void>;
+
+  abstract adjustBalance(
+    input: AdjustBalanceInput,
+  ): Promise<AdjustBalanceOutcome>;
+
+  abstract listBalanceAdjustments(
+    accountId: string,
+    workspaceId: string,
+    limit: number,
+  ): Promise<BalanceAdjustmentRecord[]>;
 
   abstract findManyByWorkspaceId(
     workspaceId: string,

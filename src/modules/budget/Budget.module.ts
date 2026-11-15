@@ -2,7 +2,8 @@ import { DatabaseModule } from '@infra/databases/Database.module';
 import { ReportModule } from '@modules/report/Report.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
-import { ResolveBudgetSuggestionService } from '@modules/budget/services/resolve-budget-suggestion.service';
+import { BudgetSuggestionModule } from '@modules/budget/BudgetSuggestion.module';
+import { ValidateBudgetAllocationsService } from '@modules/budget/services/validate-budget-allocations.service';
 import { DateModule } from '@providers/date/Date.module';
 import { AcceptIncomeSuggestionController } from './features/accept-income-suggestion/accept-income-suggestion.controller';
 import { AcceptIncomeSuggestionService } from './features/accept-income-suggestion/accept-income-suggestion.handler';
@@ -19,7 +20,13 @@ import { SaveBudgetConfigController } from './features/save-config/save-config.c
 import { SaveBudgetConfigService } from './features/save-config/save-config.handler';
 
 @Module({
-  imports: [DatabaseModule, ReportModule, WorkspaceModule, DateModule],
+  imports: [
+    DatabaseModule,
+    ReportModule,
+    WorkspaceModule,
+    DateModule,
+    BudgetSuggestionModule,
+  ],
   controllers: [
     GetBudgetStatusController,
     SaveBudgetConfigController,
@@ -33,11 +40,11 @@ import { SaveBudgetConfigService } from './features/save-config/save-config.hand
     GetBudgetStatusService,
     SaveBudgetConfigService,
     GetBudgetSetupService,
-    ResolveBudgetSuggestionService,
+    ValidateBudgetAllocationsService,
     AcceptIncomeSuggestionService,
     AcceptSplitSuggestionService,
     RejectBudgetSuggestionService,
   ],
-  exports: [GetBudgetStatusService, ResolveBudgetSuggestionService],
+  exports: [GetBudgetStatusService, BudgetSuggestionModule],
 })
 export class BudgetModule {}

@@ -62,7 +62,7 @@ export class ListGoalsService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'goal:list',
-        version: 'v2',
+        version: 'v3',
         workspaceId,
         generations: { ledger, goal, category },
         parts: [localDay],

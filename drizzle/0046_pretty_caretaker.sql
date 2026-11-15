@@ -1,0 +1,1 @@
+CREATE INDEX "idx_balance_adjustments_movement_seq" ON "balance_adjustments" USING btree ("movement_seq");

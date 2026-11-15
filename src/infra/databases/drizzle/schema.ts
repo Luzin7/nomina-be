@@ -1,6 +1,7 @@
 import {
   BalanceMovementCause,
   BUDGET_MODE_DEFAULT,
+  GoalProgressSource,
   type BudgetMode,
 } from '@constants/enums';
 import { DEFAULT_TIMEZONE } from '@constants/timezone';
@@ -655,6 +656,40 @@ export const balanceMovements = pgTable(
   ],
 );
 
+export const balanceAdjustments = pgTable(
+  'balance_adjustments',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    actorId: text('actor_id').notNull(),
+    expectedBalanceCents: bigint('expected_balance_cents', {
+      mode: 'number',
+    }).notNull(),
+    targetBalanceCents: bigint('target_balance_cents', {
+      mode: 'number',
+    }).notNull(),
+    deltaCents: bigint('delta_cents', { mode: 'number' }).notNull(),
+    movementSeq: bigint('movement_seq', { mode: 'number' })
+      .notNull()
+      .references(() => balanceMovements.seq),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_balance_adjustments_account_created').on(
+      table.accountId,
+      table.createdAt.desc(),
+    ),
+    index('idx_balance_adjustments_movement_seq').on(table.movementSeq),
+  ],
+);
+
 // --------------------------------------------------------
 // OBJETIVOS
 // --------------------------------------------------------
@@ -684,6 +719,10 @@ export const goals = pgTable(
     categoryId: text('category_id').references(() => categories.id, {
       onDelete: 'set null',
     }),
+    progressSource: text('progress_source')
+      .$type<GoalProgressSource>()
+      .default(GoalProgressSource.MANUAL)
+      .notNull(),
     isEmergency: boolean('is_emergency').default(false).notNull(),
     isSystem: boolean('is_system').default(false).notNull(),
     dismissedAt: timestamp('dismissed_at', {
@@ -702,6 +741,17 @@ export const goals = pgTable(
       .on(table.workspaceId)
       .where(sql`${table.isEmergency}`),
     index('idx_goal_ws').on(table.workspaceId),
+    uniqueIndex('unq_goal_account_source')
+      .on(table.linkedAccountId)
+      .where(sql`${table.progressSource} = 'account'`),
+    check(
+      'chk_goal_progress_source_valid',
+      sql`${table.progressSource} IN ('manual', 'account')`,
+    ),
+    check(
+      'chk_goal_account_source_requires_link',
+      sql`${table.progressSource} = 'manual' OR ${table.linkedAccountId} IS NOT NULL`,
+    ),
     check('chk_goal_target_cents_non_negative', sql`${table.targetCents} >= 0`),
     check(
       'chk_goal_current_cents_non_negative',

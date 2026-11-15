@@ -32,13 +32,15 @@ export type RecordContributionResult =
     }
   | { status: 'id-conflict' }
   | { status: 'goal-not-found' }
-  | { status: 'source-account-invalid' };
+  | { status: 'source-account-invalid' }
+  | { status: 'goal-tracks-account' };
 
 export type UndoContributionResult = {
   status:
     | 'undone'
     | 'goal-not-found'
     | 'contribution-not-found'
+    | 'goal-tracks-account'
     | 'undo-conflict';
 };
 

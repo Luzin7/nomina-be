@@ -1,7 +1,9 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { GoalProgressSource } from '@constants/enums';
 import {
   GoalCategoryInvalidError,
   GoalLinkedAccountInvalidError,
+  LinkedAccountAlreadyTrackedError,
 } from '@modules/goal/errors';
 import {
   CreateGoalInput,
@@ -11,12 +13,17 @@ import {
   UpdateGoalInput,
 } from '@modules/goal/repositories/contracts/GoalRepository';
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { getErrorDetails } from '@shared/utils/error-details';
 import * as schema from '../schema';
 import { insertEmergencyGoal } from './emergency-goal';
+import { toGoalRecord } from './goal-record.mapper';
 
 const FOREIGN_KEY_VIOLATION = '23503';
+const UNIQUE_VIOLATION = '23505';
+const GOAL_ACCOUNT_SOURCE_INDEX = /unq_goal_account_source/;
+
+const DERIVED_CURRENT_CENTS = sql`CASE WHEN ${schema.goals.progressSource} = 'account' AND ${schema.accounts.id} IS NOT NULL THEN GREATEST(${schema.accounts.balance}, 0) ELSE ${schema.goals.currentCents} END`;
 const GOAL_LINKED_ACCOUNT_FK = /goals_linked_account_id_(accounts_id_fk|fkey)/;
 const GOAL_CATEGORY_FK = /goals_category_id_(categories_id_fk|fkey)/;
 
@@ -26,56 +33,71 @@ export class GoalRepositoryImplementation implements GoalRepository {
 
   async listByWorkspace(workspaceId: string): Promise<GoalRecord[]> {
     const rows = await this.drizzle.db
-      .select()
+      .select({ goal: schema.goals, balance: schema.accounts.balance })
       .from(schema.goals)
+      .leftJoin(
+        schema.accounts,
+        eq(schema.accounts.id, schema.goals.linkedAccountId),
+      )
       .where(eq(schema.goals.workspaceId, workspaceId))
       .orderBy(desc(schema.goals.isEmergency), asc(schema.goals.createdAt));
 
-    return rows.map(toGoalRecord);
+    return rows.map(({ goal, balance }) => toGoalRecord(goal, balance));
   }
 
   async create(input: CreateGoalInput): Promise<GoalRecord> {
-    return this.writeChecked(async () => {
-      const [row] = await this.drizzle.db
-        .insert(schema.goals)
-        .values({
-          workspaceId: input.workspaceId,
-          name: input.name,
-          targetCents: input.targetCents,
-          currentCents: input.currentCents ?? 0,
-          monthlyAporteCents: input.monthlyAporteCents ?? 0,
-          linkedAccountId: input.linkedAccountId ?? null,
-          categoryId: input.categoryId ?? null,
-        })
-        .returning();
+    return this.writeChecked(() =>
+      this.drizzle.db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(schema.goals)
+          .values({
+            workspaceId: input.workspaceId,
+            name: input.name,
+            targetCents: input.targetCents,
+            currentCents: input.currentCents ?? 0,
+            monthlyAporteCents: input.monthlyAporteCents ?? 0,
+            linkedAccountId: input.linkedAccountId ?? null,
+            progressSource: input.progressSource ?? GoalProgressSource.MANUAL,
+            categoryId: input.categoryId ?? null,
+          })
+          .returning();
 
-      return toGoalRecord(row);
-    });
+        return toGoalRecord(row, await readBalance(tx, row));
+      }),
+    );
   }
 
   async findById(id: string, workspaceId: string): Promise<GoalRecord | null> {
     const [row] = await this.drizzle.db
-      .select()
+      .select({ goal: schema.goals, balance: schema.accounts.balance })
       .from(schema.goals)
+      .leftJoin(
+        schema.accounts,
+        eq(schema.accounts.id, schema.goals.linkedAccountId),
+      )
       .where(
         and(eq(schema.goals.id, id), eq(schema.goals.workspaceId, workspaceId)),
       )
       .limit(1);
 
-    return row ? toGoalRecord(row) : null;
+    return row ? toGoalRecord(row.goal, row.balance) : null;
   }
 
   async findByIdForUpdate(
     id: string,
     workspaceId: string,
-    mutate: (current: GoalRecord) => UpdateGoalInput,
-  ): Promise<GoalRecord | null> {
+    mutate: (current: GoalRecord) => UpdateGoalInput | Error,
+  ): Promise<GoalRecord | Error | null> {
     return this.writeChecked(() =>
       this.drizzle.db.transaction(async (tx) => {
         await tx.execute(sql`set local lock_timeout = '3s'`);
         const [current] = await tx
-          .select()
+          .select({ goal: schema.goals, balance: schema.accounts.balance })
           .from(schema.goals)
+          .leftJoin(
+            schema.accounts,
+            eq(schema.accounts.id, schema.goals.linkedAccountId),
+          )
           .where(
             and(
               eq(schema.goals.id, id),
@@ -83,17 +105,20 @@ export class GoalRepositoryImplementation implements GoalRepository {
             ),
           )
           .limit(1)
-          .for('update');
+          .for('update', { of: schema.goals });
 
         if (!current) return null;
 
+        const input = mutate(toGoalRecord(current.goal, current.balance));
+        if (input instanceof Error) return input;
+
         const [updated] = await tx
           .update(schema.goals)
-          .set(toUpdateValues(mutate(toGoalRecord(current))))
+          .set(toUpdateValues(input))
           .where(eq(schema.goals.id, id))
           .returning();
 
-        return toGoalRecord(updated);
+        return toGoalRecord(updated, await readBalance(tx, updated));
       }),
     );
   }
@@ -122,13 +147,17 @@ export class GoalRepositoryImplementation implements GoalRepository {
           ),
       })
       .from(schema.goals)
+      .leftJoin(
+        schema.accounts,
+        eq(schema.accounts.id, schema.goals.linkedAccountId),
+      )
       .where(
         and(
           eq(schema.goals.workspaceId, workspaceId),
-          gt(schema.goals.monthlyAporteCents, 0),
-          gt(schema.goals.targetCents, 0),
+          sql`${schema.goals.monthlyAporteCents} > 0`,
+          sql`${schema.goals.targetCents} > 0`,
           isNull(schema.goals.dismissedAt),
-          lt(schema.goals.currentCents, schema.goals.targetCents),
+          sql`${DERIVED_CURRENT_CENTS} < ${schema.goals.targetCents}`,
         ),
       );
 
@@ -145,15 +174,15 @@ export class GoalRepositoryImplementation implements GoalRepository {
             Number,
           ),
         totalCurrentCents:
-          sql<number>`COALESCE(SUM(${schema.goals.currentCents}), 0)`.mapWith(
+          sql<number>`COALESCE(SUM(${DERIVED_CURRENT_CENTS}), 0)`.mapWith(
             Number,
           ),
         activeCount:
-          sql<number>`COUNT(*) FILTER (WHERE ${schema.goals.targetCents} > 0 AND ${schema.goals.currentCents} < ${schema.goals.targetCents})`.mapWith(
+          sql<number>`COUNT(*) FILTER (WHERE ${schema.goals.targetCents} > 0 AND ${DERIVED_CURRENT_CENTS} < ${schema.goals.targetCents})`.mapWith(
             Number,
           ),
         completedCount:
-          sql<number>`COUNT(*) FILTER (WHERE ${schema.goals.targetCents} > 0 AND ${schema.goals.currentCents} >= ${schema.goals.targetCents})`.mapWith(
+          sql<number>`COUNT(*) FILTER (WHERE ${schema.goals.targetCents} > 0 AND ${DERIVED_CURRENT_CENTS} >= ${schema.goals.targetCents})`.mapWith(
             Number,
           ),
         unsetTargetCount:
@@ -162,6 +191,10 @@ export class GoalRepositoryImplementation implements GoalRepository {
           ),
       })
       .from(schema.goals)
+      .leftJoin(
+        schema.accounts,
+        eq(schema.accounts.id, schema.goals.linkedAccountId),
+      )
       .where(eq(schema.goals.workspaceId, workspaceId));
 
     return row;
@@ -172,6 +205,13 @@ export class GoalRepositoryImplementation implements GoalRepository {
       return await write();
     } catch (error) {
       const details = getErrorDetails(error);
+
+      if (
+        details.sqlState === UNIQUE_VIOLATION &&
+        GOAL_ACCOUNT_SOURCE_INDEX.test(details.messageChain)
+      ) {
+        throw new LinkedAccountAlreadyTrackedError();
+      }
 
       if (details.sqlState === FOREIGN_KEY_VIOLATION) {
         if (GOAL_LINKED_ACCOUNT_FK.test(details.messageChain)) {
@@ -188,22 +228,18 @@ export class GoalRepositoryImplementation implements GoalRepository {
   }
 }
 
-function toGoalRecord(row: typeof schema.goals.$inferSelect): GoalRecord {
-  return {
-    id: row.id,
-    workspaceId: row.workspaceId,
-    name: row.name,
-    targetCents: row.targetCents,
-    currentCents: row.currentCents,
-    monthlyAporteCents: row.monthlyAporteCents,
-    linkedAccountId: row.linkedAccountId,
-    categoryId: row.categoryId,
-    isEmergency: row.isEmergency,
-    isSystem: row.isSystem,
-    dismissedAt: row.dismissedAt,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
+async function readBalance(
+  tx: Parameters<Parameters<DrizzleService['db']['transaction']>[0]>[0],
+  goal: typeof schema.goals.$inferSelect,
+): Promise<number | null> {
+  if (!goal.linkedAccountId) return null;
+
+  const [account] = await tx
+    .select({ balance: schema.accounts.balance })
+    .from(schema.accounts)
+    .where(eq(schema.accounts.id, goal.linkedAccountId));
+
+  return account?.balance ?? null;
 }
 
 function toUpdateValues(

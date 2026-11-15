@@ -43,7 +43,7 @@ export class GetGoalsSummaryService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'goal:summary',
-        version: 'v2',
+        version: 'v3',
         workspaceId,
         generations: { ledger, goal, category },
       }),

@@ -35,7 +35,7 @@ export class AcceptIncomeSuggestionService implements Service<
     workspaceId,
     fingerprint,
   }: Request): Promise<Either<Error, SuggestionDecisionOutcome>> {
-    const resolved = await this.resolveSuggestion.execute({ workspaceId });
+    const resolved = await this.resolveSuggestion.resolveFresh({ workspaceId });
     if (resolved.isLeft()) return left(resolved.value);
 
     const { income, month, monthStart } = resolved.value;
@@ -78,7 +78,7 @@ export class AcceptIncomeSuggestionService implements Service<
     workspaceId: string,
     fingerprint: string,
   ): Promise<boolean> {
-    const resolved = await this.resolveSuggestion.execute({ workspaceId });
+    const resolved = await this.resolveSuggestion.resolveFresh({ workspaceId });
     if (resolved.isLeft()) return false;
 
     const { income } = resolved.value;
@@ -89,7 +89,7 @@ export class AcceptIncomeSuggestionService implements Service<
   private async settled(
     workspaceId: string,
   ): Promise<Either<Error, SuggestionDecisionOutcome>> {
-    const resolved = await this.resolveSuggestion.execute({ workspaceId });
+    const resolved = await this.resolveSuggestion.resolveFresh({ workspaceId });
     if (resolved.isLeft()) return left(resolved.value);
 
     return isAccepted(resolved.value)

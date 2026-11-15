@@ -3,6 +3,8 @@ import { PayCreditCardInvoiceService } from '@modules/transaction/features/pay-c
 import { Module } from '@nestjs/common';
 import { SubscriptionModule } from '../subscription/Subscription.module';
 import { PayCreditCardInvoiceController } from '../transaction/features/pay-credit-card-invoice/pay-credit-card-invoice.controller';
+import { AdjustAccountBalanceController } from './features/adjust-account-balance/adjust-account-balance.controller';
+import { AdjustAccountBalanceService } from './features/adjust-account-balance/adjust-account-balance.service';
 import { CreateAccountController } from './features/create-account/create-account.controller';
 import { CreateAccountService } from './features/create-account/create-account.service';
 import { DeleteAccountController } from './features/delete-account/delete-account.controller';
@@ -11,8 +13,14 @@ import { FindAccountController } from './features/find-account/find-account.cont
 import { FindAccountByIdService } from './features/find-account/find-account.handler';
 import { GetCreditCardInvoiceController } from './features/get-credit-card-invoice/get-credit-card-invoice.controller';
 import { GetCreditCardInvoiceService } from './features/get-credit-card-invoice/get-credit-card-invoice.handler';
+import { GetUpcomingInvoicesController } from './features/get-upcoming-invoices/get-upcoming-invoices.controller';
+import { GetUpcomingInvoicesService } from './features/get-upcoming-invoices/get-upcoming-invoices.handler';
 import { ListAccountsController } from './features/list-accounts/list-accounts.controller';
 import { ListAccountsService } from './features/list-accounts/list-accounts.service';
+import { ListBalanceAdjustmentsController } from './features/list-balance-adjustments/list-balance-adjustments.controller';
+import { ListBalanceAdjustmentsService } from './features/list-balance-adjustments/list-balance-adjustments.service';
+import { ListOpenCardInvoicesController } from './features/list-open-card-invoices/list-open-card-invoices.controller';
+import { ListOpenCardInvoicesService } from './features/list-open-card-invoices/list-open-card-invoices.handler';
 import { SetAutopayController } from './features/set-autopay/set-autopay.controller';
 import { SetAutopayService } from './features/set-autopay/set-autopay.service';
 import { UpdateAccountController } from './features/update-account/update-account.controller';
@@ -27,8 +35,12 @@ import { DateModule } from '@providers/date/Date.module';
     DeleteAccountController,
     FindAccountController,
     ListAccountsController,
+    ListOpenCardInvoicesController,
     GetCreditCardInvoiceController,
+    GetUpcomingInvoicesController,
     PayCreditCardInvoiceController,
+    AdjustAccountBalanceController,
+    ListBalanceAdjustmentsController,
   ],
   providers: [
     CreateAccountService,
@@ -37,8 +49,12 @@ import { DateModule } from '@providers/date/Date.module';
     DeleteAccountService,
     FindAccountByIdService,
     ListAccountsService,
+    ListOpenCardInvoicesService,
     GetCreditCardInvoiceService,
+    GetUpcomingInvoicesService,
     PayCreditCardInvoiceService,
+    AdjustAccountBalanceService,
+    ListBalanceAdjustmentsService,
   ],
   exports: [
     CreateAccountService,

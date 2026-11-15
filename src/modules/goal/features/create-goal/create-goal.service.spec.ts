@@ -1,7 +1,9 @@
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
-import { AccountType } from '@constants/enums';
+import { AccountType, GoalProgressSource } from '@constants/enums';
 import {
+  GoalAccountSourceRequiresLinkError,
   GoalCategoryInvalidError,
+  GoalCurrentTracksAccountError,
   GoalLinkedAccountInvalidError,
   InvalidGoalNameError,
 } from '@modules/goal/errors';
@@ -67,6 +69,7 @@ describe('CreateGoalService', () => {
       currentCents: 0,
       monthlyAporteCents: 0,
       linkedAccountId: null,
+      progressSource: GoalProgressSource.MANUAL,
       categoryId: null,
     });
     if (result.isLeft()) throw result.value;
@@ -155,5 +158,50 @@ describe('CreateGoalService', () => {
     const result = await service.execute(makeRequest({ categoryId: 'cat-1' }));
 
     expect(result.isRight()).toBe(true);
+  });
+
+  it('rejects the account source without a link', async () => {
+    const result = await service.execute(
+      makeRequest({ progressSource: GoalProgressSource.ACCOUNT }),
+    );
+
+    if (result.isRight()) throw new Error('expected an error');
+    expect(result.value).toBeInstanceOf(GoalAccountSourceRequiresLinkError);
+    expect(goalRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a typed current amount with the account source', async () => {
+    accountRepository.findById.mockResolvedValue(makeAccount());
+
+    const result = await service.execute(
+      makeRequest({
+        progressSource: GoalProgressSource.ACCOUNT,
+        linkedAccountId: 'acc-1',
+        currentCents: 100,
+      }),
+    );
+
+    if (result.isRight()) throw new Error('expected an error');
+    expect(result.value).toBeInstanceOf(GoalCurrentTracksAccountError);
+    expect(goalRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('creates an account-sourced goal without writing a current amount', async () => {
+    accountRepository.findById.mockResolvedValue(makeAccount());
+
+    await service.execute(
+      makeRequest({
+        progressSource: GoalProgressSource.ACCOUNT,
+        linkedAccountId: 'acc-1',
+      }),
+    );
+
+    expect(goalRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        progressSource: GoalProgressSource.ACCOUNT,
+        linkedAccountId: 'acc-1',
+        currentCents: 0,
+      }),
+    );
   });
 });

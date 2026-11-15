@@ -2,7 +2,10 @@ import { readCategoryGeneration } from '@modules/category/services/category-list
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { GetBudgetStatusService } from '@modules/budget/features/get-status/get-status.handler';
 import type { BudgetStatusResponse } from '@modules/budget/features/get-status/get-status.handler';
-import { ResolveMonthPlanService } from '@modules/report/services/resolve-month-plan.service';
+import {
+  ResolveMonthPlanService,
+  type ResolvedMonthPlan,
+} from '@modules/report/services/resolve-month-plan.service';
 import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { readGoalGeneration } from '@modules/goal/services/goal-cache';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
@@ -59,6 +62,9 @@ type InsightContext = Request & {
   today: string;
 };
 
+const isDegradedPlan = (plan: ResolvedMonthPlan): boolean =>
+  'degraded' in plan && plan.degraded === true;
+
 const sync =
   (read: () => AvailableToSpendInsight | null) =>
   async (): Promise<AvailableToSpendInsight | null> =>
@@ -105,7 +111,7 @@ export class GetAvailableToSpendService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'dashboard:available-to-spend',
-        version: 'v4',
+        version: 'v5',
         workspaceId,
         generations: { ledger, goal, category },
         parts: [today],
@@ -149,7 +155,7 @@ export class GetAvailableToSpendService implements Service<
       goalAportesCents,
       daysRemaining: projection.daysRemaining,
     });
-    const { insight, degraded } = await this.rankInsight({
+    const ranked = await this.rankInsight({
       workspaceId,
       sub,
       budget: budget.value,
@@ -158,12 +164,12 @@ export class GetAvailableToSpendService implements Service<
     });
 
     return right({
-      degraded,
+      degraded: ranked.degraded || isDegradedPlan(plan.value),
       response: {
         month: today.slice(0, 7),
         daysRemaining: projection.daysRemaining,
         ...figure,
-        insight,
+        insight: ranked.insight,
       },
     });
   }

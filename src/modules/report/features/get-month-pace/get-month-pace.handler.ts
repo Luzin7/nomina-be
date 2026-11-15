@@ -1,5 +1,6 @@
 import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import {
@@ -20,7 +21,7 @@ import {
 } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
-import { nextOccurrence } from '@utils/installmentSchedule';
+import { nextOccurrenceAfter } from '@utils/installmentSchedule';
 import { daysInMonth } from '@utils/calendarMonth';
 import {
   ResolveMonthPlanService,
@@ -30,10 +31,18 @@ import { GetMonthPaceRequest } from './get-month-pace.dto';
 
 type Request = GetMonthPaceRequest & Pick<TokenPayloadSchema, 'workspaceId'>;
 
+const DEGRADED_CACHE_TTL_SECONDS = 60;
+
+type ComputedMonthPace = { pace: MonthPace; degraded: boolean };
+
 const planFieldsOf = (
   plan: ResolvedMonthPlan,
 ): { planTotalCents: number | null; planSource: MonthPlanSource | null } => {
-  if (plan.source === 'declared' || plan.source === 'provisional') {
+  if (
+    plan.source === 'declared' ||
+    plan.source === 'suggested' ||
+    plan.source === 'provisional'
+  ) {
     return { planTotalCents: plan.planTotalCents, planSource: plan.source };
   }
 
@@ -53,19 +62,20 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
 
   async execute(request: Request): Promise<Either<Error, MonthPace>> {
     const { workspaceId, month, year } = request;
-    const [ledger, timezone] = await Promise.all([
+    const [ledger, category, timezone] = await Promise.all([
       readLedgerGeneration(this.cache, workspaceId),
+      readCategoryGeneration(this.cache, workspaceId),
       this.workspaceTimezone.execute(workspaceId),
     ]);
     const now = this.dateProvider.now();
 
-    return readThrough({
+    const result = await readThrough({
       cache: this.cache,
       key: buildCacheKey({
         route: 'report:month-pace',
-        version: 'v2',
+        version: 'v5',
         workspaceId,
-        generations: { ledger },
+        generations: { ledger, category },
         parts: [
           `${year}-${month}`,
           this.dateProvider.format(now, 'YYYY-MM-DD', timezone),
@@ -73,14 +83,19 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
       }),
       ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
       load: () => this.compute(request, now, timezone),
+      ttlFor: ({ degraded }) =>
+        degraded ? DEGRADED_CACHE_TTL_SECONDS : LEDGER_LIVE_CACHE_TTL_SECONDS,
     });
+    if (result.isLeft()) return left(result.value);
+
+    return right(result.value.pace);
   }
 
   private async compute(
     { workspaceId, month, year }: Request,
     now: Date,
     timezone: string,
-  ): Promise<Either<Error, MonthPace>> {
+  ): Promise<Either<Error, ComputedMonthPace>> {
     const monthKey = `${year}-${String(month).padStart(2, '0')}`;
     const referenceDate = `${monthKey}-01`;
     const start = this.dateProvider.startOfMonth(referenceDate, timezone);
@@ -108,8 +123,9 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
 
     if (plan.isLeft()) return left(plan.value);
 
-    return right(
-      buildMonthPace({
+    return right({
+      degraded: 'degraded' in plan.value && plan.value.degraded === true,
+      pace: buildMonthPace({
         month: monthKey,
         daysInMonth: totalDays,
         today: this.resolveToday(monthKey, now, timezone, totalDays),
@@ -121,20 +137,21 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
           rules,
           month: { start, end },
           nextOccurrence: (date, rule) =>
-            nextOccurrence(
+            nextOccurrenceAfter(
               {
-                startDate: date,
+                startDate: rule.startDate,
                 frequency: rule.frequency,
                 interval: rule.interval,
                 timezone: RECURRING_GENERATION_TIMEZONE,
               },
+              date,
               this.dateProvider,
             ),
           dayOf: (date) =>
             Number(this.dateProvider.format(date, 'D', timezone)),
         }),
       }),
-    );
+    });
   }
 
   private resolveToday(

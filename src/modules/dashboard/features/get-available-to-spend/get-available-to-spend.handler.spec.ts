@@ -1,7 +1,8 @@
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
 import { ListAccountsService } from '@modules/account/features/list-accounts/list-accounts.service';
-import { GetCreditCardInvoiceService } from '@modules/account/features/get-credit-card-invoice/get-credit-card-invoice.handler';
+import { CardInvoiceRepository } from '@modules/account/repositories/contracts/CardInvoiceRepository';
+import { CardInvoiceTotals } from '@modules/account/valueObjects/CardInvoiceWindow';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
   BudgetStatusAllocation,
@@ -41,6 +42,8 @@ const NO_SUGGESTION: BudgetSuggestion = {
   basisMonths: 0,
   income: { status: 'unavailable' },
   split: { status: 'unavailable' },
+  plan: null,
+  planEligible: false,
 };
 
 const makeProjection = (
@@ -168,10 +171,15 @@ const makeHorizonMonth = (
     ...overrides,
   }) as HorizonMonth;
 
-const makeInvoice = (overrides: Record<string, unknown> = {}) => ({
-  invoiceStatus: 'closed',
-  totalAmount: 10_000n,
-  transactions: [],
+const makeTotals = (
+  overrides: Partial<CardInvoiceTotals> = {},
+): CardInvoiceTotals => ({
+  chargesBeforePeriod: 0n,
+  paymentsBeforePeriod: 0n,
+  chargesInPeriod: 10_000n,
+  paymentsInPeriod: 0n,
+  paymentsAfterClosing: 0n,
+  pendingCharges: 0n,
   ...overrides,
 });
 
@@ -183,7 +191,7 @@ describe('GetAvailableToSpendService', () => {
   let findMonthSummary: jest.Mocked<FindMonthSummaryService>;
   let goalRepository: jest.Mocked<GoalRepository>;
   let listAccounts: jest.Mocked<ListAccountsService>;
-  let getInvoice: jest.Mocked<GetCreditCardInvoiceService>;
+  let cardInvoiceRepository: jest.Mocked<CardInvoiceRepository>;
   let getProjection: jest.Mocked<GetProjectionService>;
   let resolveSuggestion: jest.Mocked<ResolveBudgetSuggestionService>;
   let warn: jest.SpyInstance;
@@ -223,8 +231,10 @@ describe('GetAvailableToSpendService', () => {
         generatedAt: NOW,
       }),
     );
-  const givenInvoice = (invoice = makeInvoice()) =>
-    getInvoice.execute.mockResolvedValue(right(invoice as never));
+  const givenInvoice = (totals = makeTotals()) =>
+    cardInvoiceRepository.findTotals.mockImplementation(
+      async (_workspaceId, windows) => windows.map(() => totals),
+    );
   const dueIn = (days: number, overrides = {}) =>
     makeCreditCard({
       id: 'card-1',
@@ -243,7 +253,6 @@ describe('GetAvailableToSpendService', () => {
         income: {
           status: 'pending',
           incomeCents: 500_000,
-          base: 'median',
           incomeMonths: 3,
           zeroIncomeMonths: 0,
           fingerprint: 'income',
@@ -267,9 +276,10 @@ describe('GetAvailableToSpendService', () => {
     listAccounts = {
       execute: jest.fn(),
     } as unknown as jest.Mocked<ListAccountsService>;
-    getInvoice = {
-      execute: jest.fn(),
-    } as unknown as jest.Mocked<GetCreditCardInvoiceService>;
+    cardInvoiceRepository = {
+      findTotals: jest.fn(),
+      findPeriodTransactions: jest.fn(),
+    } as jest.Mocked<CardInvoiceRepository>;
     getProjection = {
       execute: jest.fn(),
     } as unknown as jest.Mocked<GetProjectionService>;
@@ -294,7 +304,11 @@ describe('GetAvailableToSpendService', () => {
       resolveMonthPlan,
       findMonthSummary,
       goalRepository,
-      new CardBillDueInsightService(listAccounts, getInvoice),
+      new CardBillDueInsightService(
+        listAccounts,
+        cardInvoiceRepository,
+        dateProvider,
+      ),
       new ProjectionShortfallInsightService(getProjection),
       makeBudgetSuggestionInsight(),
       workspaceTimezone,
@@ -493,7 +507,11 @@ describe('GetAvailableToSpendService', () => {
           resolveMonthPlan,
           findMonthSummary,
           goalRepository,
-          new CardBillDueInsightService(listAccounts, getInvoice),
+          new CardBillDueInsightService(
+            listAccounts,
+            cardInvoiceRepository,
+            dateProvider,
+          ),
           new ProjectionShortfallInsightService(getProjection),
           makeBudgetSuggestionInsight(),
           workspaceTimezone,
@@ -532,25 +550,99 @@ describe('GetAvailableToSpendService', () => {
       givenHorizon(makeHorizonMonth());
       const baseline = JSON.stringify(await run());
 
-      givenInvoice(
-        makeInvoice({
-          transactions: Array.from({ length: 6 }, (_, index) => ({
-            id: `parcel-${index}`,
-            status: 'PENDING',
-          })),
-          pendingAmount: 60_000n,
-        }),
-      );
+      givenInvoice(makeTotals({ pendingCharges: 60_000n }));
       givenHorizon(
         makeHorizonMonth({
           pendingInstallments: Array.from({ length: 6 }, () => ({})) as never,
         }),
       );
-      getInvoice.execute.mockClear();
+      cardInvoiceRepository.findTotals.mockClear();
       const withParcels = JSON.stringify(await run());
 
-      expect(getInvoice.execute).toHaveBeenCalledTimes(1);
+      expect(cardInvoiceRepository.findTotals).toHaveBeenCalledTimes(1);
       expect(withParcels).toBe(baseline);
+    });
+  });
+
+  describe('suggested plan', () => {
+    it('derives the figure from the suggested plan totals', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'suggested',
+        planTotalCents: 10_000,
+        spentCents: 4_000,
+        basisMonths: 3,
+      });
+      givenSummary(makeSummary(200));
+      goalRepository.sumMonthlyAporteCents.mockResolvedValue(300);
+
+      const response = await run();
+
+      expect(response).toMatchObject({
+        budget: {
+          exists: true,
+          source: 'suggested',
+          provisional: false,
+          totalTargetCents: 10_000,
+          totalSpentCents: 4_000,
+          basisMonths: 3,
+        },
+        remainingBudgetCents: 6_000,
+        spendableCents: 5_500,
+        perDayCents: 1_833,
+        state: 'within-budget',
+      });
+    });
+
+    it('is over budget when spending passes the suggested plan', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'suggested',
+        planTotalCents: 10_000,
+        spentCents: 12_000,
+        basisMonths: 3,
+      });
+      givenSummary(makeSummary());
+
+      const response = await run();
+
+      expect(response).toMatchObject({
+        spendableCents: -2_000,
+        perDayCents: null,
+        state: 'over-budget',
+      });
+      expect(response.insight?.code).toBe('OVER_BUDGET');
+    });
+
+    it('caches a fallback built on a failed suggestion for 60 seconds', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'nothing-observed',
+        recurringDueCents: 0,
+        spentCents: 0,
+        degraded: true,
+      });
+      givenSummary(makeSummary());
+
+      await run();
+
+      expect([...cache.ttls.values()]).toEqual([60]);
+    });
+
+    it('keeps the suggestion insight while the hero is suggested', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'suggested',
+        planTotalCents: 10_000,
+        spentCents: 1_000,
+        basisMonths: 3,
+      });
+      givenSummary(makeSummary());
+      givenPendingIncomeSuggestion();
+
+      const response = await run();
+
+      expect(response.insight?.code).toBe('BUDGET_SUGGESTION_READY');
     });
   });
 
@@ -695,10 +787,15 @@ describe('GetAvailableToSpendService', () => {
           monthProjectionRepository,
           workspaceTimezone,
           dateProvider,
+          resolveSuggestion,
         ),
         findMonthSummary,
         goalRepository,
-        new CardBillDueInsightService(listAccounts, getInvoice),
+        new CardBillDueInsightService(
+          listAccounts,
+          cardInvoiceRepository,
+          dateProvider,
+        ),
         new ProjectionShortfallInsightService(getProjection),
         makeBudgetSuggestionInsight(),
         workspaceTimezone,
@@ -729,12 +826,12 @@ describe('GetAvailableToSpendService', () => {
       expect(second).toEqual(first);
     });
 
-    it('keys the cache under v4', async () => {
+    it('keys the cache under v5', async () => {
       await service.execute(REQUEST);
 
       expect([...cache.values.keys()]).toEqual([
         expect.stringMatching(
-          /^dashboard:available-to-spend:v4:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
+          /^dashboard:available-to-spend:v5:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
         ),
       ]);
     });
@@ -780,12 +877,13 @@ describe('GetAvailableToSpendService', () => {
         args: { cardId: 'card-1', cardName: 'Nubank', days: 3 },
         href: '/accounts?card=card-1',
       });
-      expect(getInvoice.execute).toHaveBeenCalledWith({
-        ...REQUEST,
-        accountId: 'card-1',
-        month: 11,
-        year: 2026,
-      });
+      expect(cardInvoiceRepository.findTotals).toHaveBeenCalledWith('ws-1', [
+        expect.objectContaining({
+          accountId: 'card-1',
+          periodStart: '2026-10-14',
+          periodEnd: '2026-11-13',
+        }),
+      ]);
     });
 
     it('BUDGET_SUGGESTION_READY when nothing else applies', async () => {
@@ -924,7 +1022,7 @@ describe('GetAvailableToSpendService', () => {
       const response = await run();
 
       expect(response.insight).toBeNull();
-      expect(getInvoice.execute).not.toHaveBeenCalled();
+      expect(cardInvoiceRepository.findTotals).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('AccountScanTruncatedError'),
       );
@@ -939,7 +1037,8 @@ describe('GetAvailableToSpendService', () => {
 
       await run();
 
-      expect(getInvoice.execute).toHaveBeenCalledTimes(2);
+      expect(cardInvoiceRepository.findTotals).toHaveBeenCalledTimes(1);
+      expect(cardInvoiceRepository.findTotals.mock.calls[0][1]).toHaveLength(2);
     });
 
     it('rolls over the month when the due date is in the next month', async () => {
@@ -954,7 +1053,11 @@ describe('GetAvailableToSpendService', () => {
         resolveMonthPlan,
         findMonthSummary,
         goalRepository,
-        new CardBillDueInsightService(listAccounts, getInvoice),
+        new CardBillDueInsightService(
+          listAccounts,
+          cardInvoiceRepository,
+          dateProvider,
+        ),
         new ProjectionShortfallInsightService(getProjection),
         makeBudgetSuggestionInsight(),
         { execute: jest.fn().mockResolvedValue(TIMEZONE) } as never,
@@ -967,14 +1070,18 @@ describe('GetAvailableToSpendService', () => {
       expect(result.value).toMatchObject({
         insight: { args: { cardId: 'next', days: 4 } },
       });
-      expect(getInvoice.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ month: 12, year: 2026 }),
-      );
+      expect(cardInvoiceRepository.findTotals).toHaveBeenCalledWith('ws-1', [
+        expect.objectContaining({
+          accountId: 'next',
+          periodStart: '2026-10-28',
+          periodEnd: '2026-11-26',
+        }),
+      ]);
     });
 
     it.each([
-      ['paid invoice', makeInvoice({ invoiceStatus: 'paid' })],
-      ['zero amount', makeInvoice({ totalAmount: 0n })],
+      ['paid invoice', makeTotals({ paymentsInPeriod: 10_000n })],
+      ['zero amount', makeTotals({ chargesInPeriod: 0n })],
     ])('ignores a card with %s', async (_label, invoice) => {
       givenAccounts(dueIn(3));
       givenInvoice(invoice);
@@ -993,7 +1100,7 @@ describe('GetAvailableToSpendService', () => {
 
       const response = await run();
 
-      expect(getInvoice.execute).not.toHaveBeenCalled();
+      expect(cardInvoiceRepository.findTotals).not.toHaveBeenCalled();
       expect(response.insight).toBeNull();
     });
 

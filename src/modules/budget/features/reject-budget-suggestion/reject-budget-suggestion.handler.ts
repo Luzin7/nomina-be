@@ -65,7 +65,7 @@ export class RejectBudgetSuggestionService implements Service<
     workspaceId,
     kind,
   }: Request): Promise<Either<Error, SuggestionDecisionOutcome>> {
-    const resolved = await this.resolveSuggestion.execute({ workspaceId });
+    const resolved = await this.resolveSuggestion.resolveFresh({ workspaceId });
     if (resolved.isLeft()) return left(resolved.value);
 
     const { month } = resolved.value;
@@ -100,7 +100,7 @@ export class RejectBudgetSuggestionService implements Service<
     workspaceId: string,
     kind: SuggestionKind,
   ): Promise<Either<Error, SuggestionDecisionOutcome>> {
-    const current = await this.resolveSuggestion.execute({ workspaceId });
+    const current = await this.resolveSuggestion.resolveFresh({ workspaceId });
     if (current.isLeft()) return left(current.value);
 
     if (statusOf(kind, current.value) !== 'rejected') {

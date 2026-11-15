@@ -14,6 +14,8 @@ import { CreateTransactionService } from '@modules/transaction/features/create-t
 import { DeleteTransactionService } from '@modules/transaction/features/delete-transaction/delete-transaction.service';
 import { SetTransactionStatusService } from '@modules/transaction/features/set-transaction-status/set-transaction-status.service';
 import { UpdateTransactionService } from '@modules/transaction/features/update-transaction/update-transaction.service';
+import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { AdjustAccountBalanceService } from '@modules/account/features/adjust-account-balance/adjust-account-balance.service';
 import { SetAutopayService } from '@modules/account/features/set-autopay/set-autopay.service';
 import { SaveBudgetConfigService } from '@modules/budget/features/save-config/save-config.handler';
 import { SaveCardCycleBudgetService } from '@modules/card-cycle/features/save-card-cycle-budget/save-card-cycle-budget.handler';
@@ -47,7 +49,13 @@ const LEDGER_VISIBLE = [
   'list-transactions',
 ];
 
-const LEDGER_ROWS_VISIBLE = [...LEDGER_VISIBLE, 'month-pace', 'list-totals'];
+const LEDGER_ROWS_VISIBLE = [
+  ...LEDGER_VISIBLE,
+  'month-pace',
+  'list-totals',
+  'list-goals',
+  'goals-summary',
+];
 
 function daysFromToday({ seed }: FreshnessContext, days: number): string {
   return new Date(Date.parse(seed.today) + days * DAY_MS)
@@ -346,6 +354,25 @@ defineFreshnessSuite({
           status: TransactionStatus.PENDING,
         });
         await app.get(SettleCardInstallmentsJobService).execute();
+      },
+    },
+    {
+      name: 'adjust-account-balance',
+      changes: ['list-accounts', 'projection'],
+      run: async (context) => {
+        const account = await context.app
+          .get(AccountRepository)
+          .findById(context.seed.accountId);
+        const current = account?.balance ?? 0n;
+        unwrap(
+          await context.app.get(AdjustAccountBalanceService).execute({
+            ...actor(context),
+            id: randomUUID(),
+            accountId: context.seed.accountId,
+            expectedBalanceCents: Number(current),
+            targetBalanceCents: Number(current + AMOUNT),
+          } as never),
+        );
       },
     },
     {

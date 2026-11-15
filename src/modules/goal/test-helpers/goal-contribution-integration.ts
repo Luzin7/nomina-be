@@ -1,3 +1,5 @@
+import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { AccountRepositoryImplementation } from '@infra/databases/drizzle/repositories/account.repository';
 import * as schema from '@infra/databases/drizzle/schema';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { makeCheckingAccount } from '@modules/account/test-helpers/mock-factories';
@@ -167,7 +169,9 @@ export async function raceAccountDelete<T>(
   const acting = settle(act());
   await waitForLockWaiters(db, 1);
   const deleting = settle(
-    db.delete(schema.accounts).where(eq(schema.accounts.id, accountId)),
+    new AccountRepositoryImplementation({
+      db,
+    } as unknown as DrizzleService).delete(accountId),
   );
   if (deleteBlocks) await waitForLockWaiters(db, 2);
   if (!deleteBlocks) await deleting;

@@ -50,6 +50,10 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
     route: 'account:list',
     kinds: ['ledger'],
   },
+  'account/features/get-upcoming-invoices/get-upcoming-invoices.handler.ts': {
+    route: 'account:upcoming-invoices',
+    kinds: ['ledger'],
+  },
   'card-cycle/features/get-card-cycle-status/get-card-cycle-status.handler.ts':
     { route: 'account:cycle', kinds: ['ledger'] },
   'transaction/features/list-transaction/list-transaction.service.ts': {
@@ -60,7 +64,7 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
     { route: 'transaction:list-totals', kinds: ['ledger'] },
   'report/features/get-month-pace/get-month-pace.handler.ts': {
     route: 'report:month-pace',
-    kinds: ['ledger'],
+    kinds: ['ledger', 'category'],
   },
   'transaction/features/list-recurring-transactions/list-recurring-transactions.service.ts':
     { route: 'recurring:list', kinds: ['ledger', 'category'] },
@@ -70,6 +74,10 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
   },
   'transaction/features/recurring-suggestions/list-recurring-suggestions.service.ts':
     { route: 'suggestion:list', kinds: ['ledger', 'category'] },
+  'budget/services/resolve-budget-suggestion.service.ts': {
+    route: 'budget:suggestion',
+    kinds: ['ledger', 'category'],
+  },
 };
 
 const CATEGORY_LIST_READ =
@@ -113,6 +121,10 @@ const WRITES: Record<string, Kind[]> = {
   'account/features/update-account/update-account.service.ts': ['ledger'],
   'account/features/delete-account/delete-account.handler.ts': ['ledger'],
   'account/features/set-autopay/set-autopay.service.ts': ['ledger'],
+  'account/features/adjust-account-balance/adjust-account-balance.service.ts': [
+    'goal',
+    'ledger',
+  ],
   'budget/features/accept-income-suggestion/accept-income-suggestion.handler.ts':
     ['ledger'],
   'budget/features/accept-split-suggestion/accept-split-suggestion.handler.ts':

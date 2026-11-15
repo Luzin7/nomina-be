@@ -6,6 +6,7 @@ import {
   GoalRepository,
   UpdateGoalInput,
 } from '@modules/goal/repositories/contracts/GoalRepository';
+import { resolveGoalProgress } from '@modules/goal/services/resolve-goal-progress';
 import { invalidateGoalReads } from '@modules/goal/services/goal-cache';
 import { ValidateGoalLinksService } from '@modules/goal/services/validate-goal-links.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
@@ -56,6 +57,7 @@ export class UpdateGoalService implements Service<
     );
 
     if (!updated) return left(new GoalNotFoundError());
+    if (updated instanceof Error) return left(updated);
 
     await invalidateGoalReads(this.cache, workspaceId, 'update-goal');
 
@@ -82,11 +84,15 @@ function buildUpdateInput(
   body: UpdateGoalRequest,
   name: string | undefined,
   now: Date,
-): UpdateGoalInput {
+): UpdateGoalInput | Error {
+  const progress = resolveGoalProgress(current, body);
+  if (progress instanceof Error) return progress;
+
   return {
     name,
     targetCents: body.targetCents,
-    currentCents: body.currentCents,
+    currentCents: progress.currentCents,
+    progressSource: progress.progressSource,
     monthlyAporteCents: body.monthlyAporteCents,
     linkedAccountId: body.linkedAccountId,
     categoryId: body.categoryId,

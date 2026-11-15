@@ -7,6 +7,7 @@ import {
   calculateInstallmentEndDate,
   inferInstallmentCount,
   nextOccurrence,
+  nextOccurrenceAfter,
 } from './installmentSchedule';
 
 const dateProvider = {
@@ -253,7 +254,11 @@ describe('nextOccurrence parity with CalculateNextGenerationDateService', () => 
       timezone: RECURRING_GENERATION_TIMEZONE,
       ...overrides,
     });
-    return calculator.execute({ baseDate: startDate, ...input });
+    return calculator.execute({
+      ...input,
+      anchorDate: startDate,
+      baseDate: startDate,
+    });
   }
 
   function nextByHelper(startDate: Date, overrides = {}) {
@@ -276,15 +281,21 @@ describe('nextOccurrence parity with CalculateNextGenerationDateService', () => 
     );
   });
 
-  it('should match for monthly steps chained from Jan 31', () => {
-    const overrides = { frequency: RecurrenceFrequency.MONTHLY };
-    let helperDate = new Date('2099-01-31T03:00:00Z');
-    let calculatorDate = helperDate;
+  it('should match for monthly steps anchored on Jan 31', () => {
+    const anchorDate = new Date('2099-01-31T12:00:00Z');
+    const input = schedule({
+      startDate: anchorDate,
+      frequency: RecurrenceFrequency.MONTHLY,
+      timezone: RECURRING_GENERATION_TIMEZONE,
+    });
+    let baseDate = anchorDate;
 
     for (let step = 0; step < 3; step++) {
-      helperDate = nextByHelper(helperDate, overrides);
-      calculatorDate = nextByCalculator(calculatorDate, overrides);
-      expect(helperDate).toEqual(calculatorDate);
+      const helperDate = nextOccurrenceAfter(input, baseDate, realDateProvider);
+      expect(helperDate).toEqual(
+        calculator.execute({ ...input, anchorDate, baseDate }),
+      );
+      baseDate = helperDate;
     }
   });
 

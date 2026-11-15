@@ -204,6 +204,34 @@
       "when": 1794741660479,
       "tag": "0043_fix_legacy_utc_midnight_transaction_dates",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794743302092,
+      "tag": "0044_reconcile_legacy_credit_card_balance",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1794751654063,
+      "tag": "0045_deep_the_anarchist",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1794752054852,
+      "tag": "0046_pretty_caretaker",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794753740013,
+      "tag": "0047_bumpy_psynapse",
+      "breakpoints": true
     }
   ]
 }

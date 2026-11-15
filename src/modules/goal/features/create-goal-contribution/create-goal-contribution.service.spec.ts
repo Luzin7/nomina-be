@@ -2,6 +2,7 @@ import {
   GoalContributionIdConflictError,
   GoalLinkedAccountInvalidError,
   GoalNotFoundError,
+  GoalTracksAccountBalanceError,
 } from '@modules/goal/errors';
 import {
   goalGenerationKey,
@@ -155,6 +156,17 @@ describe('CreateGoalContributionService', () => {
     const result = await service.execute(REQUEST);
 
     expect(result.value).toBeInstanceOf(GoalLinkedAccountInvalidError);
+    expect(cache.counters.has(goalGenerationKey('ws-1'))).toBe(false);
+  });
+
+  it('maps the account-tracking refusal to a conflict without invalidating', async () => {
+    contributionRepository.recordContribution.mockResolvedValue({
+      status: 'goal-tracks-account',
+    });
+
+    const result = await service.execute(REQUEST);
+
+    expect(result.value).toBeInstanceOf(GoalTracksAccountBalanceError);
     expect(cache.counters.has(goalGenerationKey('ws-1'))).toBe(false);
   });
 });
