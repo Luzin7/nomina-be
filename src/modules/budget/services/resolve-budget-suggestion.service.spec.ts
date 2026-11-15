@@ -326,7 +326,7 @@ describe('ResolveBudgetSuggestionService', () => {
       await resolve();
 
       expect(cache.get).toHaveBeenCalledWith(
-        `budget:suggestion:v1:${WORKSPACE_ID}:g11:c22:2026-11-15`,
+        `budget:suggestion:v3:${WORKSPACE_ID}:g11:c22:2026-11-15`,
       );
     });
 
