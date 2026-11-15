@@ -11,7 +11,6 @@ import { BudgetSuggestionInsightService } from './budget-suggestion-insight.serv
 const PENDING_INCOME: IncomeSuggestion = {
   status: 'pending',
   incomeCents: 500_000,
-  base: 'median',
   incomeMonths: 3,
   zeroIncomeMonths: 0,
   fingerprint: 'income',

@@ -4,10 +4,7 @@ import {
   type BudgetSnapshot,
   type SuggestionParameters,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
-import {
-  inferIncome,
-  type IncomeBase,
-} from '@modules/budget/valueObjects/IncomeInference';
+import { inferIncome } from '@modules/budget/valueObjects/IncomeInference';
 import {
   resolveIncomeBracket,
   type ResolvedBracket,
@@ -51,7 +48,6 @@ export type IncomeSuggestion =
   | {
       status: 'pending';
       incomeCents: number;
-      base: IncomeBase;
       incomeMonths: number;
       zeroIncomeMonths: number;
       fingerprint: string;
@@ -125,7 +121,7 @@ export class ResolveBudgetSuggestionService implements Service<
     const now = this.dateProvider.now();
     const key = buildCacheKey({
       route: 'budget:suggestion',
-      version: 'v3',
+      version: 'v4',
       workspaceId,
       generations: { ledger, category },
       parts: [this.dateProvider.format(now, 'YYYY-MM-DD', timezone)],
@@ -251,18 +247,16 @@ export class ResolveBudgetSuggestionService implements Service<
       return { status: status === 'pending' ? 'unavailable' : status };
     }
 
-    const { incomeCents, base, incomeMonths, zeroIncomeMonths } = inferred;
+    const { incomeCents, incomeMonths, zeroIncomeMonths } = inferred;
 
     return {
       status: 'pending',
       incomeCents,
-      base,
       incomeMonths,
       zeroIncomeMonths,
       fingerprint: fingerprintOf({
         kind: 'income',
         incomeCents,
-        base,
         incomeMonths,
         zeroIncomeMonths,
       }),

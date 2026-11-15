@@ -23,7 +23,6 @@ const makeSuggestion = (
   income: {
     status: 'pending',
     incomeCents: 500_000,
-    base: 'median',
     incomeMonths: 3,
     zeroIncomeMonths: 0,
     fingerprint: 'income-fingerprint',
