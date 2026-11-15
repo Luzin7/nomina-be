@@ -242,6 +242,7 @@ describe('FindMonthSummaryService', () => {
         totalIncome: 0,
         totalExpense: 0,
         pending: { totalIncome: 0, totalExpense: 0 },
+        completedCount: 0,
         plainExpenses: [10, 11, 12, 13, 14, 28].map((day) => ({
           day,
           categoryId: 'cat-daily',
