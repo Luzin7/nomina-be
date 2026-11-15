@@ -1,7 +1,11 @@
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
-import { GetCreditCardInvoiceService } from '@modules/account/features/get-credit-card-invoice/get-credit-card-invoice.handler';
 import { ListAccountsService } from '@modules/account/features/list-accounts/list-accounts.service';
+import { CardInvoiceRepository } from '@modules/account/repositories/contracts/CardInvoiceRepository';
+import { cardInvoiceWindowOf } from '@modules/account/valueObjects/CardInvoiceWindow';
+import { InvoiceCalendar } from '@modules/account/valueObjects/InvoiceCalendar';
+import { buildInvoiceStatementFromTotals } from '@modules/account/valueObjects/InvoiceStatement';
 import { Injectable } from '@nestjs/common';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { AccountScanTruncatedError } from '../errors';
 import type { AvailableToSpendInsight } from '../valueObjects/AvailableToSpend';
 import {
@@ -14,6 +18,9 @@ const PT_BR = 'pt-BR';
 
 type Request = { workspaceId: string; sub: string; today: string };
 
+const invoiceKeyOf = ({ year, month }: CardDueInWindow): string =>
+  `${year}-${String(month).padStart(2, '0')}`;
+
 const byNearestThenName = (a: CardDueInWindow, b: CardDueInWindow): number =>
   a.days - b.days || a.card.name.localeCompare(b.card.name, PT_BR);
 
@@ -21,12 +28,12 @@ const byNearestThenName = (a: CardDueInWindow, b: CardDueInWindow): number =>
 export class CardBillDueInsightService {
   constructor(
     private readonly listAccounts: ListAccountsService,
-    private readonly getCreditCardInvoice: GetCreditCardInvoiceService,
+    private readonly cardInvoiceRepository: CardInvoiceRepository,
+    private readonly dateProvider: DateProvider,
   ) {}
 
   async execute({
     workspaceId,
-    sub,
     today,
   }: Request): Promise<AvailableToSpendInsight | null> {
     const listed = await this.listAccounts.execute({
@@ -46,14 +53,27 @@ export class CardBillDueInsightService {
       .map((card) => findCardDueInWindow(card, today))
       .filter((entry): entry is CardDueInWindow => entry !== null);
 
-    const payable = await Promise.all(
-      due.map(async (entry) =>
-        (await this.hasAmountDue(entry, { workspaceId, sub })) ? entry : null,
+    if (due.length === 0) return null;
+
+    const totals = await this.cardInvoiceRepository.findTotals(
+      workspaceId,
+      due.map((entry) =>
+        cardInvoiceWindowOf(
+          entry.card,
+          new InvoiceCalendar({
+            closingDaysBeforeDue: entry.card.closingDaysBeforeDue,
+            dueDay: entry.card.dueDay as number,
+          }),
+          invoiceKeyOf(entry),
+          this.todayOf(entry.card),
+        ),
       ),
     );
-    const [nearest] = payable
-      .filter((entry): entry is CardDueInWindow => entry !== null)
-      .sort(byNearestThenName);
+    const payable = due.filter(
+      (_entry, index) =>
+        buildInvoiceStatementFromTotals(totals[index]).remaining > 0n,
+    );
+    const [nearest] = payable.sort(byNearestThenName);
     if (!nearest) return null;
 
     return {
@@ -68,20 +88,11 @@ export class CardBillDueInsightService {
     };
   }
 
-  private async hasAmountDue(
-    { card, month, year }: CardDueInWindow,
-    identity: { workspaceId: string; sub: string },
-  ): Promise<boolean> {
-    const invoice = await this.getCreditCardInvoice.execute({
-      ...identity,
-      accountId: card.id,
-      month,
-      year,
-    });
-    if (invoice.isLeft()) throw invoice.value;
-
-    return (
-      invoice.value.invoiceStatus !== 'paid' && invoice.value.totalAmount > 0n
+  private todayOf(card: CreditCard): string {
+    return this.dateProvider.format(
+      this.dateProvider.now(),
+      'YYYY-MM-DD',
+      card.timezone,
     );
   }
 }
