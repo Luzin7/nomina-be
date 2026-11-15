@@ -4,6 +4,7 @@ import { DateProvider } from '@providers/date/contracts/DateProvider';
 export const MAX_INSTALLMENTS = 365;
 
 const DAYS_PER_WEEK = 7;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const HALF_DAY_IN_MS = 12 * 60 * 60 * 1000;
 const LOCAL_DATE_FORMAT = 'YYYY-MM-DD';
 
@@ -62,6 +63,77 @@ export function nextOccurrence(
   dateProvider: DateAdder,
 ): Date {
   return addOccurrences(schedule, 1, dateProvider);
+}
+
+const MONTHS_PER_YEAR = 12;
+const YEAR_MONTH_FORMAT = 'YYYY-MM';
+
+type CalendarStepper = Pick<DateProvider, 'add' | 'format'>;
+
+function localMonthIndex(
+  date: Date,
+  timezone: string,
+  dateProvider: Pick<DateProvider, 'format'>,
+): number {
+  const [year, month] = dateProvider
+    .format(date, YEAR_MONTH_FORMAT, timezone)
+    .split('-')
+    .map(Number);
+
+  return year * MONTHS_PER_YEAR + month;
+}
+
+function calendarPeriodIndex(
+  schedule: ScheduleBase,
+  date: Date,
+  dateProvider: Pick<DateProvider, 'format'>,
+): number {
+  const months =
+    localMonthIndex(date, schedule.timezone, dateProvider) -
+    localMonthIndex(schedule.startDate, schedule.timezone, dateProvider);
+  const monthsPerPeriod =
+    schedule.frequency === RecurrenceFrequency.YEARLY
+      ? MONTHS_PER_YEAR * schedule.interval
+      : schedule.interval;
+
+  return Math.floor(months / monthsPerPeriod);
+}
+
+function weeklyOccurrenceAfter(
+  schedule: ScheduleBase,
+  after: Date,
+  dateProvider: DateAdder,
+): Date {
+  const weekMs = schedule.interval * DAYS_PER_WEEK * DAY_IN_MS;
+  let index = Math.max(
+    1,
+    Math.floor((after.getTime() - schedule.startDate.getTime()) / weekMs),
+  );
+  let candidate = addOccurrences(schedule, index, dateProvider);
+
+  while (candidate.getTime() <= after.getTime()) {
+    index++;
+    candidate = addOccurrences(schedule, index, dateProvider);
+  }
+
+  return candidate;
+}
+
+export function nextOccurrenceAfter(
+  schedule: ScheduleBase,
+  after: Date,
+  dateProvider: CalendarStepper,
+): Date {
+  if (after.getTime() < schedule.startDate.getTime()) {
+    return schedule.startDate;
+  }
+  if (schedule.frequency === RecurrenceFrequency.WEEKLY) {
+    return weeklyOccurrenceAfter(schedule, after, dateProvider);
+  }
+
+  const period = calendarPeriodIndex(schedule, after, dateProvider);
+
+  return addOccurrences(schedule, period + 1, dateProvider);
 }
 
 export function calculateInstallmentEndDate(

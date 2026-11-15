@@ -24,7 +24,7 @@ import {
   readLedgerGeneration,
 } from '@shared/cache/report-cache';
 import { Either, right } from '@shared/core/errors/Either';
-import { nextOccurrence } from '@utils/installmentSchedule';
+import { nextOccurrenceAfter } from '@utils/installmentSchedule';
 
 type Request = TokenPayloadBase;
 
@@ -194,13 +194,14 @@ export class FindMonthSummaryService implements Service<
       ledger,
       recurringRules,
       nextOccurrence: (date, rule) =>
-        nextOccurrence(
+        nextOccurrenceAfter(
           {
-            startDate: date,
+            startDate: rule.startDate,
             frequency: rule.frequency,
             interval: rule.interval,
             timezone: RECURRING_GENERATION_TIMEZONE,
           },
+          date,
           this.dateProvider,
         ),
     });
