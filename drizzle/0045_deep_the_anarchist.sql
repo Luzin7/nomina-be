@@ -1,3 +1,4 @@
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 CREATE TABLE "balance_adjustments" (
 	"id" text PRIMARY KEY NOT NULL,
 	"workspace_id" text NOT NULL,
