@@ -14,6 +14,7 @@ import type { PendingInstallment } from '@modules/report/valueObjects/Projection
 import { SYSTEM_CATEGORY_LIST } from '@modules/category/constants/system-categories';
 import { Injectable } from '@nestjs/common';
 import {
+  AnyColumn,
   and,
   eq,
   gte,
@@ -42,6 +43,11 @@ const SYSTEM_CATEGORY_IDS = SYSTEM_CATEGORY_LIST.map((category) => category.id);
 
 const INCOME_OR_EXPENSE = ['INCOME', 'EXPENSE'];
 
+const epochMsInUtc = (column: AnyColumn) =>
+  sql<string>`(EXTRACT(EPOCH FROM (${column}::timestamp AT TIME ZONE 'UTC')) * 1000)::bigint`;
+
+const epochMsToDate = (epochMs: string) => new Date(Number(epochMs));
+
 type RecurringRuleRow = {
   id: string;
   type: string;
@@ -49,9 +55,9 @@ type RecurringRuleRow = {
   amount: number;
   frequency: string;
   interval: number;
-  startDate: Date;
-  endDate: Date | null;
-  lastGenerated: Date | null;
+  startDateEpochMs: string;
+  endDateEpochMs: string | null;
+  lastGeneratedEpochMs: string | null;
   materializedDates: number[];
 };
 
@@ -140,9 +146,9 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
         amount: recurringTransactions.amount,
         frequency: recurringTransactions.frequency,
         interval: recurringTransactions.interval,
-        startDate: recurringTransactions.startDate,
-        endDate: recurringTransactions.endDate,
-        lastGenerated: recurringTransactions.lastGenerated,
+        startDateEpochMs: epochMsInUtc(recurringTransactions.startDate),
+        endDateEpochMs: epochMsInUtc(recurringTransactions.endDate),
+        lastGeneratedEpochMs: epochMsInUtc(recurringTransactions.lastGenerated),
         materializedDates: sql<number[]>`COALESCE((
           SELECT json_agg(
             (EXTRACT(EPOCH FROM (materialized.date::timestamp AT TIME ZONE 'UTC')) * 1000)::bigint
@@ -175,9 +181,11 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
       amount: row.amount,
       frequency: row.frequency as RecurrenceFrequency,
       interval: row.interval,
-      startDate: row.startDate,
-      endDate: row.endDate,
-      lastGenerated: row.lastGenerated,
+      startDate: epochMsToDate(row.startDateEpochMs),
+      endDate: row.endDateEpochMs ? epochMsToDate(row.endDateEpochMs) : null,
+      lastGenerated: row.lastGeneratedEpochMs
+        ? epochMsToDate(row.lastGeneratedEpochMs)
+        : null,
       materializedDates: row.materializedDates.map(
         (epochMs) => new Date(epochMs),
       ),
@@ -190,7 +198,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
   ): Promise<PendingInstallment[]> {
     const rows = await this.drizzle.db
       .select({
-        date: transactions.date,
+        dateEpochMs: epochMsInUtc(transactions.date),
         amount: transactions.amount,
         type: transactions.type,
         recurringId: transactions.recurringId,
@@ -209,8 +217,9 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
       )
       .orderBy(transactions.date);
 
-    return rows.map((row) => ({
+    return rows.map(({ dateEpochMs, ...row }) => ({
       ...row,
+      date: epochMsToDate(dateEpochMs),
       type: row.type as PendingInstallment['type'],
     }));
   }
