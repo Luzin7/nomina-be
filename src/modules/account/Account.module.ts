@@ -11,8 +11,12 @@ import { FindAccountController } from './features/find-account/find-account.cont
 import { FindAccountByIdService } from './features/find-account/find-account.handler';
 import { GetCreditCardInvoiceController } from './features/get-credit-card-invoice/get-credit-card-invoice.controller';
 import { GetCreditCardInvoiceService } from './features/get-credit-card-invoice/get-credit-card-invoice.handler';
+import { GetUpcomingInvoicesController } from './features/get-upcoming-invoices/get-upcoming-invoices.controller';
+import { GetUpcomingInvoicesService } from './features/get-upcoming-invoices/get-upcoming-invoices.handler';
 import { ListAccountsController } from './features/list-accounts/list-accounts.controller';
 import { ListAccountsService } from './features/list-accounts/list-accounts.service';
+import { ListOpenCardInvoicesController } from './features/list-open-card-invoices/list-open-card-invoices.controller';
+import { ListOpenCardInvoicesService } from './features/list-open-card-invoices/list-open-card-invoices.handler';
 import { SetAutopayController } from './features/set-autopay/set-autopay.controller';
 import { SetAutopayService } from './features/set-autopay/set-autopay.service';
 import { UpdateAccountController } from './features/update-account/update-account.controller';
@@ -27,7 +31,9 @@ import { DateModule } from '@providers/date/Date.module';
     DeleteAccountController,
     FindAccountController,
     ListAccountsController,
+    ListOpenCardInvoicesController,
     GetCreditCardInvoiceController,
+    GetUpcomingInvoicesController,
     PayCreditCardInvoiceController,
   ],
   providers: [
@@ -37,7 +43,9 @@ import { DateModule } from '@providers/date/Date.module';
     DeleteAccountService,
     FindAccountByIdService,
     ListAccountsService,
+    ListOpenCardInvoicesService,
     GetCreditCardInvoiceService,
+    GetUpcomingInvoicesService,
     PayCreditCardInvoiceService,
   ],
   exports: [
