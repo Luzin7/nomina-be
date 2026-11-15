@@ -173,4 +173,19 @@ describe('InvoiceCalendar', () => {
       }
     });
   });
+
+  describe('nextKey', () => {
+    const calendar = new InvoiceCalendar({
+      dueDay: 15,
+      closingDaysBeforeDue: 5,
+    });
+
+    it('advances inside a year', () => {
+      expect(calendar.nextKey('2026-10')).toBe('2026-11');
+    });
+
+    it('rolls December into January', () => {
+      expect(calendar.nextKey('2026-12')).toBe('2027-01');
+    });
+  });
 });
