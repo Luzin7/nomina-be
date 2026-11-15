@@ -3,6 +3,39 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.4.0](https://github.com/Luzin7/nomina-be/compare/v2.3.1...v2.4.0) (2026-11-15)
+
+### Features
+
+* **accounts:** add balance adjustment endpoint ([e5c8c12](https://github.com/Luzin7/nomina-be/commit/e5c8c12a50840ad881070a48194dc929f2e41cce))
+* **accounts:** add balance_adjustments table ([f49fb1a](https://github.com/Luzin7/nomina-be/commit/f49fb1a267b2483a752b1d5e9d21cd8f87c077c2))
+* **account:** upcoming card invoices endpoint ([b6d41f2](https://github.com/Luzin7/nomina-be/commit/b6d41f2a6d957f0417b5b0101abde922cd798f80))
+* **budget:** accept split with edited allocations ([27e935c](https://github.com/Luzin7/nomina-be/commit/27e935c06b0438f0e46cd095e4ef8a6e1682084a))
+* **budget:** cache suggestion with single-flight ([aecb70e](https://github.com/Luzin7/nomina-be/commit/aecb70e9fbabd515f5577fc456457ba715679c5c))
+* **budget:** compute suggested plan in a module ([c1af5f0](https://github.com/Luzin7/nomina-be/commit/c1af5f07630a7743b13c3a3ef6dda527e72b7fcc))
+* **budget:** serve the suggested plan on the hero and month pace ([b850ad4](https://github.com/Luzin7/nomina-be/commit/b850ad4d88413ce468d14c13728cbf97e85366d6))
+* **budget:** use median income and yield filter ([10d15db](https://github.com/Luzin7/nomina-be/commit/10d15db90d1a072bec8445a7e0b3b67f3bd92c36))
+* **cache:** log read-through cache misses ([0db2ec8](https://github.com/Luzin7/nomina-be/commit/0db2ec81732dc5c1ba5effc29381ffa7a1d06a65))
+* **goal:** derive goal progress from the linked account ([db4aa67](https://github.com/Luzin7/nomina-be/commit/db4aa670b49b2bca7f0597ac41ab1207f18a230f))
+* **goals:** add progress source to goals ([0a1c03f](https://github.com/Luzin7/nomina-be/commit/0a1c03f8423a7e2d32776a69a08da0875f1e3de4))
+* **report:** add plan eligibility from completed months ([82376cc](https://github.com/Luzin7/nomina-be/commit/82376ccab21abc6c9da1a33b2fd851ff5013aa48))
+
+### Bug Fixes
+
+* **budget:** anchor glide step on first income ([2215873](https://github.com/Luzin7/nomina-be/commit/2215873641be95d7cdeae56b4376ea1e803ac254))
+* **budget:** skip only the month of a split rejection ([b553541](https://github.com/Luzin7/nomina-be/commit/b55354157c49a915bd67af9a2a79e3eccffbefec))
+* **budget:** skip only the month on later reject ([7345e10](https://github.com/Luzin7/nomina-be/commit/7345e1041a9e9e69295640ba2e252ec552dc1a4b))
+* **db:** reconcile legacy credit card balance drift with a RECONCILIATION movement ([d97bc14](https://github.com/Luzin7/nomina-be/commit/d97bc14c352e5da75aa39dd906a58cf397a95e78))
+* **db:** scope 0044 post-deploy check to the reconciled card and rename its integration spec ([31cf1fc](https://github.com/Luzin7/nomina-be/commit/31cf1fc20c3412f02e54bd84eafb485bcfb585e7))
+* **goal:** return the linked account balance from goal create ([15599f7](https://github.com/Luzin7/nomina-be/commit/15599f7634c70e29af81dcde657f3253c0720300))
+* **recurring:** anchor monthly and yearly dates ([9382b3a](https://github.com/Luzin7/nomina-be/commit/9382b3a8f103140a953930f94bd91a7e1662f427))
+* **report:** report suggestion failures and cache the fallback briefly ([a45b5aa](https://github.com/Luzin7/nomina-be/commit/a45b5aaf2b4f5c35974f4985b07dfd5c1bbc5739))
+
+### Performance Improvements
+
+* **account:** batch card invoice totals in SQL ([002c2d5](https://github.com/Luzin7/nomina-be/commit/002c2d5469053a2e8d0486d3886013bd741be719))
+* **report:** use cached Intl for zoned dates ([d4e8599](https://github.com/Luzin7/nomina-be/commit/d4e8599443dc30df24d23c943a8aaf326917d569))
+
 ## [2.3.1](https://github.com/Luzin7/nomina-be/compare/v2.3.0...v2.3.1) (2026-11-15)
 
 ### Bug Fixes
