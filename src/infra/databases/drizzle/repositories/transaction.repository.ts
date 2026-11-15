@@ -719,25 +719,4 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
       sql`${transactionDay} <= ${today}`,
     );
   }
-
-  async findCreditCardLedger(
-    accountId: string,
-    workspaceId: string,
-  ): Promise<Transaction[]> {
-    const rows = await this.drizzle.db
-      .select()
-      .from(schema.transactions)
-      .where(
-        and(
-          eq(schema.transactions.workspaceId, workspaceId),
-          or(
-            eq(schema.transactions.accountId, accountId),
-            eq(schema.transactions.destinationAccountId, accountId),
-          ),
-        ),
-      )
-      .orderBy(desc(schema.transactions.date));
-
-    return rows.map(TransactionMapper.toDomain);
-  }
 }

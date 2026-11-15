@@ -1,4 +1,3 @@
-import { TransactionStatus } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
   AccountNotFoundError,
@@ -6,16 +5,13 @@ import {
   CreditCardCycleNotConfiguredError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { CardInvoiceRepository } from '@modules/account/repositories/contracts/CardInvoiceRepository';
 import {
   makeCheckingAccount,
   makeCreditCard,
 } from '@modules/account/test-helpers/mock-factories';
-import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
-import {
-  makeCompletedCharge,
-  makeCompletedPayment,
-  makeTransaction,
-} from '@modules/transaction/test-helpers/mock-factories';
+import { CardInvoiceTotals } from '@modules/account/valueObjects/CardInvoiceWindow';
+import { makeCompletedCharge } from '@modules/transaction/test-helpers/mock-factories';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { GetCreditCardInvoiceService } from './get-credit-card-invoice.handler';
@@ -35,18 +31,22 @@ function makeRequest(
   } as ServiceRequest;
 }
 
-const middayOf = (date: string) => new Date(`${date}T12:00:00Z`);
-
-const chargeOn = (date: string, amount: bigint) =>
-  makeCompletedCharge(amount, { date: middayOf(date) });
-
-const paymentOn = (date: string, amount: bigint) =>
-  makeCompletedPayment(amount, { date: middayOf(date) });
+const makeTotals = (
+  overrides: Partial<CardInvoiceTotals> = {},
+): CardInvoiceTotals => ({
+  chargesBeforePeriod: 0n,
+  paymentsBeforePeriod: 0n,
+  chargesInPeriod: 0n,
+  paymentsInPeriod: 0n,
+  paymentsAfterClosing: 0n,
+  pendingCharges: 0n,
+  ...overrides,
+});
 
 describe('GetCreditCardInvoiceService', () => {
   let service: GetCreditCardInvoiceService;
   let accountRepository: jest.Mocked<AccountRepository>;
-  let transactionRepository: jest.Mocked<TransactionRepository>;
+  let cardInvoiceRepository: jest.Mocked<CardInvoiceRepository>;
   let dateProvider: DayJsDateProvider;
 
   beforeEach(() => {
@@ -63,20 +63,10 @@ describe('GetCreditCardInvoiceService', () => {
       updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
-    transactionRepository = {
-      create: jest.fn(),
-      findUniqueById: jest.fn(),
-      listTransactionsByWorkspaceId: jest.fn(),
-      sumTransactionsByWorkspaceId: jest.fn(),
-      getTopExpensesByCategory: jest.fn(),
-      createWithBalanceUpdate: jest.fn(),
-      createInstallmentPlan: jest.fn(),
-      updateWithBalanceEffect: jest.fn(),
-      deleteWithBalanceEffect: jest.fn(),
-      updateStatusWithBalanceEffect: jest.fn(),
-      findCreditCardLedger: jest.fn().mockResolvedValue([]),
-      findDueCardTransactions: jest.fn(),
-    } as jest.Mocked<TransactionRepository>;
+    cardInvoiceRepository = {
+      findTotals: jest.fn().mockResolvedValue([makeTotals()]),
+      findPeriodTransactions: jest.fn().mockResolvedValue([]),
+    } as jest.Mocked<CardInvoiceRepository>;
 
     dateProvider = new DayJsDateProvider();
     jest
@@ -85,7 +75,7 @@ describe('GetCreditCardInvoiceService', () => {
 
     service = new GetCreditCardInvoiceService(
       accountRepository,
-      transactionRepository,
+      cardInvoiceRepository,
       dateProvider,
     );
   });
@@ -144,10 +134,15 @@ describe('GetCreditCardInvoiceService', () => {
       expect(result.value.invoiceStatus).toBe('current');
     }
 
-    expect(transactionRepository.findCreditCardLedger).toHaveBeenCalledWith(
-      'acc-1',
-      'ws-1',
-    );
+    expect(cardInvoiceRepository.findTotals).toHaveBeenCalledWith('ws-1', [
+      {
+        accountId: 'acc-1',
+        timezone: 'America/Sao_Paulo',
+        periodStart: '2026-10-11',
+        periodEnd: '2026-11-10',
+        today: '2026-10-15',
+      },
+    ]);
   });
 
   it('should resolve a requested invoice by its due month', async () => {
@@ -166,10 +161,8 @@ describe('GetCreditCardInvoiceService', () => {
 
   it('should subtract payments made after the closing from totalAmount', async () => {
     accountRepository.findById.mockResolvedValue(makeCreditCard());
-    transactionRepository.findCreditCardLedger.mockResolvedValue([
-      chargeOn('2026-09-20', 5000n),
-      chargeOn('2026-09-21', 5000n),
-      paymentOn('2026-10-12', 3000n),
+    cardInvoiceRepository.findTotals.mockResolvedValue([
+      makeTotals({ chargesBeforePeriod: 10000n, paymentsAfterClosing: 3000n }),
     ]);
 
     const result = await service.execute(
@@ -184,9 +177,8 @@ describe('GetCreditCardInvoiceService', () => {
 
   it('should not let totalAmount go negative when payments exceed charges', async () => {
     accountRepository.findById.mockResolvedValue(makeCreditCard());
-    transactionRepository.findCreditCardLedger.mockResolvedValue([
-      chargeOn('2026-09-20', 5000n),
-      paymentOn('2026-10-12', 9000n),
+    cardInvoiceRepository.findTotals.mockResolvedValue([
+      makeTotals({ chargesBeforePeriod: 5000n, paymentsAfterClosing: 9000n }),
     ]);
 
     const result = await service.execute(
@@ -201,9 +193,8 @@ describe('GetCreditCardInvoiceService', () => {
 
   it('should mark the invoice as paid when payments settle it', async () => {
     accountRepository.findById.mockResolvedValue(makeCreditCard());
-    transactionRepository.findCreditCardLedger.mockResolvedValue([
-      chargeOn('2026-08-20', 5000n),
-      paymentOn('2026-09-12', 5000n),
+    cardInvoiceRepository.findTotals.mockResolvedValue([
+      makeTotals({ chargesBeforePeriod: 5000n, paymentsInPeriod: 5000n }),
     ]);
 
     const result = await service.execute(makeRequest({ month: 9, year: 2026 }));
@@ -214,16 +205,14 @@ describe('GetCreditCardInvoiceService', () => {
     }
   });
 
-  it('should credit an advance payment to the invoice whose period contains it, whatever its tag', async () => {
+  it('should build the statement from the totals', async () => {
     accountRepository.findById.mockResolvedValue(makeCreditCard());
-    transactionRepository.findCreditCardLedger.mockResolvedValue([
-      chargeOn('2026-08-20', 1000n),
-      paymentOn('2026-09-12', 1000n),
-      chargeOn('2026-09-20', 600n),
-      makeCompletedPayment(300n, {
-        date: middayOf('2026-09-25'),
-        invoicePeriodMonth: 9,
-        invoicePeriodYear: 2026,
+    cardInvoiceRepository.findTotals.mockResolvedValue([
+      makeTotals({
+        chargesBeforePeriod: 1000n,
+        paymentsBeforePeriod: 1000n,
+        chargesInPeriod: 600n,
+        paymentsInPeriod: 300n,
       }),
     ]);
 
@@ -233,23 +222,16 @@ describe('GetCreditCardInvoiceService', () => {
 
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
-      expect(result.value.previousBalance).toBe(1000n);
+      expect(result.value.previousBalance).toBe(0n);
       expect(result.value.statementTotal).toBe(300n);
       expect(result.value.totalAmount).toBe(300n);
     }
   });
 
-  it('should count an income on the card as a credit', async () => {
+  it('should return the period transactions from the repository', async () => {
+    const charge = makeCompletedCharge(600n);
     accountRepository.findById.mockResolvedValue(makeCreditCard());
-    transactionRepository.findCreditCardLedger.mockResolvedValue([
-      chargeOn('2026-09-20', 1000n),
-      makeTransaction({
-        accountId: 'acc-1',
-        type: 'INCOME',
-        amount: 400n,
-        date: middayOf('2026-09-22'),
-      }),
-    ]);
+    cardInvoiceRepository.findPeriodTransactions.mockResolvedValue([charge]);
 
     const result = await service.execute(
       makeRequest({ month: 10, year: 2026 }),
@@ -257,28 +239,7 @@ describe('GetCreditCardInvoiceService', () => {
 
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
-      expect(result.value.totalAmount).toBe(600n);
-    }
-  });
-
-  it('should list only the transactions dated within the invoice period', async () => {
-    const charge = chargeOn('2026-09-20', 600n);
-    const payment = paymentOn('2026-09-25', 300n);
-    accountRepository.findById.mockResolvedValue(makeCreditCard());
-    transactionRepository.findCreditCardLedger.mockResolvedValue([
-      chargeOn('2026-08-20', 1000n),
-      charge,
-      payment,
-      paymentOn('2026-10-12', 300n),
-    ]);
-
-    const result = await service.execute(
-      makeRequest({ month: 10, year: 2026 }),
-    );
-
-    expect(result.isRight()).toBe(true);
-    if (result.isRight()) {
-      expect(result.value.transactions).toEqual([charge, payment]);
+      expect(result.value.transactions).toEqual([charge]);
     }
   });
 
@@ -286,12 +247,8 @@ describe('GetCreditCardInvoiceService', () => {
     accountRepository.findById.mockResolvedValue(
       makeCreditCard({ creditLimit: 10000n }),
     );
-    transactionRepository.findCreditCardLedger.mockResolvedValue([
-      chargeOn('2026-10-12', 8000n),
-      makeCompletedCharge(6000n, {
-        date: middayOf('2026-10-20'),
-        status: TransactionStatus.PENDING,
-      }),
+    cardInvoiceRepository.findTotals.mockResolvedValue([
+      makeTotals({ chargesInPeriod: 8000n, pendingCharges: 6000n }),
     ]);
 
     const result = await service.execute(makeRequest());
