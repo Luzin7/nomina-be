@@ -1,4 +1,4 @@
-import { AccountType } from '@constants/enums';
+import { AccountType, GoalProgressSource } from '@constants/enums';
 import type { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import type { Category } from '@modules/category/entities/Category';
@@ -21,6 +21,8 @@ export function makeGoalRecord(
     currentCents: 0,
     monthlyAporteCents: 0,
     linkedAccountId: null,
+    progressSource: GoalProgressSource.MANUAL,
+    linkedAccountBalanceCents: null,
     categoryId: null,
     isEmergency: false,
     isSystem: false,

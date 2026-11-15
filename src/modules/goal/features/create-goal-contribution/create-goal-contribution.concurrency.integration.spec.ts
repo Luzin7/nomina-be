@@ -1,8 +1,10 @@
+import { GoalProgressSource } from '@constants/enums';
 import * as schema from '@infra/databases/drizzle/schema';
 import {
   GoalContributionIdConflictError,
   GoalLinkedAccountInvalidError,
   GoalNotFoundError,
+  GoalTracksAccountBalanceError,
 } from '@modules/goal/errors';
 import {
   ContributionHarness,
@@ -327,5 +329,28 @@ describe('goal contribution POST against a real postgres', () => {
       { amountCents: AMOUNT_CENTS, sourceAccountId: null },
     ]);
     expect(await currentCentsOf(seed.goalId)).toBe(AMOUNT_CENTS);
+  });
+
+  it('refuses a contribution on an account-sourced goal and writes nothing', async () => {
+    const seed = await seedGoal(harness);
+    await harness.db
+      .update(schema.goals)
+      .set({
+        linkedAccountId: seed.accountId,
+        progressSource: GoalProgressSource.ACCOUNT,
+      })
+      .where(eq(schema.goals.id, seed.goalId));
+    const id = randomUUID();
+
+    const result = await service.execute({
+      workspaceId: seed.workspaceId,
+      goalId: seed.goalId,
+      id,
+      amountCents: AMOUNT_CENTS,
+    });
+
+    expect(result.value).toBeInstanceOf(GoalTracksAccountBalanceError);
+    expect(await rowsOf(id)).toHaveLength(0);
+    expect(await currentCentsOf(seed.goalId)).toBe(0);
   });
 });

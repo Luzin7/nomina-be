@@ -1,5 +1,6 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
+import { GoalProgressSource } from '@constants/enums';
 import { EMERGENCY_GOAL_NAME } from '@modules/goal/constants/goal';
 import {
   PostgreSqlContainer,
@@ -113,6 +114,70 @@ describe('GoalRepositoryImplementation against a real postgres', () => {
       await expect(repository.sumMonthlyAporteCents(workspaceId)).resolves.toBe(
         0,
       );
+    });
+  });
+
+  async function seedAccount(balance: number): Promise<string> {
+    const id = randomUUID();
+    await db.insert(schema.accounts).values({
+      id,
+      workspaceId,
+      name: `Conta ${id}`,
+      type: 'CASH',
+      balance,
+    });
+    return id;
+  }
+
+  describe('account-sourced goals', () => {
+    it('stops reserving the aporte once the balance reaches the target', async () => {
+      const reached = await seedAccount(1_000);
+      const open = await seedAccount(400);
+      await db.insert(schema.goals).values([
+        makeGoal({
+          targetCents: 1_000,
+          monthlyAporteCents: 400,
+          progressSource: GoalProgressSource.ACCOUNT,
+          linkedAccountId: reached,
+        }),
+        makeGoal({
+          targetCents: 1_000,
+          monthlyAporteCents: 300,
+          progressSource: GoalProgressSource.ACCOUNT,
+          linkedAccountId: open,
+        }),
+      ]);
+
+      await expect(repository.sumMonthlyAporteCents(workspaceId)).resolves.toBe(
+        300,
+      );
+    });
+
+    it('sums the derived progress and ignores the stored value', async () => {
+      const positive = await seedAccount(700);
+      const negative = await seedAccount(-50);
+      await db.insert(schema.goals).values([
+        makeGoal({
+          targetCents: 1_000,
+          currentCents: 999,
+          progressSource: GoalProgressSource.ACCOUNT,
+          linkedAccountId: positive,
+        }),
+        makeGoal({
+          targetCents: 1_000,
+          currentCents: 999,
+          progressSource: GoalProgressSource.ACCOUNT,
+          linkedAccountId: negative,
+        }),
+      ]);
+
+      await expect(
+        repository.getSummaryAggregates(workspaceId),
+      ).resolves.toMatchObject({
+        totalCurrentCents: 700,
+        activeCount: 2,
+        completedCount: 0,
+      });
     });
   });
 

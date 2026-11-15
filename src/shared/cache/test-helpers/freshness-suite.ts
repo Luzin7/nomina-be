@@ -1,6 +1,7 @@
 import {
   RecurrenceFrequency,
   RecurringSuggestionStatus,
+  GoalProgressSource,
   TransactionStatus,
   TransactionType,
 } from '@constants/enums';
@@ -202,6 +203,15 @@ async function seedWorkspace(
       targetCents: GOAL_TARGET_CENTS,
       linkedAccountId: otherAccountId,
       categoryId: extraCategoryId,
+    }),
+  );
+  unwrap(
+    await app.get(CreateGoalService).execute({
+      workspaceId,
+      name: 'Conta reserva',
+      targetCents: GOAL_TARGET_CENTS,
+      linkedAccountId: accountId,
+      progressSource: GoalProgressSource.ACCOUNT,
     }),
   );
   unwrap(

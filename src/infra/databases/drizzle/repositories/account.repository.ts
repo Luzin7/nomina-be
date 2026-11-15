@@ -1,7 +1,7 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
-import { BalanceMovementCause } from '@constants/enums';
+import { BalanceMovementCause, GoalProgressSource } from '@constants/enums';
 import { IdempotencyKeyReusedError } from '@modules/account/errors';
 import {
   AccountListItem,
@@ -11,7 +11,7 @@ import {
   BalanceAdjustmentRecord,
 } from '@modules/account/repositories/contracts/AccountRepository';
 import { Injectable } from '@nestjs/common';
-import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 import { AccountMapper } from '../mappers/account.mapper';
 import * as schema from '../schema';
 import { applyBalanceMovement, DrizzleTransaction } from './balance-movement';
@@ -136,9 +136,41 @@ export class AccountRepositoryImplementation implements AccountRepository {
   }
 
   async delete(accountId: string): Promise<void> {
-    await this.drizzle.db
-      .delete(schema.accounts)
-      .where(eq(schema.accounts.id, accountId));
+    await this.drizzle.db.transaction(async (tx) => {
+      await tx.execute(sql`set local lock_timeout = '3s'`);
+      await tx.execute(sql`set local statement_timeout = '15s'`);
+
+      await tx
+        .select({ id: schema.goals.id })
+        .from(schema.goals)
+        .where(eq(schema.goals.linkedAccountId, accountId))
+        .orderBy(asc(schema.goals.id))
+        .for('update');
+
+      const [account] = await tx
+        .select({ balance: schema.accounts.balance })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.id, accountId))
+        .for('update');
+
+      if (!account) return;
+
+      await tx
+        .update(schema.goals)
+        .set({
+          progressSource: GoalProgressSource.MANUAL,
+          currentCents: Math.max(0, account.balance),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.goals.linkedAccountId, accountId),
+            eq(schema.goals.progressSource, GoalProgressSource.ACCOUNT),
+          ),
+        );
+
+      await tx.delete(schema.accounts).where(eq(schema.accounts.id, accountId));
+    });
   }
 
   async adjustBalance(

@@ -14,9 +14,11 @@ const TIMEZONE = 'America/Sao_Paulo';
 describe('ListGoalsService', () => {
   let service: ListGoalsService;
   let goalRepository: ReturnType<typeof makeGoalRepository>;
+  let cache: InMemoryCacheProvider;
 
   beforeEach(() => {
     goalRepository = makeGoalRepository();
+    cache = new InMemoryCacheProvider();
     goalRepository.listByWorkspace.mockResolvedValue([]);
     goalRepository.getSummaryAggregates.mockResolvedValue({
       totalTargetCents: 0,
@@ -36,7 +38,7 @@ describe('ListGoalsService', () => {
         now: () => NOW,
         format: () => '2026-11-09',
       } as unknown as DateProvider,
-      new InMemoryCacheProvider(),
+      cache,
     );
   });
 
@@ -93,5 +95,14 @@ describe('ListGoalsService', () => {
       completedCount: 0,
       unsetTargetCount: 2,
     });
+  });
+
+  it('stores the list under the v3 key', async () => {
+    await service.execute({ workspaceId: 'ws-1' });
+
+    const keys = [...cache.values.keys()];
+
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toContain('goal:list:v3');
   });
 });

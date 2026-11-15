@@ -1,5 +1,8 @@
+import { GoalProgressSource } from '@constants/enums';
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import {
+  GoalAccountSourceRequiresLinkError,
+  GoalCurrentTracksAccountError,
   GoalLinkedAccountInvalidError,
   GoalNotFoundError,
   InvalidGoalNameError,
@@ -61,8 +64,35 @@ describe('UpdateGoalService', () => {
     if (result.isLeft()) throw result.value;
 
     const mutate = goalRepository.findByIdForUpdate.mock.calls[0][2];
+    const input = mutate(current);
 
-    return mutate(current);
+    if (input instanceof Error) throw input;
+
+    return input;
+  }
+
+  async function rejectPatch(
+    patch: UpdateGoalRequest,
+    current: GoalRecord,
+  ): Promise<Error> {
+    await service.execute({ id: 'goal-1', workspaceId: 'ws-1', ...patch });
+
+    const mutate = goalRepository.findByIdForUpdate.mock.calls[0][2];
+    const input = mutate(current);
+
+    if (!(input instanceof Error)) throw new Error('expected an error');
+
+    return input;
+  }
+
+  function accountGoal(overrides: Partial<GoalRecord> = {}): GoalRecord {
+    return makeGoalRecord({
+      progressSource: GoalProgressSource.ACCOUNT,
+      linkedAccountId: 'acc-1',
+      linkedAccountBalanceCents: 12_345,
+      currentCents: 500,
+      ...overrides,
+    });
   }
 
   it('patches the goal of the workspace of the token', async () => {
@@ -208,5 +238,87 @@ describe('UpdateGoalService', () => {
     if (result.isLeft()) throw result.value;
     expect(result.value.now).toEqual(NOW);
     expect(result.value.timezone).toBe(TIMEZONE);
+  });
+
+  it('rejects the account source without a resulting link', async () => {
+    const error = await rejectPatch(
+      { progressSource: GoalProgressSource.ACCOUNT },
+      makeGoalRecord(),
+    );
+
+    expect(error).toBeInstanceOf(GoalAccountSourceRequiresLinkError);
+  });
+
+  it('accepts the account source when the same patch links an account', async () => {
+    accountRepository.findById.mockResolvedValue(makeAccount());
+
+    const input = await applyPatch({
+      progressSource: GoalProgressSource.ACCOUNT,
+      linkedAccountId: 'acc-1',
+    });
+
+    expect(input.progressSource).toBe(GoalProgressSource.ACCOUNT);
+  });
+
+  it('rejects a typed current amount while the resulting source is account', async () => {
+    const error = await rejectPatch({ currentCents: 900 }, accountGoal());
+
+    expect(error).toBeInstanceOf(GoalCurrentTracksAccountError);
+  });
+
+  it('never writes the current amount when switching to account', async () => {
+    const input = await applyPatch(
+      { progressSource: GoalProgressSource.ACCOUNT },
+      makeGoalRecord({ linkedAccountId: 'acc-1', currentCents: 700 }),
+    );
+
+    expect(input.progressSource).toBe(GoalProgressSource.ACCOUNT);
+    expect(input.currentCents).toBeUndefined();
+  });
+
+  it('snapshots the balance when switching to manual explicitly', async () => {
+    const input = await applyPatch(
+      { progressSource: GoalProgressSource.MANUAL },
+      accountGoal(),
+    );
+
+    expect(input.progressSource).toBe(GoalProgressSource.MANUAL);
+    expect(input.currentCents).toBe(12_345);
+  });
+
+  it('snapshots the balance and unlinks when the link is cleared', async () => {
+    const input = await applyPatch({ linkedAccountId: null }, accountGoal());
+
+    expect(input.progressSource).toBe(GoalProgressSource.MANUAL);
+    expect(input.linkedAccountId).toBeNull();
+    expect(input.currentCents).toBe(12_345);
+  });
+
+  it('snapshots a negative balance as zero', async () => {
+    const input = await applyPatch(
+      { linkedAccountId: null },
+      accountGoal({ linkedAccountBalanceCents: -900 }),
+    );
+
+    expect(input.currentCents).toBe(0);
+  });
+
+  it('keeps the typed current amount over the snapshot when switching to manual', async () => {
+    const input = await applyPatch(
+      { progressSource: GoalProgressSource.MANUAL, currentCents: 777 },
+      accountGoal(),
+    );
+
+    expect(input.progressSource).toBe(GoalProgressSource.MANUAL);
+    expect(input.currentCents).toBe(777);
+  });
+
+  it('leaves a manual goal untouched by the snapshot rule', async () => {
+    const input = await applyPatch(
+      { currentCents: 50_000 },
+      makeGoalRecord({ linkedAccountId: 'acc-1' }),
+    );
+
+    expect(input.currentCents).toBe(50_000);
   });
 });

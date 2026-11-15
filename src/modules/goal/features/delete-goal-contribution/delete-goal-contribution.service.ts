@@ -3,6 +3,7 @@ import {
   GoalContributionNotFoundError,
   GoalContributionUndoConflictError,
   GoalNotFoundError,
+  GoalTracksAccountBalanceError,
 } from '@modules/goal/errors';
 import { GoalContributionRepository } from '@modules/goal/repositories/contracts/GoalContributionRepository';
 import { invalidateGoalReads } from '@modules/goal/services/goal-cache';
@@ -19,6 +20,7 @@ type Request = Pick<TokenPayloadSchema, 'workspaceId'> & {
 const FAILURES = {
   'goal-not-found': () => new GoalNotFoundError(),
   'contribution-not-found': () => new GoalContributionNotFoundError(),
+  'goal-tracks-account': () => new GoalTracksAccountBalanceError(),
   'undo-conflict': () => new GoalContributionUndoConflictError(),
 };
 

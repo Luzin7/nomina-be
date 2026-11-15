@@ -1,3 +1,4 @@
+import type { GoalProgressSource } from '@constants/enums';
 import type { Goal } from '@modules/goal/entities/Goal';
 import { localMonthKey } from '@utils/localMonth';
 
@@ -16,6 +17,7 @@ export type GoalPresenterPayload = {
   currentCents: number;
   monthlyAporteCents: number;
   linkedAccountId: string | null;
+  progressSource: GoalProgressSource;
   categoryId: string | null;
   isEmergency: boolean;
   isSystem: boolean;
@@ -40,9 +42,10 @@ export class GoalPresenter {
       name: record.name,
       targetCents: record.targetCents,
       configured: goal.configured,
-      currentCents: record.currentCents,
+      currentCents: goal.currentCents,
       monthlyAporteCents: record.monthlyAporteCents,
       linkedAccountId: record.linkedAccountId,
+      progressSource: record.progressSource,
       categoryId: record.categoryId,
       isEmergency: record.isEmergency,
       isSystem: record.isSystem,

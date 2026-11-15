@@ -5,9 +5,13 @@ import {
 } from '@shared/core/errors/DomainError';
 import {
   EmergencyGoalNotDeletableError,
+  GoalAccountSourceRequiresLinkError,
+  GoalCurrentTracksAccountError,
   GoalLinkedAccountInvalidError,
   GoalNotFoundError,
+  GoalTracksAccountBalanceError,
   InvalidGoalNameError,
+  LinkedAccountAlreadyTrackedError,
 } from './index';
 
 describe('goal errors', () => {
@@ -28,6 +32,24 @@ describe('goal errors', () => {
   it('maps GoalLinkedAccountInvalidError to a business rule violation', () => {
     expect(new GoalLinkedAccountInvalidError()).toBeInstanceOf(
       BusinessRuleDomainError,
+    );
+  });
+
+  it('maps the account source rule errors to business rule violations', () => {
+    expect(new GoalAccountSourceRequiresLinkError()).toBeInstanceOf(
+      BusinessRuleDomainError,
+    );
+    expect(new GoalCurrentTracksAccountError()).toBeInstanceOf(
+      BusinessRuleDomainError,
+    );
+  });
+
+  it('maps the account tracking refusals to conflict', () => {
+    expect(new GoalTracksAccountBalanceError()).toBeInstanceOf(
+      ConflictDomainError,
+    );
+    expect(new LinkedAccountAlreadyTrackedError()).toBeInstanceOf(
+      ConflictDomainError,
     );
   });
 });

@@ -1,3 +1,4 @@
+import { GoalProgressSource } from '@constants/enums';
 import type { GoalRecord } from '@modules/goal/repositories/contracts/GoalRepository';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { InvalidGoalNameError } from '../errors';
@@ -29,16 +30,24 @@ export class Goal {
     return this.record.targetCents > 0;
   }
 
+  get currentCents(): number {
+    const { progressSource, linkedAccountBalanceCents, currentCents } =
+      this.record;
+
+    if (progressSource !== GoalProgressSource.ACCOUNT) return currentCents;
+    if (linkedAccountBalanceCents === null) return currentCents;
+
+    return Math.max(0, linkedAccountBalanceCents);
+  }
+
   get remainingCents(): number | null {
     if (!this.configured) return null;
 
-    return this.record.targetCents - this.record.currentCents;
+    return this.record.targetCents - this.currentCents;
   }
 
   get reached(): boolean {
-    return (
-      this.configured && this.record.currentCents >= this.record.targetCents
-    );
+    return this.configured && this.currentCents >= this.record.targetCents;
   }
 
   get progressPercent(): number | null {
@@ -46,7 +55,7 @@ export class Goal {
 
     return Math.min(
       100,
-      Math.round((this.record.currentCents / this.record.targetCents) * 100),
+      Math.round((this.currentCents / this.record.targetCents) * 100),
     );
   }
 

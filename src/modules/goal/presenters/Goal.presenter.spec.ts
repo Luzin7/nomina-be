@@ -1,3 +1,4 @@
+import { GoalProgressSource } from '@constants/enums';
 import { Goal } from '@modules/goal/entities/Goal';
 import { makeGoalRecord } from '@modules/goal/test-helpers/goal-factories';
 import { GoalPresenter } from './Goal.presenter';
@@ -100,6 +101,7 @@ describe('GoalPresenter', () => {
       currentCents: 0,
       monthlyAporteCents: 0,
       linkedAccountId: null,
+      progressSource: 'manual',
       categoryId: null,
       isEmergency: true,
       isSystem: true,
@@ -143,5 +145,21 @@ describe('GoalPresenter', () => {
     );
 
     expect(goal.etaMonth).toBe('2027-06');
+  });
+
+  it('emits the derived current amount and the progress source of an account goal', () => {
+    const goal = present(
+      makeGoalRecord({
+        targetCents: 100_000,
+        currentCents: 1_000,
+        progressSource: GoalProgressSource.ACCOUNT,
+        linkedAccountId: 'acc-1',
+        linkedAccountBalanceCents: 25_000,
+      }),
+    );
+
+    expect(goal.currentCents).toBe(25_000);
+    expect(goal.progressSource).toBe('account');
+    expect(goal.remainingCents).toBe(75_000);
   });
 });

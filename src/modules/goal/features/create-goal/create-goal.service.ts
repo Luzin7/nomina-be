@@ -1,7 +1,9 @@
 import { CreateGoalRequest } from '@modules/goal/features/create-goal/create-goal.dto';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { GoalProgressSource } from '@constants/enums';
 import { Goal } from '@modules/goal/entities/Goal';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
+import { validateNewGoalProgress } from '@modules/goal/services/resolve-goal-progress';
 import { invalidateGoalReads } from '@modules/goal/services/goal-cache';
 import { ValidateGoalLinksService } from '@modules/goal/services/validate-goal-links.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
@@ -38,6 +40,9 @@ export class CreateGoalService implements Service<
     const name = Goal.normalizeName(request.name);
     if (name.isLeft()) return left(name.value);
 
+    const progressError = validateNewGoalProgress(request);
+    if (progressError) return left(progressError);
+
     const linkError = await this.validateGoalLinks.execute(
       workspaceId,
       request,
@@ -51,6 +56,7 @@ export class CreateGoalService implements Service<
       currentCents: request.currentCents ?? 0,
       monthlyAporteCents: request.monthlyAporteCents ?? 0,
       linkedAccountId: request.linkedAccountId ?? null,
+      progressSource: request.progressSource ?? GoalProgressSource.MANUAL,
       categoryId: request.categoryId ?? null,
     });
 

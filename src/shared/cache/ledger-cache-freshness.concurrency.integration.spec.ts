@@ -49,7 +49,13 @@ const LEDGER_VISIBLE = [
   'list-transactions',
 ];
 
-const LEDGER_ROWS_VISIBLE = [...LEDGER_VISIBLE, 'month-pace', 'list-totals'];
+const LEDGER_ROWS_VISIBLE = [
+  ...LEDGER_VISIBLE,
+  'month-pace',
+  'list-totals',
+  'list-goals',
+  'goals-summary',
+];
 
 function daysFromToday({ seed }: FreshnessContext, days: number): string {
   return new Date(Date.parse(seed.today) + days * DAY_MS)
