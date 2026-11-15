@@ -49,7 +49,7 @@ const ofKind = (
     .sort((a, b) => monthIndex(a.month) - monthIndex(b.month));
 
 const isIncomeBased = (decision: SuggestionDecisionRecord): boolean =>
-  decision.decision === 'accepted' && decision.bracketVersion !== null;
+  decision.decision === 'accepted' && decision.incomeCents !== null;
 
 const hasMovedEnough = (baseCents: number, rejectedCents: number): boolean =>
   Math.abs(baseCents - rejectedCents) >= REJECTION_REOPEN_RATIO * rejectedCents;
@@ -106,12 +106,12 @@ export function resolveSplitProgress({
   if (lastStepAccepted) return { status: 'complete', step };
   if (first) return { status: 'open', step };
 
-  const finalRejection = splitDecisions.some(
-    (decision) => decision.decision === 'rejected',
-  );
+  const finalRejection =
+    splitDecisions.some((decision) => decision.decision === 'rejected') &&
+    !splitDecisions.some((decision) => decision.decision === 'accepted');
   if (finalRejection) return { status: 'rejected', step };
 
-  const acceptedWithoutIncome = splitDecisions.length > 0;
+  const acceptedWithoutIncome = splitDecisions.at(-1)?.decision === 'accepted';
   if (acceptedWithoutIncome && !hasIncomeBasis) {
     return { status: 'accepted', step };
   }
