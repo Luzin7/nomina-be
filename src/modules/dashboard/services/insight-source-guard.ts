@@ -4,7 +4,7 @@ import type {
   InsightCode,
 } from '../valueObjects/AvailableToSpend';
 
-export const INSIGHT_SOURCE_TIMEOUT_MS = 250;
+export const INSIGHT_SOURCE_TIMEOUT_MS = 1500;
 
 export type InsightSource = {
   code: InsightCode;

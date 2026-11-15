@@ -19,6 +19,7 @@ import {
 } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
+import { describeError } from '../../services/describe-error';
 import { CardBillDueInsightService } from '../../services/card-bill-due-insight.service';
 import {
   resolveInsight,
@@ -41,6 +42,7 @@ import {
 type Request = Pick<TokenPayloadSchema, 'workspaceId' | 'sub'>;
 
 type InsightContext = Request & {
+  onDegraded: () => void;
   budget: BudgetStatusResponse;
   figure: SpendableFigure;
   today: string;
@@ -88,6 +90,11 @@ export class GetAvailableToSpendService implements Service<
       timezone,
     );
 
+    let degraded = false;
+    const markDegraded = () => {
+      degraded = true;
+    };
+
     return readThrough({
       cache: this.cache,
       key: buildCacheKey({
@@ -98,13 +105,15 @@ export class GetAvailableToSpendService implements Service<
         parts: [today],
       }),
       ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
-      load: () => this.compute(request, today),
+      load: () => this.compute(request, today, markDegraded),
+      shouldStore: () => !degraded,
     });
   }
 
   private async compute(
     { workspaceId, sub }: Request,
     today: string,
+    onDegraded: () => void,
   ): Promise<Either<Error, AvailableToSpendResponse>> {
     const [year, month] = today.split('-').map(Number);
 
@@ -137,6 +146,7 @@ export class GetAvailableToSpendService implements Service<
       budget: budget.value,
       figure,
       today,
+      onDegraded,
     });
 
     return right({
@@ -166,9 +176,11 @@ export class GetAvailableToSpendService implements Service<
       this.insightSourcesOf(context),
     );
 
+    if (failures.length > 0) context.onDegraded();
+
     for (const { code, error } of failures) {
       this.logger.warn(
-        `insight source failed code=${code} workspaceId=${context.workspaceId} error=${error instanceof Error ? error.constructor.name : typeof error}`,
+        `insight source failed code=${code} workspaceId=${context.workspaceId} error=${describeError(error)}`,
       );
     }
 

@@ -1090,18 +1090,69 @@ describe('GetAvailableToSpendService', () => {
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('TypeError'));
       });
 
-      it('silences the insight when a source exceeds 250ms', async () => {
+      it('logs the error message with the class', async () => {
+        getProjection.execute.mockRejectedValue(new TypeError('pool starved'));
+
+        await run();
+
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('TypeError: pool starved'),
+        );
+      });
+
+      it('does not cache a result with a failed source', async () => {
+        getProjection.execute.mockRejectedValue(new TypeError('boom'));
+
+        await run();
+
+        expect(cache.values.size).toBe(0);
+      });
+
+      it('caches a result with no failed source', async () => {
+        await run();
+
+        expect(cache.values.size).toBe(1);
+      });
+
+      it('still returns the insight when a source takes 300ms', async () => {
+        jest.useFakeTimers();
+        givenBudget(makeBudget({ unallocatedIncomeCents: 800 }));
+        getProjection.execute.mockReturnValue(
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve(
+                  right({
+                    projection: { openingBalanceCents: 0, months: [] },
+                    horizon: 3,
+                    generatedAt: NOW,
+                  }),
+                ),
+              300,
+            ),
+          ),
+        );
+
+        const pending = run();
+        await jest.advanceTimersByTimeAsync(300);
+        const response = await pending;
+
+        expect(response.insight).toMatchObject({ code: 'UNALLOCATED_INCOME' });
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('silences the insight when a source exceeds 1500ms', async () => {
         jest.useFakeTimers();
         const lateRejection = new Promise<never>((_resolve, reject) => {
-          setTimeout(() => reject(new Error('late')), 1_000);
+          setTimeout(() => reject(new Error('late')), 3_000);
         });
         getProjection.execute.mockReturnValue(lateRejection);
         givenBudget(makeBudget({ unallocatedIncomeCents: 800 }));
 
         const pending = run();
-        await jest.advanceTimersByTimeAsync(250);
+        await jest.advanceTimersByTimeAsync(1_500);
         const response = await pending;
-        await jest.advanceTimersByTimeAsync(1_000);
+        await jest.advanceTimersByTimeAsync(3_000);
 
         expect(response.insight).toBeNull();
         expect(warn).toHaveBeenCalledWith(
