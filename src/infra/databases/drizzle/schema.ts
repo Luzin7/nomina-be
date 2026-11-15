@@ -1,6 +1,7 @@
 import {
   BalanceMovementCause,
   BUDGET_MODE_DEFAULT,
+  GoalProgressSource,
   type BudgetMode,
 } from '@constants/enums';
 import { DEFAULT_TIMEZONE } from '@constants/timezone';
@@ -718,6 +719,10 @@ export const goals = pgTable(
     categoryId: text('category_id').references(() => categories.id, {
       onDelete: 'set null',
     }),
+    progressSource: text('progress_source')
+      .$type<GoalProgressSource>()
+      .default(GoalProgressSource.MANUAL)
+      .notNull(),
     isEmergency: boolean('is_emergency').default(false).notNull(),
     isSystem: boolean('is_system').default(false).notNull(),
     dismissedAt: timestamp('dismissed_at', {
@@ -736,6 +741,17 @@ export const goals = pgTable(
       .on(table.workspaceId)
       .where(sql`${table.isEmergency}`),
     index('idx_goal_ws').on(table.workspaceId),
+    uniqueIndex('unq_goal_account_source')
+      .on(table.linkedAccountId)
+      .where(sql`${table.progressSource} = 'account'`),
+    check(
+      'chk_goal_progress_source_valid',
+      sql`${table.progressSource} IN ('manual', 'account')`,
+    ),
+    check(
+      'chk_goal_account_source_requires_link',
+      sql`${table.progressSource} = 'manual' OR ${table.linkedAccountId} IS NOT NULL`,
+    ),
     check('chk_goal_target_cents_non_negative', sql`${table.targetCents} >= 0`),
     check(
       'chk_goal_current_cents_non_negative',
