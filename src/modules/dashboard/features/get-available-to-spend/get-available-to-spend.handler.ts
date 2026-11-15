@@ -19,7 +19,7 @@ import {
 } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
-import { describeError } from '../../services/describe-error';
+import { describeError } from '@modules/dashboard/services/describe-error';
 import { CardBillDueInsightService } from '../../services/card-bill-due-insight.service';
 import {
   resolveInsight,
@@ -41,10 +41,19 @@ import {
 
 const DEGRADED_CACHE_TTL_SECONDS = 60;
 
+type ComputedAvailableToSpend = {
+  response: AvailableToSpendResponse;
+  degraded: boolean;
+};
+
+type RankedInsight = {
+  insight: AvailableToSpendInsight | null;
+  degraded: boolean;
+};
+
 type Request = Pick<TokenPayloadSchema, 'workspaceId' | 'sub'>;
 
 type InsightContext = Request & {
-  onDegraded: () => void;
   budget: BudgetStatusResponse;
   figure: SpendableFigure;
   today: string;
@@ -92,32 +101,29 @@ export class GetAvailableToSpendService implements Service<
       timezone,
     );
 
-    let degraded = false;
-    const markDegraded = () => {
-      degraded = true;
-    };
-
-    return readThrough({
+    const result = await readThrough({
       cache: this.cache,
       key: buildCacheKey({
         route: 'dashboard:available-to-spend',
-        version: 'v3',
+        version: 'v4',
         workspaceId,
         generations: { ledger, goal, category },
         parts: [today],
       }),
       ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
-      load: () => this.compute(request, today, markDegraded),
-      ttlFor: () =>
+      load: () => this.compute(request, today),
+      ttlFor: ({ degraded }) =>
         degraded ? DEGRADED_CACHE_TTL_SECONDS : LEDGER_LIVE_CACHE_TTL_SECONDS,
     });
+    if (result.isLeft()) return left(result.value);
+
+    return right(result.value.response);
   }
 
   private async compute(
     { workspaceId, sub }: Request,
     today: string,
-    onDegraded: () => void,
-  ): Promise<Either<Error, AvailableToSpendResponse>> {
+  ): Promise<Either<Error, ComputedAvailableToSpend>> {
     const [year, month] = today.split('-').map(Number);
 
     const [budget, plan, goalAportesCents] = await Promise.all([
@@ -143,20 +149,22 @@ export class GetAvailableToSpendService implements Service<
       goalAportesCents,
       daysRemaining: projection.daysRemaining,
     });
-    const insight = await this.rankInsight({
+    const { insight, degraded } = await this.rankInsight({
       workspaceId,
       sub,
       budget: budget.value,
       figure,
       today,
-      onDegraded,
     });
 
     return right({
-      month: today.slice(0, 7),
-      daysRemaining: projection.daysRemaining,
-      ...figure,
-      insight,
+      degraded,
+      response: {
+        month: today.slice(0, 7),
+        daysRemaining: projection.daysRemaining,
+        ...figure,
+        insight,
+      },
     });
   }
 
@@ -172,14 +180,10 @@ export class GetAvailableToSpendService implements Service<
     return right(summary.value.projection);
   }
 
-  private async rankInsight(
-    context: InsightContext,
-  ): Promise<AvailableToSpendInsight | null> {
+  private async rankInsight(context: InsightContext): Promise<RankedInsight> {
     const { insight, failures } = await resolveInsight(
       this.insightSourcesOf(context),
     );
-
-    if (failures.length > 0) context.onDegraded();
 
     for (const { code, error } of failures) {
       this.logger.warn(
@@ -187,7 +191,7 @@ export class GetAvailableToSpendService implements Service<
       );
     }
 
-    return insight;
+    return { insight, degraded: failures.length > 0 };
   }
 
   private insightSourcesOf({

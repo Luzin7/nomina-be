@@ -729,12 +729,12 @@ describe('GetAvailableToSpendService', () => {
       expect(second).toEqual(first);
     });
 
-    it('keys the cache under v3', async () => {
+    it('keys the cache under v4', async () => {
       await service.execute(REQUEST);
 
       expect([...cache.values.keys()]).toEqual([
         expect.stringMatching(
-          /^dashboard:available-to-spend:v3:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
+          /^dashboard:available-to-spend:v4:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
         ),
       ]);
     });

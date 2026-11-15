@@ -1,7 +1,7 @@
 import { ResolveBudgetSuggestionService } from '@modules/budget/services/resolve-budget-suggestion.service';
 import { Injectable, Logger } from '@nestjs/common';
 import type { AvailableToSpendInsight } from '../valueObjects/AvailableToSpend';
-import { describeError } from './describe-error';
+import { describeError } from '@modules/dashboard/services/describe-error';
 
 type Request = { workspaceId: string };
 
