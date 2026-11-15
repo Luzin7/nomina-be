@@ -3,6 +3,49 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.3.0](https://github.com/Luzin7/nomina-be/compare/v2.2.4...v2.3.0) (2026-11-15)
+
+### Features
+
+* **account:** add balanceUpdatedAt and fix app boot ([#125](https://github.com/Luzin7/nomina-be/issues/125)) ([11a7ee6](https://github.com/Luzin7/nomina-be/commit/11a7ee6dfda10ceab2bf5055d04b1a32cdab2ab3))
+* **account:** card invoice autopay ([#127](https://github.com/Luzin7/nomina-be/issues/127)) ([2ec57b4](https://github.com/Luzin7/nomina-be/commit/2ec57b4217e3861a9946a6dd6b2ec6de8bb2b010))
+* **budget:** add budget engine and status API ([#110](https://github.com/Luzin7/nomina-be/issues/110)) ([347ad75](https://github.com/Luzin7/nomina-be/commit/347ad753d280c40421658fa9c8600c559ea784f8))
+* **budget:** add fixed-target budget mode ([#117](https://github.com/Luzin7/nomina-be/issues/117)) ([64caad8](https://github.com/Luzin7/nomina-be/commit/64caad8e25f5f3f1b8fa93f9414ce21cd1e18dc6))
+* **budget:** add Investimentos category and rebalance the preset ([#111](https://github.com/Luzin7/nomina-be/issues/111)) ([2ca981f](https://github.com/Luzin7/nomina-be/commit/2ca981fd71e7c7d4e289c0cf18909cb3e6b5b8ad))
+* **budget:** add month-3 budget suggestion schema ([#133](https://github.com/Luzin7/nomina-be/issues/133)) ([7a29cf0](https://github.com/Luzin7/nomina-be/commit/7a29cf0ecf2a5907cb4a513e3085838c0cf6b09f))
+* **budget:** add month-3 suggestion engine ([#134](https://github.com/Luzin7/nomina-be/issues/134)) ([c08abf3](https://github.com/Luzin7/nomina-be/commit/c08abf37364fab2bd04b8fa545596d2537d44e0b))
+* **cache:** server cache revalidation per domain ([#128](https://github.com/Luzin7/nomina-be/issues/128)) ([5c6ce0b](https://github.com/Luzin7/nomina-be/commit/5c6ce0b7ac45c6c05f63a46790904364fd7f1681))
+* **card-cycle:** add per-card cycle budget ([#118](https://github.com/Luzin7/nomina-be/issues/118)) ([2962601](https://github.com/Luzin7/nomina-be/commit/29626015d5f896f50f1a424839955f0e721827da))
+* **category:** add workspace category CRUD and hidden categories ([#116](https://github.com/Luzin7/nomina-be/issues/116)) ([732f531](https://github.com/Luzin7/nomina-be/commit/732f531bac188b781bb8d936a302fa339e99dada))
+* **dashboard:** add available-to-spend endpoint ([#126](https://github.com/Luzin7/nomina-be/issues/126)) ([3512caf](https://github.com/Luzin7/nomina-be/commit/3512caf03e79ccf6886bdbdc7a0d2bb9400191db))
+* **goal:** add goals table, repository and endpoints ([#120](https://github.com/Luzin7/nomina-be/issues/120)) ([917ca24](https://github.com/Luzin7/nomina-be/commit/917ca24db87e118f2e915118b88de07c0fa02003))
+* **goal:** goal contributions with history (BE-2) ([#131](https://github.com/Luzin7/nomina-be/issues/131)) ([4200411](https://github.com/Luzin7/nomina-be/commit/42004116453c249f1b8e3ff84b1469fe2f132bf4))
+* **recurring:** add bill suggestions from history ([#114](https://github.com/Luzin7/nomina-be/issues/114)) ([b1f6c83](https://github.com/Luzin7/nomina-be/commit/b1f6c8355525e6edbac9981df31862cf6fcec273))
+* **report:** add cash-flow projection horizon ([#119](https://github.com/Luzin7/nomina-be/issues/119)) ([0ff56da](https://github.com/Luzin7/nomina-be/commit/0ff56da5b615afd8081860c435d870c34e2af539))
+* **report:** add month pace and list totals ([#130](https://github.com/Luzin7/nomina-be/issues/130)) ([eda2fdc](https://github.com/Luzin7/nomina-be/commit/eda2fdc43e5b81a475d90b9ee69bc042f2012196))
+* **report:** add provisional month plan ([#132](https://github.com/Luzin7/nomina-be/issues/132)) ([c4ab089](https://github.com/Luzin7/nomina-be/commit/c4ab0892bf049484787379c8e5efb3dce9a3c550))
+* **report:** serve pace balance beside habits ([cdc4cd7](https://github.com/Luzin7/nomina-be/commit/cdc4cd7b2a65f77e7395ab2521112b302386f8ed))
+* **subscription:** raise MVP plan limits and tag plan-limit 403s ([#109](https://github.com/Luzin7/nomina-be/issues/109)) ([2b1117a](https://github.com/Luzin7/nomina-be/commit/2b1117a0b80dafd6f6575c10d91501542e0c65aa))
+
+### Bug Fixes
+
+* **budget:** give Impostos its own preset group ([#112](https://github.com/Luzin7/nomina-be/issues/112)) ([907aa2e](https://github.com/Luzin7/nomina-be/commit/907aa2e1525455d52de1fcf2a0588665d3744f98))
+* **budget:** roll child category spend up to its allocated parent ([#115](https://github.com/Luzin7/nomina-be/issues/115)) ([5b29650](https://github.com/Luzin7/nomina-be/commit/5b296501b0aa6393cfbe152680227732714d41f5))
+* **budget:** suggest split limits in whole reais ([#135](https://github.com/Luzin7/nomina-be/issues/135)) ([6043c42](https://github.com/Luzin7/nomina-be/commit/6043c42b2dcef611cf2736ec6997cb632510ae13))
+* **category:** close audit gaps from docs 07-08 ([#123](https://github.com/Luzin7/nomina-be/issues/123)) ([364beae](https://github.com/Luzin7/nomina-be/commit/364beaedd119057f60fd87bd597a94c34f27a1ab))
+* **db:** align FK catalogue and actions with production ([#138](https://github.com/Luzin7/nomina-be/issues/138)) ([46418c5](https://github.com/Luzin7/nomina-be/commit/46418c55db2c25d939c0da4b3b419623a2d95b94))
+* **db:** convert naive timestamp columns to timestamptz ([#140](https://github.com/Luzin7/nomina-be/issues/140)) ([63ef5be](https://github.com/Luzin7/nomina-be/commit/63ef5bed83e9a3d6e4d7d61646c7a09be870d55c))
+* **projection:** close audit gaps from doc 09 ([#122](https://github.com/Luzin7/nomina-be/issues/122)) ([bc62002](https://github.com/Luzin7/nomina-be/commit/bc620026bab2a20a4b82942081462503aff201a3))
+* **recurring:** sum expenses in committed summary ([#121](https://github.com/Luzin7/nomina-be/issues/121)) ([c18aae9](https://github.com/Luzin7/nomina-be/commit/c18aae9d5079aa475d848f3fa6940142689de629))
+* **recurring:** unlink transactions when a recurring rule is deleted ([#136](https://github.com/Luzin7/nomina-be/issues/136)) ([d4080c4](https://github.com/Luzin7/nomina-be/commit/d4080c4448452e29fe20e5e830bd4f2941ce2ea2))
+* **report:** read naive UTC timestamps in month projection ([#139](https://github.com/Luzin7/nomina-be/issues/139)) ([02ea92c](https://github.com/Luzin7/nomina-be/commit/02ea92c259bf46b1ae59ac641f0c1583d698ce99))
+* **sonar:** close security and reliability issues ([#124](https://github.com/Luzin7/nomina-be/issues/124)) ([1af36d0](https://github.com/Luzin7/nomina-be/commit/1af36d082bd6e4ef61f6be27754df090c5b87d17))
+* **transaction:** resolve list day range in the workspace timezone ([#129](https://github.com/Luzin7/nomina-be/issues/129)) ([e5e695a](https://github.com/Luzin7/nomina-be/commit/e5e695ab7b27c7499d7d302dcc1144637d769cf9))
+
+### Performance Improvements
+
+* **recurring:** batch suggestion writes in GET /suggestion ([#137](https://github.com/Luzin7/nomina-be/issues/137)) ([8690b26](https://github.com/Luzin7/nomina-be/commit/8690b26e61892dee3dfd551f2246a8fcd3689997))
+
 ## [2.2.4](https://github.com/Luzin7/nomina-be/compare/v2.2.3...v2.2.4) (2026-11-03)
 
 ### Bug Fixes
