@@ -3,6 +3,14 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.3.1](https://github.com/Luzin7/nomina-be/compare/v2.3.0...v2.3.1) (2026-11-15)
+
+### Bug Fixes
+
+* **dashboard:** keep available-to-spend insight on slow sources ([#143](https://github.com/Luzin7/nomina-be/issues/143)) ([9e2df7e](https://github.com/Luzin7/nomina-be/commit/9e2df7ef3a787386110f9c6e4168867ea2b26175))
+* **db:** move legacy UTC midnight transaction dates to workspace local midnight ([#142](https://github.com/Luzin7/nomina-be/issues/142)) ([540ff47](https://github.com/Luzin7/nomina-be/commit/540ff47bc1f139a9b1424e8bef5bc03a031b60e2))
+* **report:** accept years 2000-2100 in budget status and report queries ([#141](https://github.com/Luzin7/nomina-be/issues/141)) ([948c04d](https://github.com/Luzin7/nomina-be/commit/948c04dedd392d40fc60c10762efec9112bdbd3c))
+
 ## [2.3.0](https://github.com/Luzin7/nomina-be/compare/v2.2.4...v2.3.0) (2026-11-15)
 
 ### Features
