@@ -4,6 +4,7 @@ import {
   GoalContributionIdConflictError,
   GoalLinkedAccountInvalidError,
   GoalNotFoundError,
+  GoalTracksAccountBalanceError,
 } from '@modules/goal/errors';
 import {
   GoalContributionRecord,
@@ -70,6 +71,9 @@ export class CreateGoalContributionService implements Service<
       return left(new GoalNotFoundError());
     if (result.status === 'source-account-invalid') {
       return left(new GoalLinkedAccountInvalidError());
+    }
+    if (result.status === 'goal-tracks-account') {
+      return left(new GoalTracksAccountBalanceError());
     }
 
     if (result.status === 'recorded') {

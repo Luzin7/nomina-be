@@ -55,3 +55,31 @@ export class GoalContributionUndoConflictError extends ConflictDomainError {
     );
   }
 }
+
+export class GoalAccountSourceRequiresLinkError extends BusinessRuleDomainError {
+  constructor() {
+    super('Para acompanhar o saldo, vincule uma conta à meta.');
+  }
+}
+
+export class GoalCurrentTracksAccountError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'O valor guardado desta meta acompanha o saldo da conta e não pode ser informado.',
+    );
+  }
+}
+
+export class GoalTracksAccountBalanceError extends ConflictDomainError {
+  constructor() {
+    super(
+      'Esta reserva acompanha o saldo da conta. Para guardar dinheiro, transfira para a conta vinculada.',
+    );
+  }
+}
+
+export class LinkedAccountAlreadyTrackedError extends ConflictDomainError {
+  constructor() {
+    super('Esta conta já é acompanhada por outra meta.');
+  }
+}

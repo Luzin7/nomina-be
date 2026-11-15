@@ -5,6 +5,7 @@ import { GetGoalsSummaryService } from './get-goals-summary.service';
 describe('GetGoalsSummaryService', () => {
   let service: GetGoalsSummaryService;
   let goalRepository: ReturnType<typeof makeGoalRepository>;
+  let cache: InMemoryCacheProvider;
 
   beforeEach(() => {
     goalRepository = makeGoalRepository();
@@ -17,10 +18,8 @@ describe('GetGoalsSummaryService', () => {
     });
     goalRepository.sumMonthlyAporteCents.mockResolvedValue(300);
 
-    service = new GetGoalsSummaryService(
-      goalRepository,
-      new InMemoryCacheProvider(),
-    );
+    cache = new InMemoryCacheProvider();
+    service = new GetGoalsSummaryService(goalRepository, cache);
   });
 
   it('seeds the emergency goal before aggregating', async () => {
@@ -46,5 +45,14 @@ describe('GetGoalsSummaryService', () => {
       completedCount: 0,
       unsetTargetCount: 2,
     });
+  });
+
+  it('stores the summary under the v3 key', async () => {
+    await service.execute({ workspaceId: 'ws-1' });
+
+    const keys = [...cache.values.keys()];
+
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toContain('goal:summary:v3');
   });
 });

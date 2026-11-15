@@ -8,9 +8,11 @@ import {
   UndoContributionResult,
 } from '@modules/goal/repositories/contracts/GoalContributionRepository';
 import { GoalRecord } from '@modules/goal/repositories/contracts/GoalRepository';
+import { GoalProgressSource } from '@constants/enums';
 import { Injectable } from '@nestjs/common';
 import { TransactionRollbackError, and, desc, eq, sql } from 'drizzle-orm';
 import * as schema from '../schema';
+import { toGoalRecord } from './goal-record.mapper';
 
 type Tx = Parameters<Parameters<DrizzleService['db']['transaction']>[0]>[0];
 
@@ -23,13 +25,16 @@ export class GoalContributionRepositoryImplementation implements GoalContributio
   ): Promise<RecordContributionResult> {
     return this.drizzle.db.transaction(async (tx) => {
       await tx.execute(sql`set local lock_timeout = '3s'`);
+      const locked = await lockGoal(tx, input.goalId, input.workspaceId);
+      if (!locked) return { status: 'goal-not-found' };
+      if (locked.progressSource === GoalProgressSource.ACCOUNT) {
+        return { status: 'goal-tracks-account' };
+      }
+
       const sourceMissing =
         input.sourceAccountId &&
         !(await keepAccount(tx, input.sourceAccountId, input.workspaceId));
       if (sourceMissing) return { status: 'source-account-invalid' };
-
-      const locked = await lockGoal(tx, input.goalId, input.workspaceId);
-      if (!locked) return { status: 'goal-not-found' };
 
       const [inserted] = await tx
         .insert(schema.goalContributions)
@@ -79,9 +84,13 @@ export class GoalContributionRepositoryImplementation implements GoalContributio
   }: UndoContributionInput): Promise<UndoContributionResult> {
     return this.drizzle.db.transaction(async (tx) => {
       await tx.execute(sql`set local lock_timeout = '3s'`);
-      await this.lockSourceAccount(tx, id, goalId, workspaceId);
       const locked = await lockGoal(tx, goalId, workspaceId);
       if (!locked) return { status: 'goal-not-found' };
+      if (locked.progressSource === GoalProgressSource.ACCOUNT) {
+        return { status: 'goal-tracks-account' };
+      }
+
+      await this.lockSourceAccount(tx, id, goalId, workspaceId);
 
       const [removed] = await tx
         .delete(schema.goalContributions)
@@ -233,23 +242,5 @@ function toContributionRecord(
     sourceAccountId: row.sourceAccountId,
     contributedAt: row.contributedAt,
     createdAt: row.createdAt,
-  };
-}
-
-function toGoalRecord(row: typeof schema.goals.$inferSelect): GoalRecord {
-  return {
-    id: row.id,
-    workspaceId: row.workspaceId,
-    name: row.name,
-    targetCents: row.targetCents,
-    currentCents: row.currentCents,
-    monthlyAporteCents: row.monthlyAporteCents,
-    linkedAccountId: row.linkedAccountId,
-    categoryId: row.categoryId,
-    isEmergency: row.isEmergency,
-    isSystem: row.isSystem,
-    dismissedAt: row.dismissedAt,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
   };
 }

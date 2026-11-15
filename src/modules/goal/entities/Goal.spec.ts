@@ -1,5 +1,6 @@
 import { Goal } from './Goal';
 import { InvalidGoalNameError } from '../errors';
+import { GoalProgressSource } from '@constants/enums';
 import { makeGoalRecord } from '../test-helpers/goal-factories';
 
 describe('Goal', () => {
@@ -55,6 +56,58 @@ describe('Goal', () => {
       expect(goal.progressPercent).toBe(100);
       expect(goal.remainingCents).toBe(-50_000);
       expect(goal.reached).toBe(true);
+    });
+  });
+
+  describe('account-sourced progress', () => {
+    function accountGoal(balance: number | null, stored = 1_000) {
+      return Goal.fromRecord(
+        makeGoalRecord({
+          targetCents: 100_000,
+          currentCents: stored,
+          monthlyAporteCents: 10_000,
+          progressSource: GoalProgressSource.ACCOUNT,
+          linkedAccountId: 'acc-1',
+          linkedAccountBalanceCents: balance,
+        }),
+      );
+    }
+
+    it('derives the current amount from the account balance', () => {
+      const goal = accountGoal(40_000);
+
+      expect(goal.currentCents).toBe(40_000);
+      expect(goal.remainingCents).toBe(60_000);
+      expect(goal.progressPercent).toBe(40);
+      expect(goal.etaMonths).toBe(6);
+      expect(goal.reached).toBe(false);
+    });
+
+    it('floors a negative balance at zero', () => {
+      const goal = accountGoal(-5_000);
+
+      expect(goal.currentCents).toBe(0);
+      expect(goal.remainingCents).toBe(100_000);
+      expect(goal.progressPercent).toBe(0);
+    });
+
+    it('reaches the target through the balance', () => {
+      const goal = accountGoal(100_000);
+
+      expect(goal.reached).toBe(true);
+      expect(goal.etaMonths).toBeNull();
+    });
+
+    it('keeps the stored amount for a manual goal that has a linked account', () => {
+      const goal = Goal.fromRecord(
+        makeGoalRecord({
+          currentCents: 7_000,
+          linkedAccountId: 'acc-1',
+          linkedAccountBalanceCents: 99_000,
+        }),
+      );
+
+      expect(goal.currentCents).toBe(7_000);
     });
   });
 });
