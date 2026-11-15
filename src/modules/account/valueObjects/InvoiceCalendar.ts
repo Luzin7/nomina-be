@@ -89,6 +89,12 @@ export class InvoiceCalendar {
     return `${previous.year}-${pad(previous.month)}`;
   }
 
+  nextKey(key: InvoiceKey): InvoiceKey {
+    const { year, month } = parseKey(key);
+    const next = shiftMonth(year, month, 1);
+    return `${next.year}-${pad(next.month)}`;
+  }
+
   bounds(key: InvoiceKey): InvoiceBounds {
     const { year, month } = parseKey(key);
     const dueDate = this.dueOf(year, month);
