@@ -8,7 +8,11 @@ import {
   ResolveBudgetSuggestionService,
   type BudgetSuggestion,
 } from '@modules/budget/services/resolve-budget-suggestion.service';
-import { toAllocationInputs } from '@modules/budget/valueObjects/SplitAllocationLayout';
+import { ValidateBudgetAllocationsService } from '@modules/budget/services/validate-budget-allocations.service';
+import {
+  toAllocationInputs,
+  type AllocationLayoutSource,
+} from '@modules/budget/valueObjects/SplitAllocationLayout';
 import { type SuggestionDecisionOutcome } from '@modules/budget/valueObjects/SuggestionDecisions';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
@@ -38,12 +42,14 @@ export class AcceptSplitSuggestionService implements Service<
   constructor(
     private readonly resolveSuggestion: ResolveBudgetSuggestionService,
     private readonly budgetRepository: BudgetRepository,
+    private readonly validateAllocations: ValidateBudgetAllocationsService,
     private readonly cache: CacheProvider,
   ) {}
 
   async execute({
     workspaceId,
     fingerprint,
+    allocations: edited,
   }: Request): Promise<Either<Error, SuggestionDecisionOutcome>> {
     const resolved = await this.resolveSuggestion.resolveFresh({ workspaceId });
     if (resolved.isLeft()) return left(resolved.value);
@@ -57,7 +63,15 @@ export class AcceptSplitSuggestionService implements Service<
       return left(new BudgetSuggestionChangedError());
     }
 
-    const allocations = toAllocationInputs(split.allocations);
+    const layout = await this.layoutOf(
+      workspaceId,
+      monthStart,
+      split.allocations,
+      edited,
+    );
+    if (layout.isLeft()) return left(layout.value);
+
+    const allocations = toAllocationInputs(layout.value);
     if (allocations.length === 0) {
       return left(new BudgetSuggestionUnavailableError());
     }
@@ -87,6 +101,36 @@ export class AcceptSplitSuggestionService implements Service<
     );
 
     return right(acceptedOf(month));
+  }
+
+  private async layoutOf(
+    workspaceId: string,
+    effectiveFrom: Date,
+    suggested: AllocationLayoutSource[],
+    edited: Request['allocations'],
+  ): Promise<Either<Error, AllocationLayoutSource[]>> {
+    if (!edited) return right(suggested);
+
+    const validated = await this.validateAllocations.execute({
+      workspaceId,
+      effectiveFrom,
+      mode: 'fixed',
+      allocations: edited,
+      requireRootCategories: true,
+    });
+    if (validated.isLeft()) return left(validated.value);
+
+    const groupById = new Map(
+      suggested.map(({ categoryId, group }) => [categoryId, group]),
+    );
+
+    return right(
+      edited.map(({ categoryId, targetCents }) => ({
+        categoryId,
+        group: groupById.get(categoryId) ?? null,
+        suggestedCents: targetCents,
+      })),
+    );
   }
 
   private async isStillCurrent(
