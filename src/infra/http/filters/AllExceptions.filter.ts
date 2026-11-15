@@ -3,7 +3,7 @@ import type { ArgumentsHost } from '@nestjs/common/interfaces/features/arguments
 import { SentryExceptionCaptured } from '@sentry/nestjs';
 import { Request, Response } from 'express';
 
-const POSTGRES_TIMEOUT_CODES = ['55P03', '57014'];
+const POSTGRES_TIMEOUT_CODES = ['55P03', '57014', '40P01'];
 const MAX_CAUSE_DEPTH = 5;
 
 @Catch()

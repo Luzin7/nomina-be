@@ -1,8 +1,12 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
-import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import {
+  AccountListItem,
+  AccountRepository,
+} from '@modules/account/repositories/contracts/AccountRepository';
 import { Injectable } from '@nestjs/common';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 import { AccountMapper } from '../mappers/account.mapper';
 import * as schema from '../schema';
 import { ensureEntityId } from './ensure-entity-id';
@@ -83,6 +87,18 @@ export class AccountRepositoryImplementation implements AccountRepository {
     return AccountMapper.toDomain(updatedAccount);
   }
 
+  async updateAutoPay(card: CreditCard): Promise<void> {
+    await this.drizzle.db
+      .update(schema.accounts)
+      .set(AccountMapper.toAutoPayUpdatePayload(card))
+      .where(
+        and(
+          eq(schema.accounts.id, card.id),
+          eq(schema.accounts.workspaceId, card.workspaceId),
+        ),
+      );
+  }
+
   async delete(accountId: string): Promise<void> {
     await this.drizzle.db
       .delete(schema.accounts)
@@ -93,13 +109,25 @@ export class AccountRepositoryImplementation implements AccountRepository {
     workspaceId: string,
     page: number,
     pageSize: number,
-  ): Promise<{ accounts: AnyAccount[]; total: number }> {
+  ): Promise<{ accounts: AccountListItem[]; total: number }> {
     const offset = (page - 1) * pageSize;
 
-    const [accounts, [{ totalCount }]] = await Promise.all([
+    const latestMovement = this.drizzle.db
+      .select({ createdAt: schema.balanceMovements.createdAt })
+      .from(schema.balanceMovements)
+      .where(eq(schema.balanceMovements.accountId, schema.accounts.id))
+      .orderBy(desc(schema.balanceMovements.seq))
+      .limit(1)
+      .as('latest_movement');
+
+    const [rows, [{ totalCount }]] = await Promise.all([
       this.drizzle.db
-        .select()
+        .select({
+          account: schema.accounts,
+          balanceUpdatedAt: latestMovement.createdAt,
+        })
         .from(schema.accounts)
+        .leftJoinLateral(latestMovement, sql`true`)
         .where(eq(schema.accounts.workspaceId, workspaceId))
         .limit(pageSize)
         .offset(offset),
@@ -111,7 +139,10 @@ export class AccountRepositoryImplementation implements AccountRepository {
     ]);
 
     return {
-      accounts: accounts.map(AccountMapper.toDomain),
+      accounts: rows.map(({ account, balanceUpdatedAt }) => ({
+        account: AccountMapper.toDomain(account),
+        balanceUpdatedAt,
+      })),
       total: totalCount,
     };
   }

@@ -29,7 +29,7 @@ import {
   CreateInstallmentPurchaseRequest,
   MIN_PURCHASE_INSTALLMENTS,
 } from './create-installment-purchase.dto';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 
 type Request = CreateInstallmentPurchaseRequest & TokenPayloadBase;
 
@@ -143,7 +143,11 @@ export class CreateInstallmentPurchaseService implements Service<
     );
     if (persisted.isLeft()) return left(persisted.value);
 
-    await bumpReportGeneration(this.cache, workspaceId);
+    await invalidateLedgerReads(
+      this.cache,
+      workspaceId,
+      'create-installment-purchase',
+    );
 
     return right({ recurring, firstInstallment });
   }

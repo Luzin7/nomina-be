@@ -20,6 +20,12 @@ describe('Category entity', () => {
       expect(Category.create(makeProps()).isRight()).toBe(true);
     });
 
+    it('should default isHidden to false', () => {
+      const result = Category.create(makeProps());
+      if (result.isLeft()) throw result.value;
+      expect(result.value.isHidden).toBe(false);
+    });
+
     it('should reject empty name', () => {
       expect(Category.create(makeProps({ name: '' })).isLeft()).toBe(true);
     });
@@ -58,6 +64,39 @@ describe('Category entity', () => {
     it('should reject update on system category', () => {
       const cat = makeCategory({ isSystemCategory: true });
       expect(cat.updateName('New Name').isLeft()).toBe(true);
+    });
+  });
+
+  describe('hide()', () => {
+    function makeCategory(overrides = {}) {
+      const result = Category.create(makeProps(overrides));
+      if (result.isLeft()) throw result.value;
+      return result.value;
+    }
+
+    it('should hide a workspace category', () => {
+      const cat = makeCategory();
+      expect(cat.hide(true).isRight()).toBe(true);
+      expect(cat.isHidden).toBe(true);
+    });
+
+    it('should stay hidden when hidden twice', () => {
+      const cat = makeCategory();
+      cat.hide(true);
+      expect(cat.hide(true).isRight()).toBe(true);
+      expect(cat.isHidden).toBe(true);
+    });
+
+    it('should reveal a hidden category', () => {
+      const cat = makeCategory({ isHidden: true });
+      expect(cat.hide(false).isRight()).toBe(true);
+      expect(cat.isHidden).toBe(false);
+    });
+
+    it('should reject a system category', () => {
+      const cat = makeCategory({ isSystemCategory: true });
+      expect(cat.hide(true).isLeft()).toBe(true);
+      expect(cat.isHidden).toBe(false);
     });
   });
 

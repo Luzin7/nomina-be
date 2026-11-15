@@ -9,6 +9,7 @@ import { and, asc, count, desc, eq } from 'drizzle-orm';
 import { CategoryMapper } from '../mappers/category.mapper';
 import { WorkspaceMapper } from '../mappers/workspace.mapper';
 import * as schema from '../schema';
+import { insertEmergencyGoal } from './emergency-goal';
 import { insertOpeningMovement } from './opening-movement';
 
 @Injectable()
@@ -84,6 +85,8 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
         .values(
           categories.map((category) => CategoryMapper.toDatabase(category)),
         );
+
+      await insertEmergencyGoal(tx, workspace.id);
     });
   }
 

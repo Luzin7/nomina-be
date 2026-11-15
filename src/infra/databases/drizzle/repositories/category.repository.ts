@@ -1,7 +1,16 @@
 import { TransactionType } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { Category } from '@modules/category/entities/Category';
-import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import {
+  CategoryNameAlreadyExistsError,
+  CategoryReferenceCounts,
+  InvalidParentCategoryError,
+} from '@modules/category/errors';
+import {
+  CategoryDeleteResult,
+  CategoryListFilters,
+  CategoryRepository,
+} from '@modules/category/repositories/contracts/CategoryRepository';
 import { Injectable } from '@nestjs/common';
 import {
   and,
@@ -15,30 +24,44 @@ import {
   or,
   sql,
 } from 'drizzle-orm';
+import { getErrorDetails } from '@shared/utils/error-details';
 import { CategoryMapper } from '../mappers/category.mapper';
 import * as schema from '../schema';
+
+const FOREIGN_KEY_VIOLATION = '23503';
+const UNIQUE_VIOLATION = '23505';
+const CATEGORY_PARENT_FK = /categories_parent_id_(categories_id_fk|fkey)/;
+
+type ReferenceCountClient = Pick<
+  Parameters<Parameters<DrizzleService['db']['transaction']>[0]>[0],
+  'select'
+>;
 
 @Injectable()
 export class CategoryRepositoryImplementation implements CategoryRepository {
   constructor(private readonly drizzle: DrizzleService) {}
 
   async create(category: Category): Promise<Category> {
-    const [createdCategory] = await this.drizzle.db
-      .insert(schema.categories)
-      .values(CategoryMapper.toDatabase(category))
-      .returning();
+    return this.executeWriteChecked(async () => {
+      const [createdCategory] = await this.drizzle.db
+        .insert(schema.categories)
+        .values(CategoryMapper.toDatabase(category))
+        .returning();
 
-    return CategoryMapper.toDomain(createdCategory);
+      return CategoryMapper.toDomain(createdCategory);
+    });
   }
 
   async update(category: Category): Promise<Category> {
-    const [updatedCategory] = await this.drizzle.db
-      .update(schema.categories)
-      .set(CategoryMapper.toDatabase(category))
-      .where(eq(schema.categories.id, category.id))
-      .returning();
+    return this.executeWriteChecked(async () => {
+      const [updatedCategory] = await this.drizzle.db
+        .update(schema.categories)
+        .set(CategoryMapper.toDatabase(category))
+        .where(eq(schema.categories.id, category.id))
+        .returning();
 
-    return CategoryMapper.toDomain(updatedCategory);
+      return CategoryMapper.toDomain(updatedCategory);
+    });
   }
 
   async delete(id: string): Promise<void> {
@@ -52,6 +75,28 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
       .select()
       .from(schema.categories)
       .where(eq(schema.categories.id, id))
+      .limit(1);
+
+    if (!category) return null;
+    return CategoryMapper.toDomain(category);
+  }
+
+  async findVisibleById(
+    id: string,
+    workspaceId: string,
+  ): Promise<Category | null> {
+    const [category] = await this.drizzle.db
+      .select()
+      .from(schema.categories)
+      .where(
+        and(
+          eq(schema.categories.id, id),
+          or(
+            eq(schema.categories.workspaceId, workspaceId),
+            eq(schema.categories.isSystemCategory, true),
+          ),
+        ),
+      )
       .limit(1);
 
     if (!category) return null;
@@ -85,7 +130,7 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
 
   async findManyByWorkspaceId(
     workspaceId: string,
-    filters?: { type?: TransactionType; parentId?: string | null },
+    filters?: CategoryListFilters,
     page?: number,
     limit?: number,
   ): Promise<{
@@ -109,6 +154,9 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
         eq(schema.categories.isSystemCategory, true),
       ),
       filters?.type ? eq(schema.categories.type, filters.type) : undefined,
+      filters?.visibility === 'visible'
+        ? eq(schema.categories.isHidden, false)
+        : undefined,
       parentIdCondition,
     );
 
@@ -119,6 +167,7 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
         name: schema.categories.name,
         type: schema.categories.type,
         isSystemCategory: schema.categories.isSystemCategory,
+        isHidden: schema.categories.isHidden,
         parentId: schema.categories.parentId,
         usageCount: sql<number>`count(${schema.transactions.id})`.mapWith(
           Number,
@@ -139,6 +188,7 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
         schema.categories.name,
         schema.categories.type,
         schema.categories.isSystemCategory,
+        schema.categories.isHidden,
         schema.categories.parentId,
       )
       .orderBy(
@@ -164,11 +214,7 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
     }
 
     return {
-      categories: rows.map((row) =>
-        CategoryMapper.toDomain(
-          row as unknown as typeof schema.categories.$inferSelect,
-        ),
-      ),
+      categories: rows.map((row) => CategoryMapper.toDomain(row)),
       total: totalCount,
       usageCounts,
     };
@@ -192,21 +238,50 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
   }
 
   async countChildren(categoryId: string): Promise<number> {
-    const [{ childCount }] = await this.drizzle.db
-      .select({ childCount: count() })
-      .from(schema.categories)
-      .where(eq(schema.categories.parentId, categoryId));
-
-    return childCount;
+    return countChildren(this.drizzle.db, categoryId);
   }
 
   async countTransactions(categoryId: string): Promise<number> {
-    const [{ txCount }] = await this.drizzle.db
-      .select({ txCount: count() })
-      .from(schema.transactions)
-      .where(eq(schema.transactions.categoryId, categoryId));
+    return countTransactions(this.drizzle.db, categoryId);
+  }
 
-    return txCount;
+  async countBudgetAllocations(categoryId: string): Promise<number> {
+    return countBudgetAllocations(this.drizzle.db, categoryId);
+  }
+
+  async countRecurringTransactions(categoryId: string): Promise<number> {
+    return countRecurringTransactions(this.drizzle.db, categoryId);
+  }
+
+  async deleteIfUnreferenced(
+    categoryId: string,
+    workspaceId: string,
+  ): Promise<CategoryDeleteResult> {
+    try {
+      return await this.drizzle.db.transaction(async (tx) => {
+        const references = await countCategoryReferences(tx, categoryId);
+        if (hasReferences(references)) return { deleted: false, references };
+
+        await tx
+          .delete(schema.categories)
+          .where(
+            and(
+              eq(schema.categories.id, categoryId),
+              eq(schema.categories.workspaceId, workspaceId),
+            ),
+          );
+
+        return { deleted: true };
+      });
+    } catch (error) {
+      if (getErrorDetails(error).sqlState !== FOREIGN_KEY_VIOLATION)
+        throw error;
+
+      return {
+        deleted: false,
+        references: await countCategoryReferences(this.drizzle.db, categoryId),
+      };
+    }
   }
 
   async reassignChildren(
@@ -229,4 +304,99 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
 
     return categories.map(CategoryMapper.toDomain);
   }
+
+  private async executeWriteChecked<T>(write: () => Promise<T>): Promise<T> {
+    try {
+      return await write();
+    } catch (error) {
+      const details = getErrorDetails(error);
+
+      if (details.sqlState === UNIQUE_VIOLATION) {
+        throw new CategoryNameAlreadyExistsError();
+      }
+
+      if (
+        details.sqlState === FOREIGN_KEY_VIOLATION &&
+        CATEGORY_PARENT_FK.test(details.messageChain)
+      ) {
+        throw new InvalidParentCategoryError(
+          'a categoria pai informada não existe.',
+        );
+      }
+
+      throw error;
+    }
+  }
+}
+
+async function countTransactions(
+  client: ReferenceCountClient,
+  categoryId: string,
+): Promise<number> {
+  const [{ total }] = await client
+    .select({ total: count() })
+    .from(schema.transactions)
+    .where(eq(schema.transactions.categoryId, categoryId));
+
+  return total;
+}
+
+async function countBudgetAllocations(
+  client: ReferenceCountClient,
+  categoryId: string,
+): Promise<number> {
+  const [{ total }] = await client
+    .select({ total: count() })
+    .from(schema.budgetAllocations)
+    .where(eq(schema.budgetAllocations.categoryId, categoryId));
+
+  return total;
+}
+
+async function countRecurringTransactions(
+  client: ReferenceCountClient,
+  categoryId: string,
+): Promise<number> {
+  const [{ total }] = await client
+    .select({ total: count() })
+    .from(schema.recurringTransactions)
+    .where(eq(schema.recurringTransactions.categoryId, categoryId));
+
+  return total;
+}
+
+async function countChildren(
+  client: ReferenceCountClient,
+  categoryId: string,
+): Promise<number> {
+  const [{ total }] = await client
+    .select({ total: count() })
+    .from(schema.categories)
+    .where(eq(schema.categories.parentId, categoryId));
+
+  return total;
+}
+
+async function countCategoryReferences(
+  client: ReferenceCountClient,
+  categoryId: string,
+): Promise<CategoryReferenceCounts> {
+  const [transactions, allocations, recurringRules, children] =
+    await Promise.all([
+      countTransactions(client, categoryId),
+      countBudgetAllocations(client, categoryId),
+      countRecurringTransactions(client, categoryId),
+      countChildren(client, categoryId),
+    ]);
+
+  return { transactions, allocations, recurringRules, children };
+}
+
+function hasReferences({
+  transactions,
+  allocations,
+  recurringRules,
+  children,
+}: CategoryReferenceCounts): boolean {
+  return transactions + allocations + recurringRules + children > 0;
 }

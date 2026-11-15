@@ -9,8 +9,13 @@ import { CashFlowEvolutionController } from './features/get-cash-flow-evolution/
 import { CashFlowEvolutionService } from './features/get-cash-flow-evolution/cash-flow-evolution.handler';
 import { GetExpensesByCategoryController } from './features/get-expenses-by-category/get-expenses-by-category.controller';
 import { GetExpensesByCategoryService } from './features/get-expenses-by-category/get-expenses-by-category.handler';
+import { GetMonthPaceController } from './features/get-month-pace/get-month-pace.controller';
+import { GetMonthPaceService } from './features/get-month-pace/get-month-pace.handler';
 import { FindMonthSummaryController } from './features/get-month-summary/get-month-summary.controller';
 import { FindMonthSummaryService } from './features/get-month-summary/get-month-summary.service';
+import { GetProjectionController } from './features/get-projection/get-projection.controller';
+import { GetProjectionService } from './features/get-projection/get-projection.handler';
+import { ResolveMonthPlanService } from './services/resolve-month-plan.service';
 
 @Module({
   imports: [DatabaseModule, DateModule, RedisModule, WorkspaceModule],
@@ -19,12 +24,22 @@ import { FindMonthSummaryService } from './features/get-month-summary/get-month-
     GetExpensesByCategoryController,
     BalanceEvolutionController,
     FindMonthSummaryController,
+    GetProjectionController,
+    GetMonthPaceController,
   ],
   providers: [
     CashFlowEvolutionService,
     GetExpensesByCategoryService,
     BalanceEvolutionService,
     FindMonthSummaryService,
+    GetProjectionService,
+    GetMonthPaceService,
+    ResolveMonthPlanService,
+  ],
+  exports: [
+    FindMonthSummaryService,
+    GetProjectionService,
+    ResolveMonthPlanService,
   ],
 })
 export class ReportModule {}

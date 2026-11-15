@@ -41,6 +41,7 @@ describe('DeleteAccountService', () => {
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
     redisService = {

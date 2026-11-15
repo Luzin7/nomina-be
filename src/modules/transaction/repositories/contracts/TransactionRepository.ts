@@ -31,10 +31,8 @@ export type DueCardTransactions = {
   totalDue: number;
 };
 
-export interface ListTransactionsParams {
+export interface TransactionFilterParams {
   workspaceId: string;
-  page: number;
-  pageSize: number;
   startDate?: Date;
   endDate?: Date;
   type?: string;
@@ -43,6 +41,18 @@ export interface ListTransactionsParams {
   title?: string;
   status?: string;
 }
+
+export interface ListTransactionsParams extends TransactionFilterParams {
+  page: number;
+  pageSize: number;
+}
+
+export type TransactionTotals = {
+  count: number;
+  incomeCents: number;
+  expenseCents: number;
+  transferCents: number;
+};
 
 /**
  * Recebe a transação travada e devolve a versão resultante da edição. Roda
@@ -69,11 +79,16 @@ export abstract class TransactionRepository {
     params: ListTransactionsParams,
   ): Promise<{ transactions: Transaction[]; total: number }>;
 
+  abstract sumTransactionsByWorkspaceId(
+    params: TransactionFilterParams,
+  ): Promise<TransactionTotals>;
+
   abstract getTopExpensesByCategory(params: {
     workspaceId: string;
     startDate: Date;
     endDate: Date;
     pageSize: number;
+    isCurrentMonth: boolean;
   }): Promise<{ expenses: TopExpensesByCategory[]; totalExpense: number }>;
 
   abstract createWithBalanceUpdate(

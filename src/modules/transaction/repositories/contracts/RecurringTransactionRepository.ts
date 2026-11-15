@@ -1,4 +1,4 @@
-import { RecurringKind } from '@constants/enums';
+import { RecurrenceFrequency, RecurringKind } from '@constants/enums';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 
@@ -8,6 +8,26 @@ export type FindManyRecurringByWorkspaceQuery = {
   pageSize: number;
   isActive?: boolean;
   kind?: RecurringKind;
+};
+
+export type RecurringSummaryRule = {
+  id: string;
+  title: string;
+  type: 'INCOME' | 'EXPENSE';
+  amount: number;
+  frequency: RecurrenceFrequency;
+  interval: number;
+  installmentCount: number | null;
+  startDate: Date;
+  endDate: Date | null;
+  active: boolean;
+  exhausted: boolean;
+};
+
+export type FindSummaryRulesQuery = {
+  workspaceId: string;
+  todayStart: Date;
+  timezone: string;
 };
 
 export abstract class RecurringTransactionRepository {
@@ -41,5 +61,15 @@ export abstract class RecurringTransactionRepository {
   abstract createGeneratedTransactions(
     transactions: Transaction[],
     updatedRecurring: RecurringTransaction,
+  ): Promise<number>;
+
+  abstract findSummaryRules(
+    query: FindSummaryRulesQuery,
+  ): Promise<RecurringSummaryRule[]>;
+
+  abstract findCompletedRecurringExpense(
+    workspaceId: string,
+    start: Date,
+    end: Date,
   ): Promise<number>;
 }

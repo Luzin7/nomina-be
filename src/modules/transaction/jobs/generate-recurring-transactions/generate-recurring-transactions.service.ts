@@ -15,7 +15,7 @@ import { NextGenerationDateCalculator } from '@modules/transaction/services/cont
 import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { captureException } from '@sentry/nestjs';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { getErrorDetails } from '@shared/utils/error-details';
 
@@ -205,7 +205,11 @@ export class GenerateRecurringTransactionsJobService {
 
   private async invalidateReports(workspaceIds: Set<string>): Promise<void> {
     for (const workspaceId of workspaceIds) {
-      await bumpReportGeneration(this.redis, workspaceId);
+      await invalidateLedgerReads(
+        this.redis,
+        workspaceId,
+        'generate-recurring-transactions',
+      );
     }
   }
 

@@ -2,6 +2,8 @@ import {
   BusinessRuleDomainError,
   ConflictDomainError,
   DomainError,
+  GoneDomainError,
+  NotFoundDomainError,
 } from '@shared/core/errors/DomainError';
 
 export class InvalidAmountError extends BusinessRuleDomainError {
@@ -45,6 +47,30 @@ export class EndDateMustBeInTheFutureError extends BusinessRuleDomainError {
 export class RecurringTransactionNotFoundError extends BusinessRuleDomainError {
   constructor() {
     super('Transação recorrente não encontrada.');
+  }
+}
+
+export class RecurringSuggestionNotFoundError extends NotFoundDomainError {
+  constructor() {
+    super('Sugestão de recorrência não encontrada.');
+  }
+}
+
+export class RecurringSuggestionDismissedError extends ConflictDomainError {
+  constructor() {
+    super('Esta sugestão foi dispensada e não pode ser aceita.');
+  }
+}
+
+export class RecurringSuggestionAlreadyAcceptedError extends ConflictDomainError {
+  constructor() {
+    super('Esta sugestão já foi transformada em recorrência.');
+  }
+}
+
+export class RecurringRuleMissingError extends GoneDomainError {
+  constructor() {
+    super('A recorrência criada a partir desta sugestão não existe mais.');
   }
 }
 
@@ -160,6 +186,35 @@ export class CardInstallmentSettlementFailedError extends DomainError {
   }
 }
 
+export class CardInvoiceAutopayFailedError extends DomainError {
+  constructor(failedCount: number, processedCount: number) {
+    super(
+      `Falha ao registrar pagamento automático de fatura: ${failedCount} de ${processedCount} falharam.`,
+    );
+  }
+}
+
+export interface CardInvoiceAutopayFailureProps {
+  step: string;
+  cause: unknown;
+  amount?: bigint;
+}
+
+export class CardInvoiceAutopayFailureError extends DomainError {
+  readonly step: string;
+  readonly cause: unknown;
+  readonly amount?: bigint;
+
+  constructor({ step, cause, amount }: CardInvoiceAutopayFailureProps) {
+    super(
+      `Pagamento automático de fatura falhou em ${step}: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    this.step = step;
+    this.cause = cause;
+    this.amount = amount;
+  }
+}
+
 export class UnknownRecurrenceFrequencyError extends DomainError {
   constructor(frequency: string) {
     super(`Frequência de recorrência desconhecida: ${frequency}`);
@@ -188,5 +243,11 @@ export class BalanceReconciliationDivergenceError extends DomainError {
   constructor(divergences: readonly BalanceDivergencePayload[]) {
     super('Divergência entre o saldo das contas e o ledger de movimentações.');
     this.divergences = divergences;
+  }
+}
+
+export class WorkspaceTimezoneUnavailableError extends BusinessRuleDomainError {
+  constructor() {
+    super('Não foi possível resolver o fuso horário do workspace.');
   }
 }

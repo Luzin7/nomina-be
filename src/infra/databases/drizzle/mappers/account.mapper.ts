@@ -11,6 +11,13 @@ type AccountDrizzleEditable = Pick<
   AccountDrizzleInsert,
   'name' | 'creditLimit' | 'closingDaysBeforeDue' | 'dueDay'
 >;
+type AccountDrizzleAutoPay = Pick<
+  AccountDrizzleInsert,
+  | 'autoPayEnabled'
+  | 'autoPayConfirmedAt'
+  | 'autoPayEnabledAt'
+  | 'autoPaySourceAccountId'
+>;
 
 export class AccountMapper {
   static toDomain(raw: AccountDrizzle): AnyAccount {
@@ -22,11 +29,6 @@ export class AccountMapper {
 
     switch (raw.type) {
       case AccountType.CREDIT_CARD:
-        if (raw.dueDay === null) {
-          throw new Error(
-            `Dados corrompidos no banco: Cartão ${raw.id} sem dia de vencimento.`,
-          );
-        }
         return CreditCard.reconstitute(
           {
             ...baseProps,
@@ -35,6 +37,10 @@ export class AccountMapper {
             closingDaysBeforeDue: raw.closingDaysBeforeDue,
             dueDay: raw.dueDay,
             timezone: raw.timezone,
+            autoPayEnabled: raw.autoPayEnabled,
+            autoPayConfirmedAt: raw.autoPayConfirmedAt,
+            autoPayEnabledAt: raw.autoPayEnabledAt,
+            autoPaySourceAccountId: raw.autoPaySourceAccountId,
           },
           raw.id,
         );
@@ -96,6 +102,15 @@ export class AccountMapper {
     };
   }
 
+  static toAutoPayUpdatePayload(entity: CreditCard): AccountDrizzleAutoPay {
+    return {
+      autoPayEnabled: entity.autoPayEnabled,
+      autoPayConfirmedAt: entity.autoPayConfirmedAt,
+      autoPayEnabledAt: entity.autoPayEnabledAt,
+      autoPaySourceAccountId: entity.autoPaySourceAccountId,
+    };
+  }
+
   static toDatabase(entity: AnyAccount): AccountDrizzleInsert {
     const isCreditCard = entity instanceof CreditCard;
 
@@ -112,6 +127,12 @@ export class AccountMapper {
           : null,
       closingDaysBeforeDue: isCreditCard ? entity.closingDaysBeforeDue : 7,
       dueDay: isCreditCard ? entity.dueDay : null,
+      autoPayEnabled: isCreditCard ? entity.autoPayEnabled : false,
+      autoPayConfirmedAt: isCreditCard ? entity.autoPayConfirmedAt : null,
+      autoPayEnabledAt: isCreditCard ? entity.autoPayEnabledAt : null,
+      autoPaySourceAccountId: isCreditCard
+        ? entity.autoPaySourceAccountId
+        : null,
     };
   }
 }

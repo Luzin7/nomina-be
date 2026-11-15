@@ -1,8 +1,14 @@
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
+import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import { CardInvoiceSettlementRepository } from '@modules/transaction/repositories/contracts/CardInvoiceSettlementRepository';
+import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { GoalContributionRepository } from '@modules/goal/repositories/contracts/GoalContributionRepository';
+import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
 import { SubscriptionRepository } from '@modules/subscription/repositories/contracts/SubscriptionRepository';
+import { RecurringSuggestionRepository } from '@modules/transaction/repositories/contracts/RecurringSuggestionRepository';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { AuthSessionsRepository } from '@modules/user/repositories/contracts/auth-session.repository';
@@ -12,6 +18,7 @@ import { WorkspaceInviteRepository } from '@modules/workspace/repositories/contr
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { WorkspaceUserRepository } from '@modules/workspace/repositories/contracts/WorkspaceUserRepository';
 import { Module } from '@nestjs/common';
+import { DateModule } from '@providers/date/Date.module';
 import {
   DrizzleProvider,
   DrizzleTokenProvider,
@@ -19,8 +26,14 @@ import {
 import { DrizzleService } from './drizzle/drizzle.service';
 import { AccountRepositoryImplementation } from './drizzle/repositories/account.repository';
 import { AuthSessionRepositoryImplementation } from './drizzle/repositories/auth-session.repository';
+import { BudgetRepositoryImplementation } from './drizzle/repositories/budget.repository';
+import { CardCycleRepositoryImplementation } from './drizzle/repositories/card-cycle.repository';
+import { CardInvoiceSettlementRepositoryImplementation } from './drizzle/repositories/card-invoice-settlement.repository';
 import { CategoryRepositoryImplementation } from './drizzle/repositories/category.repository';
+import { GoalContributionRepositoryImplementation } from './drizzle/repositories/goal-contribution.repository';
+import { GoalRepositoryImplementation } from './drizzle/repositories/goal.repository';
 import { MonthProjectionRepositoryImplementation } from './drizzle/repositories/month-projection.repository';
+import { RecurringSuggestionRepositoryImplementation } from './drizzle/repositories/recurring-suggestion.repository';
 import { RecurringTransactionRepositoryImplementation } from './drizzle/repositories/recurring-transaction.repository';
 import { RefreshTokenRepositoryImplementation } from './drizzle/repositories/refresh-token.repository';
 import { ReportRepositoryImplementation } from './drizzle/repositories/report.repository';
@@ -32,6 +45,7 @@ import { WorkspaceUserRepositoryImplementation } from './drizzle/repositories/wo
 import { WorkspaceRepositoryImplementation } from './drizzle/repositories/workspace.repository';
 
 @Module({
+  imports: [DateModule],
   providers: [
     DrizzleProvider,
     DrizzleTokenProvider,
@@ -73,6 +87,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: RecurringTransactionRepositoryImplementation,
     },
     {
+      provide: RecurringSuggestionRepository,
+      useClass: RecurringSuggestionRepositoryImplementation,
+    },
+    {
       provide: AccountRepository,
       useClass: AccountRepositoryImplementation,
     },
@@ -81,12 +99,32 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       useClass: CategoryRepositoryImplementation,
     },
     {
+      provide: GoalRepository,
+      useClass: GoalRepositoryImplementation,
+    },
+    {
+      provide: GoalContributionRepository,
+      useClass: GoalContributionRepositoryImplementation,
+    },
+    {
+      provide: BudgetRepository,
+      useClass: BudgetRepositoryImplementation,
+    },
+    {
       provide: SubscriptionRepository,
       useClass: SubscriptionRepositoryImplementation,
     },
     {
+      provide: CardCycleRepository,
+      useClass: CardCycleRepositoryImplementation,
+    },
+    {
       provide: ReportRepository,
       useClass: ReportRepositoryImplementation,
+    },
+    {
+      provide: CardInvoiceSettlementRepository,
+      useClass: CardInvoiceSettlementRepositoryImplementation,
     },
   ],
   exports: [
@@ -100,10 +138,16 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     TransactionRepository,
     MonthProjectionRepository,
     RecurringTransactionRepository,
+    RecurringSuggestionRepository,
     AccountRepository,
     CategoryRepository,
+    GoalRepository,
+    GoalContributionRepository,
+    BudgetRepository,
+    CardCycleRepository,
     SubscriptionRepository,
     ReportRepository,
+    CardInvoiceSettlementRepository,
   ],
 })
 export class DatabaseModule {}

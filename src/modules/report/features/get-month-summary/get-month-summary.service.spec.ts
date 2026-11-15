@@ -5,7 +5,7 @@ import { ReportRepository } from '@modules/report/repositories/contracts/ReportR
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
-import { REPORT_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
+import { LEDGER_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import { FindMonthSummaryService } from './get-month-summary.service';
 
 const GENERATION = 7;
@@ -217,7 +217,7 @@ describe('FindMonthSummaryService', () => {
         '2026-10-01T03:00:00.000Z',
       );
       expect(cache.get).toHaveBeenCalledWith(
-        'report:month-summary:v5:ws-1:g7:2026-10-31',
+        'report:month-summary:v9:ws-1:g7:2026-10-31',
       );
     });
 
@@ -239,6 +239,7 @@ describe('FindMonthSummaryService', () => {
     it('should use 28 days in February', async () => {
       const activeMonth = (key: string) => ({
         key,
+        totalIncome: 0,
         totalExpense: 0,
         pending: { totalIncome: 0, totalExpense: 0 },
         plainExpenses: [10, 11, 12, 13, 14, 28].map((day) => ({
@@ -257,16 +258,17 @@ describe('FindMonthSummaryService', () => {
       const summary = await executeAt(new Date('2026-02-28T12:00:00.000Z'));
 
       expect(iso(lastQuery().range.end)).toBe('2026-03-01T02:59:59.999Z');
-      expect(summary.projection.variableEstimate).toBe(100);
+      expect(summary.projection.daysRemaining).toBe(0);
+      expect(summary.projection.variableRemaining).toBe(0);
     });
 
     it('should key the cache by version, generation and local day', async () => {
       await executeAt(NOW);
 
       expect(cache.set).toHaveBeenCalledWith(
-        'report:month-summary:v5:ws-1:g7:2026-09-15',
+        'report:month-summary:v9:ws-1:g7:2026-09-15',
         expect.any(String),
-        REPORT_CACHE_TTL_SECONDS,
+        LEDGER_CACHE_TTL_SECONDS,
       );
     });
 
@@ -278,11 +280,11 @@ describe('FindMonthSummaryService', () => {
 
       expect(cache.get).toHaveBeenNthCalledWith(
         1,
-        'report:month-summary:v5:ws-1:g7:2026-09-15',
+        'report:month-summary:v9:ws-1:g7:2026-09-15',
       );
       expect(cache.get).toHaveBeenNthCalledWith(
         2,
-        'report:month-summary:v5:ws-1:g8:2026-09-15',
+        'report:month-summary:v9:ws-1:g8:2026-09-15',
       );
     });
 

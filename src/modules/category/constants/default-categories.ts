@@ -7,7 +7,6 @@ export interface DefaultCategoryNode {
   children?: readonly string[];
 }
 
-// Mirrored by the backfill VALUES in drizzle/0018_workspace_default_categories.sql; change both together.
 export const DEFAULT_CATEGORIES: readonly DefaultCategoryNode[] = [
   {
     name: 'Alimentação',
@@ -50,6 +49,7 @@ export const DEFAULT_CATEGORIES: readonly DefaultCategoryNode[] = [
   },
   { name: 'Compras', type: TransactionType.EXPENSE, children: ['Vestuário'] },
   { name: 'Impostos', type: TransactionType.EXPENSE },
+  { name: 'Investimentos', type: TransactionType.EXPENSE },
   { name: 'Outros Gastos', type: TransactionType.EXPENSE },
   { name: 'Salário', type: TransactionType.INCOME },
   { name: 'Investimentos', type: TransactionType.INCOME },

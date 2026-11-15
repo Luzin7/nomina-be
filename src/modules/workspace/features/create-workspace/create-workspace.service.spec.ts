@@ -73,7 +73,7 @@ describe('CreateWorkspaceService', () => {
 
     await service.execute(makeRequest());
 
-    expect(categoriesFromLastCall(workspaceRepository)).toHaveLength(37);
+    expect(categoriesFromLastCall(workspaceRepository)).toHaveLength(38);
   });
 
   it('should give every category a unique id and link children to their parent', async () => {

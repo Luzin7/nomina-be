@@ -1,15 +1,6 @@
 import { MoneyUtils } from '@utils/MoneyUtils';
-import {
-  MonthSummary,
-  PeriodTotals,
-} from '@modules/report/valueObjects/MonthSummary';
-
-const toDecimal = (cents: number) => MoneyUtils.centsToDecimal(cents);
-
-const periodTotalsToHTTP = (totals: PeriodTotals) => ({
-  totalIncome: toDecimal(totals.totalIncome),
-  totalExpense: toDecimal(totals.totalExpense),
-});
+import { MonthSummary } from '@modules/report/valueObjects/MonthSummary';
+import { toHTTPProjection } from './MonthProjection.presenter';
 
 export class MonthSummaryPresenter {
   static toHTTP(monthSummary: MonthSummary) {
@@ -38,23 +29,7 @@ export class MonthSummaryPresenter {
           monthSummary.previousMonthToDate.totalExpense,
         ),
       },
-      projection: {
-        expectedIncome: toDecimal(projection.expectedIncome),
-        expectedExpense: toDecimal(projection.expectedExpense),
-        expectedBalance: toDecimal(projection.expectedBalance),
-        realized: periodTotalsToHTTP(projection.realized),
-        scheduled: periodTotalsToHTTP(projection.scheduled),
-        recurringNotYetGenerated: periodTotalsToHTTP(
-          projection.recurringNotYetGenerated,
-        ),
-        variableEstimate: toDecimal(projection.variableEstimate),
-        usualExpense:
-          projection.usualExpense === null
-            ? null
-            : toDecimal(projection.usualExpense),
-        basisMonths: projection.basisMonths,
-        hasHistory: projection.hasHistory,
-      },
+      projection: toHTTPProjection(projection),
     };
   }
 }

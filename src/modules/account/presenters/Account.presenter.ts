@@ -1,5 +1,6 @@
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AnyAccount } from '@modules/account/entities/types';
+import { AccountListItem } from '@modules/account/repositories/contracts/AccountRepository';
 import { MoneyUtils } from '@utils/MoneyUtils';
 import { CashAccount } from '../entities/CashAccounts';
 import { CreditCard } from '../entities/CreditCardAccount';
@@ -27,6 +28,10 @@ export class AccountPresenter {
           account.availableLimit === null
             ? null
             : MoneyUtils.centsToDecimal(Number(account.availableLimit)),
+        autoPayEnabled: account.autoPayEnabled,
+        autoPaySourceAccountId: account.autoPaySourceAccountId,
+        autoPayConfirmedAt: account.autoPayConfirmedAt?.toISOString() ?? null,
+        autoPayEnabledAt: account.autoPayEnabledAt?.toISOString() ?? null,
       };
     }
 
@@ -35,5 +40,24 @@ export class AccountPresenter {
     }
 
     return basePayload;
+  }
+
+  static toListItemHTTP({ account, balanceUpdatedAt }: AccountListItem) {
+    return {
+      ...AccountPresenter.toHTTP(account),
+      balanceUpdatedAt: balanceUpdatedAt
+        ? balanceUpdatedAt.toISOString()
+        : null,
+    };
+  }
+
+  static toAutopayHTTP(card: CreditCard) {
+    return {
+      accountId: card.id,
+      autoPayEnabled: card.autoPayEnabled,
+      autoPayConfirmedAt: card.autoPayConfirmedAt?.toISOString() ?? null,
+      autoPayEnabledAt: card.autoPayEnabledAt?.toISOString() ?? null,
+      autoPaySourceAccountId: card.autoPaySourceAccountId,
+    };
   }
 }

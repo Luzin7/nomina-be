@@ -27,5 +27,5 @@ export abstract class ForbiddenDomainError extends DomainError {}
 // 401 - Falha de credenciais (ex: token inválido, senha incorreta no login)
 export abstract class UnauthorizedDomainError extends DomainError {}
 
-// 402 ou 403 - Limite do plano SaaS atingido (ex: plano free só permite 2 contas)
-export abstract class PlanLimitExceededDomainError extends DomainError {}
+export const PLAN_LIMIT_EXCEEDED_CODE = 'PLAN_LIMIT_EXCEEDED';
+export abstract class PlanLimitExceededDomainError extends ForbiddenDomainError {}

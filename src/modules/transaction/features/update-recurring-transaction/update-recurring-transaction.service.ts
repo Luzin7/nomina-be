@@ -22,7 +22,7 @@ import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { inferInstallmentCount } from '@utils/installmentSchedule';
 import { UpdateRecurringTransactionRequest } from './update-recurring-transaction.dto';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 
 type Request = UpdateRecurringTransactionRequest & {
   recurringTransactionId: string;
@@ -64,7 +64,11 @@ export class UpdateRecurringTransactionService implements Service<
 
     const updated = await this.recurringRepository.update(recurring);
 
-    await bumpReportGeneration(this.redisService, request.workspaceId);
+    await invalidateLedgerReads(
+      this.redisService,
+      request.workspaceId,
+      'update-recurring-transaction',
+    );
 
     return right(updated);
   }

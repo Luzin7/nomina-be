@@ -1,14 +1,17 @@
 import { AccountType, TransactionType } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { Category } from '@modules/category/entities/Category';
+import { CategoryNotFoundError } from '@modules/category/errors';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { CreditCardTransferNotAllowedError } from '@modules/transaction/errors';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { UnprocessableEntityException } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -66,6 +69,7 @@ describe('CreateTransactionService', () => {
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
     categoryRepository = {
@@ -74,12 +78,17 @@ describe('CreateTransactionService', () => {
       update: jest.fn(),
       delete: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
       findUniqueByAttributes: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       countChildren: jest.fn(),
       countTransactions: jest.fn(),
       reassignChildren: jest.fn(),
       findManyByIds: jest.fn(),
+      countBudgetAllocations: jest.fn(),
+      countRecurringTransactions: jest.fn(),
+      findVisibleById: jest.fn(),
+      deleteIfUnreferenced: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
     transactionRepository = {
@@ -88,6 +97,7 @@ describe('CreateTransactionService', () => {
       create: jest.fn(),
       findUniqueById: jest.fn(),
       listTransactionsByWorkspaceId: jest.fn(),
+      sumTransactionsByWorkspaceId: jest.fn(),
       getTopExpensesByCategory: jest.fn(),
       updateWithBalanceEffect: jest.fn(),
       deleteWithBalanceEffect: jest.fn(),
@@ -153,6 +163,19 @@ describe('CreateTransactionService', () => {
     const result = await service.execute(makeRequest());
     expect(result.isLeft()).toBe(true);
     expect(result.value).toBeInstanceOf(UnauthorizedError);
+  });
+
+  it('should return a 422 domain error when the category is not found', async () => {
+    accountRepository.findById.mockResolvedValue(makeAccount());
+    categoryRepository.findById.mockResolvedValue(null);
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(CategoryNotFoundError);
+    expect(() => ErrorPresenter.toHTTP(result.value as Error)).toThrow(
+      UnprocessableEntityException,
+    );
   });
 
   it('should return left(UnauthorizedError) when account belongs to different workspace', async () => {

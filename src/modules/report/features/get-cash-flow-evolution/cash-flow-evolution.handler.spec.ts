@@ -2,10 +2,10 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
-import { REPORT_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
+import { LEDGER_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import { CashFlowEvolutionService } from './cash-flow-evolution.handler';
 
-const CACHE_KEY = 'report:cash-flow-evolution:v2:ws-1:g7:2026-09-01:2026-09-30';
+const CACHE_KEY = 'report:cash-flow-evolution:v3:ws-1:g7:2026-09-01:2026-09-30';
 
 function makeRequest(overrides = {}) {
   return {
@@ -81,7 +81,7 @@ describe('CashFlowEvolutionService', () => {
     expect(cache.set).toHaveBeenCalledWith(
       CACHE_KEY,
       JSON.stringify(result),
-      REPORT_CACHE_TTL_SECONDS,
+      LEDGER_CACHE_TTL_SECONDS,
     );
   });
 

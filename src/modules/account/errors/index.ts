@@ -65,6 +65,14 @@ export class InvalidDueDayError extends ValidationAccountError {
   }
 }
 
+export class CreditCardCycleNotConfiguredError extends BusinessRuleDomainError {
+  constructor() {
+    super(
+      'O cartão não tem o ciclo da fatura configurado. Defina o dia de vencimento e o fechamento.',
+    );
+  }
+}
+
 export class InsufficientBalanceError extends BusinessRuleDomainError {
   constructor(reason = 'Saldo insuficiente para essa operação.') {
     super(reason);
@@ -74,5 +82,25 @@ export class InsufficientBalanceError extends BusinessRuleDomainError {
 export class PaymentExceedsInvoiceBalanceError extends BusinessRuleDomainError {
   constructor() {
     super('O pagamento não pode exceder o valor da fatura atual.');
+  }
+}
+
+export class AutopayRequiresCreditCardError extends ConflictDomainError {
+  constructor() {
+    super(
+      'O pagamento automático só pode ser configurado em cartões de crédito.',
+    );
+  }
+}
+
+export class AutopayInvalidSourceAccountError extends BusinessRuleDomainError {
+  constructor(reason: string) {
+    super(`Conta de origem inválida para o pagamento automático: ${reason}`);
+  }
+}
+
+export class AutopayConfigurationError extends BusinessRuleDomainError {
+  constructor(reason: string) {
+    super(`Pagamento automático não pode ser ativado: ${reason}`);
   }
 }

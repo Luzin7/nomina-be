@@ -6,9 +6,11 @@ import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-wor
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
 import {
-  REPORT_CACHE_TTL_SECONDS,
-  readReportGeneration,
+  LEDGER_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
 } from '@shared/cache/report-cache';
 import { Either, right } from '@shared/core/errors/Either';
 import { MoneyUtils } from '@utils/MoneyUtils';
@@ -319,17 +321,31 @@ export class BalanceEvolutionService {
     workspaceId,
     period,
   }: Request): Promise<Either<Error, Response>> {
-    const generation = await readReportGeneration(this.cache, workspaceId);
+    const generation = await readLedgerGeneration(this.cache, workspaceId);
     const timezone = await this.workspaceTimezone.execute(workspaceId);
     const now = this.dateProvider.now();
     const localDay = this.dateProvider.format(now, 'YYYY-MM-DD', timezone);
-    const cacheKey =
-      generation === null
-        ? null
-        : `report:balance-evolution:${CACHE_VERSION}:${workspaceId}:g${generation}:${period}:${localDay}`;
-    const cached = cacheKey ? await this.cache.get(cacheKey) : null;
-    if (cached) return right(JSON.parse(cached) as Response);
 
+    return readThrough({
+      cache: this.cache,
+      key: buildCacheKey({
+        route: 'report:balance-evolution',
+        version: CACHE_VERSION,
+        workspaceId,
+        generations: { ledger: generation },
+        parts: [period, localDay],
+      }),
+      ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
+      load: () => this.evolve(workspaceId, period, now, timezone),
+    });
+  }
+
+  private async evolve(
+    workspaceId: string,
+    period: Request['period'],
+    now: Date,
+    timezone: string,
+  ): Promise<Either<Error, Response>> {
     const periodDays = period === '7d' ? 7 : 30;
     const startDate = this.dateProvider.startOfDay(
       this.dateProvider.add(now, -periodDays, 'day', timezone),
@@ -400,14 +416,6 @@ export class BalanceEvolutionService {
       netWorth,
       totalInvested,
     };
-
-    if (cacheKey) {
-      await this.cache.set(
-        cacheKey,
-        JSON.stringify(response),
-        REPORT_CACHE_TTL_SECONDS,
-      );
-    }
 
     return right(response);
   }

@@ -1,3 +1,4 @@
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountType } from '@constants/enums';
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -33,15 +34,22 @@ describe('ListAccountsService', () => {
       findByNameAndWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
-    service = new ListAccountsService(accountRepository);
+    service = new ListAccountsService(
+      accountRepository,
+      new InMemoryCacheProvider(),
+    );
   });
 
   afterEach(() => jest.clearAllMocks());
 
   it('should return accounts and total', async () => {
-    const accounts = [makeAccount(), makeAccount()];
+    const accounts = [
+      { account: makeAccount(), balanceUpdatedAt: new Date() },
+      { account: makeAccount(), balanceUpdatedAt: null },
+    ];
     accountRepository.findManyByWorkspaceId.mockResolvedValue({
       accounts,
       total: 2,

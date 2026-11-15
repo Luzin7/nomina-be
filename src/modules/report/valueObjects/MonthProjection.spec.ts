@@ -33,6 +33,7 @@ const makeRule = (
 ): RecurringRuleSnapshot => ({
   id: 'rule-1',
   type: 'EXPENSE',
+  categoryId: 'cat-1',
   amount: 5000,
   frequency: RecurrenceFrequency.MONTHLY,
   interval: 1,
@@ -56,6 +57,7 @@ const makeLedgerMonth = (
   overrides: Partial<LedgerMonth> = {},
 ): LedgerMonth => ({
   key,
+  totalIncome: 0,
   totalExpense: 0,
   pending: { totalIncome: 0, totalExpense: 0 },
   plainExpenses: [],
@@ -128,6 +130,97 @@ const currentMonth = (
   overrides: Partial<LedgerMonth> = {},
 ) => makeLedgerMonth('2026-10', { plainExpenses: rows, ...overrides });
 
+const THIRTY_DAY_BASIS = [SEPTEMBER, JUNE, APRIL];
+
+const flatMonth = (key: string): LedgerMonth =>
+  makeLedgerMonth(key, {
+    plainExpenses: Array.from({ length: 30 }, (_, index) =>
+      makeRow({ day: index + 1, amount: 100 }),
+    ),
+  });
+
+const shapeMonth = (key: string): LedgerMonth =>
+  makeLedgerMonth(key, {
+    plainExpenses: [
+      makeRow({ day: 2, categoryId: 'luz', amount: 20000 }),
+      makeRow({ day: 5, amount: 0 }),
+      makeRow({ day: 10, amount: 500 }),
+      makeRow({ day: 20, amount: 500 }),
+      makeRow({ day: 25, amount: 2000 }),
+    ],
+  });
+
+const frontLoadedMonth = (key: string): LedgerMonth =>
+  makeLedgerMonth(key, {
+    plainExpenses: [
+      ...[1, 2, 3, 4].map((day) => makeRow({ day, amount: 0 })),
+      makeRow({ day: 5, amount: 3000 }),
+    ],
+  });
+
+const billInWindowMonth = (key: string): LedgerMonth =>
+  makeLedgerMonth(key, {
+    plainExpenses: [
+      ...[1, 2, 3].map((day) => makeRow({ day, amount: 0 })),
+      makeRow({ day: 20, amount: 500 }),
+      makeRow({ day: 25, categoryId: 'luz', amount: 20000 }),
+    ],
+  });
+
+const shortMonthBasis = (): LedgerMonth[] => [
+  makeLedgerMonth('2026-02', {
+    plainExpenses: [1, 2, 3, 4, 5].map((day) => makeRow({ day, amount: 0 })),
+  }),
+  makeLedgerMonth('2026-01', {
+    plainExpenses: [
+      ...[1, 2, 3, 4].map((day) => makeRow({ day, amount: 0 })),
+      makeRow({ day: 31, amount: 1000 }),
+    ],
+  }),
+  makeLedgerMonth('2025-12', {
+    plainExpenses: [
+      ...[1, 2, 3, 4].map((day) => makeRow({ day, amount: 0 })),
+      makeRow({ day: 31, amount: 1000 }),
+    ],
+  }),
+];
+
+const marchInput = (
+  overrides: Partial<MonthProjectionInput> = {},
+): MonthProjectionInput =>
+  makeInput({
+    month: {
+      key: '2026-03',
+      start: localMidnight('2026-03-01'),
+      end: new Date('2026-04-01T02:59:59.999Z'),
+      days: 31,
+    },
+    dayOfMonth: 30,
+    ledger: [...shortMonthBasis(), makeLedgerMonth('2026-03')],
+    ...overrides,
+  });
+
+const dailyRows = (days: number, amount: number): PlainExpense[] =>
+  Array.from({ length: days }, (_, index) =>
+    makeRow({ day: index + 1, amount }),
+  );
+
+const pacedBasisMonth = (key: string, windowAmount: number): LedgerMonth =>
+  makeLedgerMonth(key, {
+    plainExpenses: [
+      ...[1, 2, 3, 4, 5].map((day) => makeRow({ day, amount: 0 })),
+      makeRow({ day: 2, categoryId: 'luz', amount: 2500 }),
+      windowRow(windowAmount),
+    ],
+  });
+
+const THIRTEEN_DAY_MONTH = {
+  key: '2026-10',
+  start: localMidnight('2026-10-01'),
+  end: new Date('2026-10-14T02:59:59.999Z'),
+  days: 13,
+};
+
 describe('projectMonthEnd', () => {
   describe('history', () => {
     it('has no history and no estimates with an empty ledger', () => {
@@ -135,11 +228,13 @@ describe('projectMonthEnd', () => {
 
       expect(projection.basisMonths).toBe(0);
       expect(projection.hasHistory).toBe(false);
-      expect(projection.variableEstimate).toBe(0);
+      expect(projection.fixedBillsDue).toBe(0);
+      expect(projection.variableRemaining).toBe(0);
+      expect(projection.paceDaily).toBeNull();
       expect(projection.usualExpense).toBeNull();
     });
 
-    it('has no history with two active months and an inactive one on a single day', () => {
+    it('keeps every pace estimate off until three active months of history', () => {
       const projection = projectMonthEnd(
         makeOctoberInput({
           ledger: [
@@ -153,7 +248,9 @@ describe('projectMonthEnd', () => {
 
       expect(projection.basisMonths).toBe(2);
       expect(projection.hasHistory).toBe(false);
-      expect(projection.variableEstimate).toBe(0);
+      expect(projection.paceDaily).toBeNull();
+      expect(projection.variableRemaining).toBe(0);
+      expect(projection.fixedBillsDue).toBe(0);
       expect(projection.usualExpense).toBeNull();
     });
 
@@ -192,7 +289,7 @@ describe('projectMonthEnd', () => {
 
       expect(projection.basisMonths).toBe(3);
       expect(projection.hasHistory).toBe(true);
-      expect(projection.variableEstimate).toBe(2000);
+      expect(projection.fixedBillsDue).toBe(0);
     });
 
     it('uses four active months', () => {
@@ -201,7 +298,7 @@ describe('projectMonthEnd', () => {
       );
 
       expect(projection.basisMonths).toBe(4);
-      expect(projection.variableEstimate).toBe(2500);
+      expect(projection.variableRemaining).toBe(2500);
     });
 
     it('uses five active months', () => {
@@ -212,7 +309,7 @@ describe('projectMonthEnd', () => {
       );
 
       expect(projection.basisMonths).toBe(5);
-      expect(projection.variableEstimate).toBe(3000);
+      expect(projection.variableRemaining).toBe(3000);
     });
 
     it('uses six active months', () => {
@@ -223,7 +320,7 @@ describe('projectMonthEnd', () => {
       );
 
       expect(projection.basisMonths).toBe(6);
-      expect(projection.variableEstimate).toBe(3500);
+      expect(projection.variableRemaining).toBe(3500);
     });
 
     it('uses only the newest six of seven active months', () => {
@@ -234,7 +331,8 @@ describe('projectMonthEnd', () => {
       );
 
       expect(projection.basisMonths).toBe(6);
-      expect(projection.variableEstimate).toBe(3500);
+      expect(projection.variableRemaining).toBe(3500);
+      expect(projection.expectedExpense).toBe(3500);
     });
 
     it('skips an inactive month and fills from an older one', () => {
@@ -254,7 +352,8 @@ describe('projectMonthEnd', () => {
       );
 
       expect(projection.basisMonths).toBe(6);
-      expect(projection.variableEstimate).toBe(3500);
+      expect(projection.variableRemaining).toBe(3500);
+      expect(projection.expectedExpense).toBe(3500);
     });
   });
 
@@ -281,7 +380,7 @@ describe('projectMonthEnd', () => {
         }),
       );
 
-      expect(projection.variableEstimate).toBe(1000);
+      expect(projection.fixedBillsDue).toBe(0);
     });
 
     it('adds the median of a bill not paid yet', () => {
@@ -294,7 +393,61 @@ describe('projectMonthEnd', () => {
         }),
       );
 
-      expect(projection.variableEstimate).toBe(23000);
+      expect(projection.fixedBillsDue).toBe(22000);
+    });
+
+    it('keeps a rule-covered bill fixed for the variable window', () => {
+      const projection = projectMonthEnd(
+        makeOctoberInput({
+          dayOfMonth: 1,
+          ledger: [
+            ...billMonths([22000, 22000, 22000]),
+            currentMonth([aluguelRow]),
+          ],
+          recurringRules: [makeRule({ categoryId: 'luz', amount: 22000 })],
+        }),
+      );
+
+      expect(projection.fixedBillsDue).toBe(0);
+      expect(projection.recurringNotYetGenerated.totalExpense).toBe(22000);
+      expect(projection.variableRemaining).toBe(6000);
+      expect(projection.expectedExpense).toBe(28000);
+    });
+
+    it('still counts a bill covered by a yearly rule', () => {
+      const projection = projectMonthEnd(
+        makeOctoberInput({
+          ledger: [
+            ...billMonths([22000, 22000, 22000]),
+            currentMonth([aluguelRow]),
+          ],
+          recurringRules: [
+            makeRule({
+              categoryId: 'luz',
+              amount: 22000,
+              frequency: RecurrenceFrequency.YEARLY,
+            }),
+          ],
+        }),
+      );
+
+      expect(projection.fixedBillsDue).toBe(22000);
+    });
+
+    it('still counts a bill covered by a rule with interval above one', () => {
+      const projection = projectMonthEnd(
+        makeOctoberInput({
+          ledger: [
+            ...billMonths([22000, 22000, 22000]),
+            currentMonth([aluguelRow]),
+          ],
+          recurringRules: [
+            makeRule({ categoryId: 'luz', amount: 22000, interval: 2 }),
+          ],
+        }),
+      );
+
+      expect(projection.fixedBillsDue).toBe(22000);
     });
 
     it('adds every bill on the first day of the month', () => {
@@ -310,7 +463,7 @@ describe('projectMonthEnd', () => {
         }),
       );
 
-      expect(projection.variableEstimate).toBe(177000);
+      expect(projection.fixedBillsDue).toBe(172000);
     });
 
     it('does not project a bill missing from the newest month', () => {
@@ -326,7 +479,7 @@ describe('projectMonthEnd', () => {
         }),
       );
 
-      expect(projection.variableEstimate).toBe(1000);
+      expect(projection.fixedBillsDue).toBe(0);
     });
 
     it('does not project a bill paid twice in the current month', () => {
@@ -342,7 +495,7 @@ describe('projectMonthEnd', () => {
         }),
       );
 
-      expect(projection.variableEstimate).toBe(1000);
+      expect(projection.fixedBillsDue).toBe(0);
     });
 
     it('excludes both rows of a bill paid twice in the newest month from variable', () => {
@@ -361,7 +514,8 @@ describe('projectMonthEnd', () => {
         }),
       );
 
-      expect(projection.variableEstimate).toBe(1000);
+      expect(projection.fixedBillsDue).toBe(0);
+      expect(projection.variableRemaining).toBe(1000);
     });
 
     it('does not add a pending bill on top of the scheduled amount', () => {
@@ -386,7 +540,7 @@ describe('projectMonthEnd', () => {
         }),
       );
 
-      expect(projection.variableEstimate).toBe(1000);
+      expect(projection.fixedBillsDue).toBe(0);
     });
 
     it('does not turn a high-frequency category into a bill', () => {
@@ -406,165 +560,197 @@ describe('projectMonthEnd', () => {
         }),
       );
 
-      expect(projection.variableEstimate).toBe(1000);
+      expect(projection.fixedBillsDue).toBe(0);
     });
   });
 
-  describe('variable window', () => {
-    it('nets only the slice of today against what was already spent today', () => {
+  describe('habits-based projection', () => {
+    it('projects the historical window shape instead of a flat daily rate', () => {
       const projection = projectMonthEnd(
         makeOctoberInput({
+          dayOfMonth: 15,
           ledger: [
-            ...[SEPTEMBER, AUGUST, JULY].map((key) =>
-              activeMonth(key, [
-                windowRow(3000),
-                makeRow({ day: 23, amount: 1000 }),
-              ]),
-            ),
-            currentMonth([makeRow({ day: 23, amount: 400 })]),
+            ...THIRTY_DAY_BASIS.map(shapeMonth),
+            currentMonth([makeRow({ day: 10, amount: 500 })]),
           ],
         }),
       );
 
-      expect(projection.variableEstimate).toBe(3600);
+      expect(projection.variableRemaining).toBe(2500);
+      expect(projection.paceDaily).toBe(33);
     });
 
-    it('keeps the rest of the window after a big purchase today', () => {
+    it('projects nothing when every basis month spends before the window', () => {
       const projection = projectMonthEnd(
         makeOctoberInput({
+          dayOfMonth: 20,
           ledger: [
-            ...[SEPTEMBER, AUGUST, JULY].map((key) =>
-              activeMonth(key, [
-                windowRow(3000),
-                makeRow({ day: 23, amount: 2000 }),
-              ]),
-            ),
-            currentMonth([
-              makeRow({ day: 23, categoryId: 'cat-big', amount: 50000 }),
-            ]),
+            ...THIRTY_DAY_BASIS.map(frontLoadedMonth),
+            currentMonth([makeRow({ day: 5, amount: 3000 })]),
           ],
         }),
       );
 
-      expect(projection.variableEstimate).toBe(3000);
+      expect(projection.variableRemaining).toBe(0);
+      expect(projection.paceDaily).toBe(150);
     });
 
-    it('does not count today pending rows as spent today', () => {
+    it('converges to the same remainder for a flat shape', () => {
       const projection = projectMonthEnd(
         makeOctoberInput({
+          dayOfMonth: 15,
           ledger: [
-            ...[SEPTEMBER, AUGUST, JULY].map((key) =>
-              activeMonth(key, [makeRow({ day: 23, amount: 1000 })]),
-            ),
-            currentMonth([makeRow({ day: 23, amount: 400, pending: true })]),
+            ...THIRTY_DAY_BASIS.map(flatMonth),
+            currentMonth(dailyRows(15, 100)),
           ],
         }),
       );
 
-      expect(projection.variableEstimate).toBe(1000);
+      expect(projection.variableRemaining).toBe(1500);
+      expect(projection.paceDaily).toBe(100);
     });
 
-    it('rounds the median of two window values to integer cents', () => {
+    it('projects the whole remaining window on day one with no spend', () => {
       const projection = projectMonthEnd(
-        makeOctoberInput({ ledger: windowMonths([1000, 2001, 3000, 3001]) }),
+        makeOctoberInput({
+          dayOfMonth: 1,
+          ledger: [...THIRTY_DAY_BASIS.map(flatMonth), currentMonth([])],
+        }),
       );
 
-      expect(projection.variableEstimate).toBe(2501);
+      expect(projection.variableRemaining).toBe(2900);
+      expect(projection.paceDaily).toBe(0);
     });
 
-    it('projects only the slice on the last day, clamped to a 30-day September', () => {
+    it('projects nothing on the last day', () => {
       const projection = projectMonthEnd(
         makeOctoberInput({
           dayOfMonth: 31,
-          ledger: [
-            activeMonth(SEPTEMBER, [
-              makeRow({ day: 30, amount: 3000 }),
-              windowRow(900),
-            ]),
-            activeMonth(AUGUST, [
-              makeRow({ day: 31, amount: 3000 }),
-              windowRow(900),
-            ]),
-            activeMonth(JULY, [
-              makeRow({ day: 31, amount: 3000 }),
-              windowRow(900),
-            ]),
-            currentMonth([]),
-          ],
+          ledger: [...THIRTY_DAY_BASIS.map(flatMonth), currentMonth([])],
         }),
       );
 
-      expect(projection.variableEstimate).toBe(3000);
+      expect(projection.daysRemaining).toBe(0);
+      expect(projection.variableRemaining).toBe(0);
+      expect(projection.paceDaily).toBe(0);
     });
 
-    it('does not count days 29 to 31 of January when February is on its last day', () => {
-      const projection = projectMonthEnd(
-        makeInput({
-          month: {
-            key: '2026-02',
-            start: localMidnight('2026-02-01'),
-            end: new Date('2026-03-01T02:59:59.999Z'),
-            days: 28,
-          },
-          dayOfMonth: 28,
-          ledger: [
-            activeMonth('2026-01', [
-              makeRow({ day: 28, amount: 2000 }),
-              makeRow({ day: 29, amount: 9000 }),
-            ]),
-            activeMonth('2025-12', [
-              makeRow({ day: 28, amount: 2000 }),
-              makeRow({ day: 30, amount: 9000 }),
-            ]),
-            activeMonth('2025-11', [
-              makeRow({ day: 28, amount: 2000 }),
-              makeRow({ day: 29, amount: 9000 }),
-            ]),
-            makeLedgerMonth('2026-02'),
-          ],
-        }),
-      );
+    it('counts a short basis month as an empty window in the median', () => {
+      const projection = projectMonthEnd(marchInput());
 
-      expect(projection.variableEstimate).toBe(2000);
+      expect(projection.variableRemaining).toBe(1000);
     });
 
-    it('clamps the slice day to the length of a February basis month', () => {
-      const projection = projectMonthEnd(
-        makeInput({
-          month: {
-            key: '2026-03',
-            start: localMidnight('2026-03-01'),
-            end: new Date('2026-04-01T02:59:59.999Z'),
-            days: 31,
-          },
-          dayOfMonth: 30,
-          ledger: [
-            activeMonth('2026-02', [makeRow({ day: 28, amount: 4000 })]),
-            activeMonth('2026-01', [makeRow({ day: 30, amount: 5000 })]),
-            activeMonth('2025-12', [makeRow({ day: 30, amount: 1000 })]),
-            makeLedgerMonth('2026-03'),
-          ],
-        }),
-      );
-
-      expect(projection.variableEstimate).toBe(4000);
-    });
-
-    it('matches the worked example of October 23', () => {
+    it('excludes a bill-like row inside the window', () => {
       const projection = projectMonthEnd(
         makeOctoberInput({
-          realized: { totalIncome: 752943, totalExpense: 595323 },
+          dayOfMonth: 15,
+          realized: { totalIncome: 0, totalExpense: 1000 },
           ledger: [
-            activeMonth(SEPTEMBER, [aluguelRow, windowRow(12380)]),
-            activeMonth(AUGUST, [aluguelRow, windowRow(51283)]),
-            activeMonth(JULY, [aluguelRow, windowRow(30000)]),
-            currentMonth([aluguelRow]),
+            ...THIRTY_DAY_BASIS.map(billInWindowMonth),
+            currentMonth([makeRow({ day: 10, amount: 500 })]),
           ],
         }),
       );
 
-      expect(projection.variableEstimate).toBe(30000);
-      expect(projection.expectedBalance).toBe(127620);
+      expect(projection.variableRemaining).toBe(500);
+      expect(projection.paceDaily).toBe(33);
+      expect(projection.fixedBillsDue).toBe(20000);
+      expect(projection.accountedExpense).toBe(1000);
+      expect(projection.expectedExpense).toBe(21500);
+    });
+
+    it('keeps the habits remainder when the current month runs at half speed', () => {
+      const full = projectMonthEnd(
+        makeOctoberInput({
+          dayOfMonth: 15,
+          ledger: [
+            ...THIRTY_DAY_BASIS.map(flatMonth),
+            currentMonth(dailyRows(15, 100)),
+          ],
+        }),
+      );
+      const half = projectMonthEnd(
+        makeOctoberInput({
+          dayOfMonth: 15,
+          ledger: [
+            ...THIRTY_DAY_BASIS.map(flatMonth),
+            currentMonth(dailyRows(15, 50)),
+          ],
+        }),
+      );
+
+      expect(full.variableRemaining).toBe(1500);
+      expect(half.variableRemaining).toBe(1500);
+      expect(full.paceDaily).toBe(100);
+      expect(half.paceDaily).toBe(50);
+    });
+  });
+
+  describe('paced projection', () => {
+    it('projects the paced month end beside the habits month end', () => {
+      const projection = projectMonthEnd(
+        makeInput({
+          dayOfMonth: 8,
+          realized: { totalIncome: 6000, totalExpense: 400 },
+          ledger: [
+            ...[AUGUST, JULY, JUNE].map((key) => pacedBasisMonth(key, 2260)),
+            makeLedgerMonth(SEPTEMBER, {
+              plainExpenses: dailyRows(8, 50),
+            }),
+          ],
+        }),
+      );
+
+      expect(projection.paceDaily).toBe(50);
+      expect(projection.paceRemaining).toBe(1100);
+      expect(projection.paceBalance).toBe(2000);
+      expect(projection.expectedBalance).toBe(840);
+      expect((projection.paceBalance ?? 0) - projection.expectedBalance).toBe(
+        1160,
+      );
+    });
+
+    it('rounds the paced remainder once from the exact daily pace', () => {
+      const projection = projectMonthEnd(
+        makeOctoberInput({
+          month: THIRTEEN_DAY_MONTH,
+          dayOfMonth: 3,
+          ledger: [
+            ...[SEPTEMBER, AUGUST, JULY].map((key) => pacedBasisMonth(key, 0)),
+            currentMonth([
+              makeRow({ day: 1, amount: 34 }),
+              makeRow({ day: 2, amount: 33 }),
+              makeRow({ day: 3, amount: 33 }),
+            ]),
+          ],
+        }),
+      );
+
+      expect(projection.paceDaily).toBe(33);
+      expect(projection.paceRemaining).toBe(333);
+    });
+
+    it('has no paced figures without history', () => {
+      const projection = projectMonthEnd(makeOctoberInput());
+
+      expect(projection.hasHistory).toBe(false);
+      expect(projection.paceRemaining).toBeNull();
+      expect(projection.paceBalance).toBeNull();
+    });
+
+    it('ends the paced balance at the accounted expense on the last day', () => {
+      const projection = projectMonthEnd(
+        makeOctoberInput({
+          dayOfMonth: 31,
+          realized: { totalIncome: 6000, totalExpense: 400 },
+          ledger: [...THIRTY_DAY_BASIS.map(flatMonth), currentMonth([])],
+        }),
+      );
+
+      expect(projection.daysRemaining).toBe(0);
+      expect(projection.paceRemaining).toBe(0);
+      expect(projection.paceBalance).toBe(5600);
     });
   });
 
@@ -792,22 +978,23 @@ describe('projectMonthEnd', () => {
       expect(projection.expectedIncome).toBe(170000);
     });
 
-    it('adds every expense source and the variable estimate', () => {
+    it('composes expected expense from accounted, fixed bills and variable remaining', () => {
       const projection = projectMonthEnd(
         makeOctoberInput({
-          realized: { totalIncome: 0, totalExpense: 231015 },
+          dayOfMonth: 15,
+          realized: { totalIncome: 0, totalExpense: 1000 },
           ledger: [
-            ...windowMonths([64935, 64935, 64935]),
-            currentMonth([], {
-              pending: { totalIncome: 0, totalExpense: 118000 },
-            }),
+            ...THIRTY_DAY_BASIS.map(billInWindowMonth),
+            currentMonth([makeRow({ day: 10, amount: 500 })]),
           ],
-          recurringRules: [makeRule({ amount: 38990 })],
         }),
       );
 
-      expect(projection.variableEstimate).toBe(64935);
-      expect(projection.expectedExpense).toBe(452940);
+      expect(projection.expectedExpense).toBe(
+        projection.accountedExpense +
+          projection.fixedBillsDue +
+          projection.variableRemaining,
+      );
     });
 
     it('allows a negative expected balance', () => {

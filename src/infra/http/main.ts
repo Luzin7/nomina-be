@@ -22,8 +22,11 @@ async function bootstrap() {
     defaultVersion: '1',
   });
 
-  const normalizeOrigin = (url: string): string =>
-    url.replace(/\/+$/, '').toLowerCase();
+  const normalizeOrigin = (url: string): string => {
+    let end = url.length;
+    while (end > 0 && url[end - 1] === '/') end--;
+    return url.slice(0, end).toLowerCase();
+  };
 
   const allowedOrigins = new Set(
     [env.PROD_URL, env.DEV_URL, env.DEPLOY_URL].map(normalizeOrigin),

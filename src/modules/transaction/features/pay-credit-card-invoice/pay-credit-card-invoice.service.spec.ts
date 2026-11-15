@@ -4,6 +4,7 @@ import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import {
   AccountNotFoundError,
+  CreditCardCycleNotConfiguredError,
   InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -58,12 +59,14 @@ describe('PayCreditCardInvoiceService', () => {
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
     transactionRepository = {
       create: jest.fn(),
       findUniqueById: jest.fn(),
       listTransactionsByWorkspaceId: jest.fn(),
+      sumTransactionsByWorkspaceId: jest.fn(),
       getTopExpensesByCategory: jest.fn(),
       createWithBalanceUpdate: jest.fn(),
       createInstallmentPlan: jest.fn(),
@@ -119,6 +122,16 @@ describe('PayCreditCardInvoiceService', () => {
     );
     expect(result.isLeft()).toBe(true);
     expect(result.value).toBeInstanceOf(InvalidAccountError);
+  });
+
+  it('should return left(CreditCardCycleNotConfiguredError) when the card has no dueDay', async () => {
+    accountRepository.findById.mockResolvedValue(
+      makeCreditCard({ id: 'acc-cc', dueDay: null }),
+    );
+
+    const result = await service.execute(makeRequest());
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(CreditCardCycleNotConfiguredError);
   });
 
   it('should return left(SourceAndDestinationAccountMustBeDifferentError) when source equals destination', async () => {

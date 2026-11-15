@@ -6,6 +6,7 @@ import {
 import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
+import { CategoryNotFoundError } from '@modules/category/errors';
 import { GenerateRecurringTransactionsJobService } from '@modules/transaction/jobs/generate-recurring-transactions/generate-recurring-transactions.service';
 import {
   SourceAndDestinationAccountMustBeDifferentError,
@@ -70,6 +71,8 @@ describe('UpdateRecurringTransactionService', () => {
       createGeneratedTransactions: jest
         .fn()
         .mockImplementation(async (transactions) => transactions.length),
+      findSummaryRules: jest.fn(),
+      findCompletedRecurringExpense: jest.fn(),
     } as jest.Mocked<RecurringTransactionRepository>;
 
     accountRepository = {
@@ -82,6 +85,7 @@ describe('UpdateRecurringTransactionService', () => {
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
     categoryRepository = {
@@ -90,12 +94,17 @@ describe('UpdateRecurringTransactionService', () => {
       delete: jest.fn(),
       findById: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
       findUniqueByAttributes: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       countChildren: jest.fn(),
       countTransactions: jest.fn(),
       reassignChildren: jest.fn(),
       findManyByIds: jest.fn(),
+      countBudgetAllocations: jest.fn(),
+      countRecurringTransactions: jest.fn(),
+      findVisibleById: jest.fn(),
+      deleteIfUnreferenced: jest.fn(),
     } as jest.Mocked<CategoryRepository>;
 
     dateProvider = {
@@ -205,6 +214,18 @@ describe('UpdateRecurringTransactionService', () => {
     await service.execute(makeRequest({ title: 'Novo título' }));
 
     expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
+  });
+
+  it('should return a 422 domain error when the category is not found', async () => {
+    arrangeExistingRecurring();
+    categoryRepository.findById.mockResolvedValue(null);
+
+    const result = await service.execute(
+      makeRequest({ categoryId: 'cat-missing' }),
+    );
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(CategoryNotFoundError);
   });
 
   it('should recompute the installment count when the end date changes', async () => {

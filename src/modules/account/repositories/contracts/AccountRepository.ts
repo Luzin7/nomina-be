@@ -1,4 +1,10 @@
+import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
+
+export type AccountListItem = {
+  account: AnyAccount;
+  balanceUpdatedAt: Date | null;
+};
 
 export abstract class AccountRepository {
   abstract create(account: AnyAccount): Promise<AnyAccount>;
@@ -14,13 +20,14 @@ export abstract class AccountRepository {
 
   abstract findById(accountId: string): Promise<AnyAccount | null>;
   abstract update(account: AnyAccount): Promise<AnyAccount>;
+  abstract updateAutoPay(card: CreditCard): Promise<void>;
   abstract delete(accountId: string): Promise<void>;
 
   abstract findManyByWorkspaceId(
     workspaceId: string,
     page: number,
     pageSize: number,
-  ): Promise<{ accounts: AnyAccount[]; total: number }>;
+  ): Promise<{ accounts: AccountListItem[]; total: number }>;
 
   abstract findAllByWorkspaceId(workspaceId: string): Promise<AnyAccount[]>;
 

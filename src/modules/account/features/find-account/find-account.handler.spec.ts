@@ -37,6 +37,7 @@ describe('FindAccountByIdService', () => {
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
+      updateAutoPay: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
     service = new FindAccountByIdService(accountRepository);

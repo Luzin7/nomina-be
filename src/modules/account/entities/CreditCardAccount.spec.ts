@@ -1,5 +1,6 @@
 import { CLOSING_DAYS_BEFORE_DUE_OPTIONS } from '@constants/enums';
 import {
+  AutopayConfigurationError,
   CreditLimitExceededError,
   PaymentExceedsInvoiceBalanceError,
   ValidationAccountError,
@@ -242,5 +243,21 @@ describe('CreditCard entity', () => {
       expect(card.closingDaysBeforeDue).toBe(10);
       expect(card.dueDay).toBe(20);
     });
+  });
+
+  it('should be created without a configured dueDay', () => {
+    const result = CreditCard.create(makeProps({ dueDay: null }));
+
+    expect(result.isRight()).toBe(true);
+    expect((result.value as CreditCard).dueDay).toBeNull();
+  });
+
+  it('should refuse to enable autopay while dueDay is not configured', () => {
+    const card = CreditCard.create(makeProps({ dueDay: null }))
+      .value as CreditCard;
+
+    const result = card.enableAutoPay('src-1', new Date());
+
+    expect(result.value).toBeInstanceOf(AutopayConfigurationError);
   });
 });

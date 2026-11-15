@@ -13,6 +13,8 @@ import { GetCreditCardInvoiceController } from './features/get-credit-card-invoi
 import { GetCreditCardInvoiceService } from './features/get-credit-card-invoice/get-credit-card-invoice.handler';
 import { ListAccountsController } from './features/list-accounts/list-accounts.controller';
 import { ListAccountsService } from './features/list-accounts/list-accounts.service';
+import { SetAutopayController } from './features/set-autopay/set-autopay.controller';
+import { SetAutopayService } from './features/set-autopay/set-autopay.service';
 import { UpdateAccountController } from './features/update-account/update-account.controller';
 import { UpdateAccountService } from './features/update-account/update-account.service';
 import { DateModule } from '@providers/date/Date.module';
@@ -21,6 +23,7 @@ import { DateModule } from '@providers/date/Date.module';
   controllers: [
     CreateAccountController,
     UpdateAccountController,
+    SetAutopayController,
     DeleteAccountController,
     FindAccountController,
     ListAccountsController,
@@ -30,6 +33,7 @@ import { DateModule } from '@providers/date/Date.module';
   providers: [
     CreateAccountService,
     UpdateAccountService,
+    SetAutopayService,
     DeleteAccountService,
     FindAccountByIdService,
     ListAccountsService,

@@ -2,7 +2,7 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
-import { REPORT_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
+import { LEDGER_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import {
   BalanceEvolutionService,
   buildDailySummary,
@@ -303,7 +303,7 @@ describe('BalanceEvolutionService cache', () => {
     expect(cache.set).toHaveBeenCalledWith(
       'report:balance-evolution:v4:ws-1:g7:7d:2026-11-04',
       expect.any(String),
-      REPORT_CACHE_TTL_SECONDS,
+      LEDGER_CACHE_TTL_SECONDS,
     );
   });
 

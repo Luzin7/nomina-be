@@ -4,6 +4,7 @@ import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 import {
   AccountNotFoundError,
+  CreditCardCycleNotConfiguredError,
   InvalidAccountError,
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -20,7 +21,7 @@ import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
-import { bumpReportGeneration } from '@shared/cache/report-cache';
+import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { PayCreditCardInvoiceRequest } from './pay-credit-card-invoice.dto';
 
@@ -86,6 +87,8 @@ export class PayCreditCardInvoiceService implements Service<
     if (creditCardAccountOrError.isLeft())
       return left(creditCardAccountOrError.value);
     const creditCardAccount = creditCardAccountOrError.value;
+    const dueDay = creditCardAccount.dueDay;
+    if (dueDay === null) return left(new CreditCardCycleNotConfiguredError());
 
     const sourceAccountOrError = await this.validateSourceAccount(props);
     if (sourceAccountOrError.isLeft()) return left(sourceAccountOrError.value);
@@ -102,7 +105,7 @@ export class PayCreditCardInvoiceService implements Service<
     const invoiceKey = allocateInvoice({
       calendar: new InvoiceCalendar({
         closingDaysBeforeDue: creditCardAccount.closingDaysBeforeDue,
-        dueDay: creditCardAccount.dueDay,
+        dueDay,
       }),
       paymentDate: this.dateProvider.format(
         now,
@@ -139,7 +142,11 @@ export class PayCreditCardInvoiceService implements Service<
     );
     if (persisted.isLeft()) return left(persisted.value);
 
-    await bumpReportGeneration(this.cacheProvider, props.workspaceId);
+    await invalidateLedgerReads(
+      this.cacheProvider,
+      props.workspaceId,
+      'pay-credit-card-invoice',
+    );
 
     return right(transaction);
   }

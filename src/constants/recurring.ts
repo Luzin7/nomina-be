@@ -1,0 +1,1 @@
+export const MIN_INSTALLMENTS_FOR_PLAN = 2;

@@ -6,6 +6,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
+import { PlanLimitExceededDomainError } from '@shared/core/errors/DomainError';
 import {
   CheckSubscriptionLimitsService,
   ResourceType,
@@ -51,6 +53,11 @@ export class SubscriptionLimitsGuard implements CanActivate {
       this.logger.warn(
         `SubscriptionLimitsGuard: limit check failed — ${error.message}`,
       );
+
+      if (error instanceof PlanLimitExceededDomainError) {
+        ErrorPresenter.toHTTP(error);
+      }
+
       throw new ForbiddenException(error.message);
     }
 
