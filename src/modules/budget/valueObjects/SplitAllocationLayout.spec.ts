@@ -1,5 +1,5 @@
 import type { SuggestedAllocation } from './SplitSuggestion';
-import { toAllocationInputs } from './SplitAllocationLayout';
+import { planTotalOf, toAllocationInputs } from './SplitAllocationLayout';
 
 const makeAllocation = (
   overrides: Partial<SuggestedAllocation> = {},
@@ -60,5 +60,21 @@ describe('toAllocationInputs', () => {
         targetCents: 700,
       },
     ]);
+  });
+});
+
+describe('planTotalOf', () => {
+  it('sums the suggested cents of the allocations that become targets', () => {
+    const total = planTotalOf([
+      makeAllocation({ suggestedCents: 1_500 }),
+      makeAllocation({ categoryId: 'cat-2', suggestedCents: 2_500 }),
+      makeAllocation({ categoryId: 'cat-3', suggestedCents: 0 }),
+    ]);
+
+    expect(total).toBe(4_000);
+  });
+
+  it('is zero for no allocations', () => {
+    expect(planTotalOf([])).toBe(0);
   });
 });

@@ -2,8 +2,8 @@ import { fingerprintOf } from './SuggestionFingerprint';
 
 describe('fingerprintOf', () => {
   it('is stable for equal payloads', () => {
-    expect(fingerprintOf({ incomeCents: 100, base: 'median' })).toBe(
-      fingerprintOf({ incomeCents: 100, base: 'median' }),
+    expect(fingerprintOf({ incomeCents: 100 })).toBe(
+      fingerprintOf({ incomeCents: 100 }),
     );
   });
 
