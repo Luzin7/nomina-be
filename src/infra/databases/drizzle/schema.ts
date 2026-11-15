@@ -655,6 +655,39 @@ export const balanceMovements = pgTable(
   ],
 );
 
+export const balanceAdjustments = pgTable(
+  'balance_adjustments',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    accountId: text('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    actorId: text('actor_id').notNull(),
+    expectedBalanceCents: bigint('expected_balance_cents', {
+      mode: 'number',
+    }).notNull(),
+    targetBalanceCents: bigint('target_balance_cents', {
+      mode: 'number',
+    }).notNull(),
+    deltaCents: bigint('delta_cents', { mode: 'number' }).notNull(),
+    movementSeq: bigint('movement_seq', { mode: 'number' })
+      .notNull()
+      .references(() => balanceMovements.seq),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('idx_balance_adjustments_account_created').on(
+      table.accountId,
+      table.createdAt.desc(),
+    ),
+  ],
+);
+
 // --------------------------------------------------------
 // OBJETIVOS
 // --------------------------------------------------------

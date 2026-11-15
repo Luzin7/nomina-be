@@ -23,7 +23,6 @@ const makeSuggestion = (
   income: {
     status: 'pending',
     incomeCents: 500_000,
-    base: 'median',
     incomeMonths: 3,
     zeroIncomeMonths: 0,
     fingerprint: 'income-fingerprint',
@@ -38,6 +37,8 @@ const makeSuggestion = (
     unmappedCategoryIds: [],
     fingerprint: 'split-fingerprint',
   },
+  plan: null,
+  planEligible: false,
   ...overrides,
 });
 
@@ -49,7 +50,7 @@ describe('RejectBudgetSuggestionService', () => {
 
   beforeEach(() => {
     resolver = {
-      execute: jest.fn().mockResolvedValue(right(makeSuggestion())),
+      resolveFresh: jest.fn().mockResolvedValue(right(makeSuggestion())),
     } as unknown as jest.Mocked<ResolveBudgetSuggestionService>;
     budgetRepository = {
       saveDecision: jest.fn().mockResolvedValue('applied'),
@@ -63,7 +64,7 @@ describe('RejectBudgetSuggestionService', () => {
   });
 
   const givenSuggestion = (suggestion: BudgetSuggestion) =>
-    resolver.execute.mockResolvedValue(right(suggestion));
+    resolver.resolveFresh.mockResolvedValue(right(suggestion));
 
   const givenOutcome = (outcome: SuggestionWriteOutcome) =>
     budgetRepository.saveDecision.mockResolvedValue(outcome);
@@ -146,7 +147,7 @@ describe('RejectBudgetSuggestionService', () => {
   it('returns the rejected state when a concurrent request rejected the same kind first', async () => {
     const rejected = makeSuggestion();
     rejected.income.status = 'rejected';
-    resolver.execute
+    resolver.resolveFresh
       .mockResolvedValueOnce(right(makeSuggestion()))
       .mockResolvedValueOnce(right(rejected));
     givenOutcome('already-decided');
