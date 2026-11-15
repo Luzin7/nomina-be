@@ -4,6 +4,11 @@ import {
   RecurrenceFrequency,
   TransactionType,
 } from '@constants/enums';
+import {
+  INVESTMENTS_CATEGORY_NAME,
+  REAL_INCOME_ROOT_NAMES,
+  YIELD_SUBCATEGORY_NAMES,
+} from '@constants/incomeCategories';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import {
   BudgetAllocationRecord,
@@ -41,20 +46,41 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lte,
   ne,
-  not,
   or,
   type SQL,
   sql,
   sum,
 } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { getErrorDetails } from '@shared/utils/error-details';
 import { instantOf, localDayIn } from '../sql-helpers';
 import * as schema from '../schema';
 
-const INVESTMENTS_CATEGORY_NAME = 'Investimentos';
+const parentCategories = alias(schema.categories, 'parent_categories');
+
+const incomeRootName = sql<string>`coalesce(${parentCategories.name}, ${schema.categories.name})`;
+
+function isRealIncome(): SQL {
+  return and(
+    eq(schema.transactions.type, TransactionType.INCOME),
+    eq(schema.categories.isSystemCategory, false),
+    or(
+      inArray(incomeRootName, [...REAL_INCOME_ROOT_NAMES]),
+      and(
+        eq(incomeRootName, INVESTMENTS_CATEGORY_NAME),
+        inArray(schema.categories.name, [...YIELD_SUBCATEGORY_NAMES]),
+      ),
+      and(
+        ne(incomeRootName, INVESTMENTS_CATEGORY_NAME),
+        isNotNull(schema.transactions.recurringId),
+      ),
+    ),
+  )!;
+}
 const MINIMUM_WAGE_KEY = 'minimum_wage';
 const MONTH_KEY_LENGTH = 7;
 const UNIQUE_VIOLATION = '23505';
@@ -253,6 +279,10 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         schema.categories,
         eq(schema.transactions.categoryId, schema.categories.id),
       )
+      .leftJoin(
+        parentCategories,
+        eq(schema.categories.parentId, parentCategories.id),
+      )
       .where(
         and(
           eq(schema.transactions.workspaceId, workspaceId),
@@ -267,11 +297,9 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
             schema.transactions.categoryId,
             SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
           ),
-          not(
-            and(
-              eq(schema.transactions.type, TransactionType.INCOME),
-              eq(schema.categories.name, INVESTMENTS_CATEGORY_NAME),
-            )!,
+          or(
+            eq(schema.transactions.type, TransactionType.EXPENSE),
+            isRealIncome(),
           ),
         ),
       )

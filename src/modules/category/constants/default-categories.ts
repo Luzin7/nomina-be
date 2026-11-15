@@ -1,4 +1,9 @@
 import { TransactionType } from '@constants/enums';
+import {
+  FREELANCE_CATEGORY_NAME,
+  INVESTMENTS_CATEGORY_NAME,
+  SALARY_CATEGORY_NAME,
+} from '@constants/incomeCategories';
 import { Category } from '@modules/category/entities/Category';
 
 export interface DefaultCategoryNode {
@@ -49,11 +54,11 @@ export const DEFAULT_CATEGORIES: readonly DefaultCategoryNode[] = [
   },
   { name: 'Compras', type: TransactionType.EXPENSE, children: ['Vestuário'] },
   { name: 'Impostos', type: TransactionType.EXPENSE },
-  { name: 'Investimentos', type: TransactionType.EXPENSE },
+  { name: INVESTMENTS_CATEGORY_NAME, type: TransactionType.EXPENSE },
   { name: 'Outros Gastos', type: TransactionType.EXPENSE },
-  { name: 'Salário', type: TransactionType.INCOME },
-  { name: 'Investimentos', type: TransactionType.INCOME },
-  { name: 'Freela/Projeto', type: TransactionType.INCOME },
+  { name: SALARY_CATEGORY_NAME, type: TransactionType.INCOME },
+  { name: INVESTMENTS_CATEGORY_NAME, type: TransactionType.INCOME },
+  { name: FREELANCE_CATEGORY_NAME, type: TransactionType.INCOME },
   { name: 'Presente', type: TransactionType.INCOME },
   { name: 'Outros', type: TransactionType.INCOME },
 ] as const;
