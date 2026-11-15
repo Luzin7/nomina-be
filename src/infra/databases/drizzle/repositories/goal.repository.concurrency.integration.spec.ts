@@ -130,6 +130,39 @@ describe('GoalRepositoryImplementation against a real postgres', () => {
   }
 
   describe('account-sourced goals', () => {
+    it('returns the linked balance from create', async () => {
+      const accountId = await seedAccount(700);
+
+      const record = await repository.create({
+        workspaceId,
+        name: 'Meta',
+        targetCents: 1_000,
+        linkedAccountId: accountId,
+        progressSource: GoalProgressSource.ACCOUNT,
+      });
+
+      expect(record.linkedAccountBalanceCents).toBe(700);
+    });
+
+    it('returns the linked balance when an update switches to account', async () => {
+      const accountId = await seedAccount(700);
+      const [{ id }] = await db
+        .insert(schema.goals)
+        .values(makeGoal({ targetCents: 1_000, currentCents: 50 }))
+        .returning({ id: schema.goals.id });
+
+      const record = await repository.findByIdForUpdate(
+        id,
+        workspaceId,
+        () => ({
+          linkedAccountId: accountId,
+          progressSource: GoalProgressSource.ACCOUNT,
+        }),
+      );
+
+      expect(record).toMatchObject({ linkedAccountBalanceCents: 700 });
+    });
+
     it('stops reserving the aporte once the balance reaches the target', async () => {
       const reached = await seedAccount(1_000);
       const open = await seedAccount(400);

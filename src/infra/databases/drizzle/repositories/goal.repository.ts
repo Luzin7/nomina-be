@@ -46,23 +46,25 @@ export class GoalRepositoryImplementation implements GoalRepository {
   }
 
   async create(input: CreateGoalInput): Promise<GoalRecord> {
-    return this.writeChecked(async () => {
-      const [row] = await this.drizzle.db
-        .insert(schema.goals)
-        .values({
-          workspaceId: input.workspaceId,
-          name: input.name,
-          targetCents: input.targetCents,
-          currentCents: input.currentCents ?? 0,
-          monthlyAporteCents: input.monthlyAporteCents ?? 0,
-          linkedAccountId: input.linkedAccountId ?? null,
-          progressSource: input.progressSource ?? GoalProgressSource.MANUAL,
-          categoryId: input.categoryId ?? null,
-        })
-        .returning();
+    return this.writeChecked(() =>
+      this.drizzle.db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(schema.goals)
+          .values({
+            workspaceId: input.workspaceId,
+            name: input.name,
+            targetCents: input.targetCents,
+            currentCents: input.currentCents ?? 0,
+            monthlyAporteCents: input.monthlyAporteCents ?? 0,
+            linkedAccountId: input.linkedAccountId ?? null,
+            progressSource: input.progressSource ?? GoalProgressSource.MANUAL,
+            categoryId: input.categoryId ?? null,
+          })
+          .returning();
 
-      return toGoalRecord(row);
-    });
+        return toGoalRecord(row, await readBalance(tx, row));
+      }),
+    );
   }
 
   async findById(id: string, workspaceId: string): Promise<GoalRecord | null> {
