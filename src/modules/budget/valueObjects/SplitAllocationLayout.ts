@@ -42,3 +42,9 @@ export function toAllocationInputs(
       };
     });
 }
+
+export const planTotalOf = (allocations: SuggestedAllocation[]): number =>
+  toAllocationInputs(allocations).reduce(
+    (total, { targetCents }) => total + targetCents,
+    0,
+  );

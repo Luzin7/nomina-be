@@ -35,6 +35,8 @@ const makeSuggestion = (
   basisMonths: 3,
   income: { status: 'set' },
   split: { status: 'unavailable' },
+  plan: null,
+  planEligible: false,
   ...overrides,
 });
 

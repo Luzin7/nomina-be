@@ -41,6 +41,8 @@ const NO_SUGGESTION: BudgetSuggestion = {
   basisMonths: 0,
   income: { status: 'unavailable' },
   split: { status: 'unavailable' },
+  plan: null,
+  planEligible: false,
 };
 
 const makeProjection = (

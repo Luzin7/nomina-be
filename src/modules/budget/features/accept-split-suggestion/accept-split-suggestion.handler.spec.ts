@@ -17,6 +17,7 @@ import { ValidateBudgetAllocationsService } from '@modules/budget/services/valid
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { readLedgerGeneration } from '@shared/cache/report-cache';
 import { right } from '@shared/core/errors/Either';
+import { planTotalOf } from '@modules/budget/valueObjects/SplitAllocationLayout';
 import { AcceptSplitSuggestionService } from './accept-split-suggestion.handler';
 
 const WORKSPACE_ID = 'ws-1';
@@ -52,6 +53,8 @@ const makeSuggestion = (split: SplitSuggestionState): BudgetSuggestion => ({
   basisMonths: 3,
   income: { status: 'set' },
   split,
+  plan: null,
+  planEligible: false,
 });
 
 describe('AcceptSplitSuggestionService', () => {
@@ -138,6 +141,47 @@ describe('AcceptSplitSuggestionService', () => {
       status: 'accepted',
       month: '2026-11',
     });
+  });
+
+  it('saves targets that add up to the plan total', async () => {
+    const split = makePendingSplit({
+      allocations: [
+        {
+          categoryId: 'cat-1',
+          group: 'essentials',
+          actualCents: 200_000,
+          idealCents: 250_000,
+          suggestedCents: 210_000,
+        },
+        {
+          categoryId: 'cat-2',
+          group: 'lifestyle',
+          actualCents: 80_000,
+          idealCents: 90_000,
+          suggestedCents: 85_000,
+        },
+      ],
+    });
+    if (split.status !== 'pending') throw new Error('split not pending');
+    const plan = {
+      allocations: split.allocations,
+      planTotalCents: planTotalOf(split.allocations),
+      basisMonths: 3,
+    };
+    resolver.resolveFresh.mockResolvedValue(
+      right({ ...makeSuggestion(split), plan }),
+    );
+
+    await accept();
+
+    const { write } =
+      budgetRepository.saveSnapshotWithDecision.mock.calls[0][0];
+    if (write.kind !== 'split') throw new Error('not a split write');
+    const saved = write.allocations.reduce(
+      (total, { targetCents }) => total + targetCents,
+      0,
+    );
+    expect(saved).toBe(plan.planTotalCents);
   });
 
   const freshnessCheck = (): (() => Promise<boolean>) =>
