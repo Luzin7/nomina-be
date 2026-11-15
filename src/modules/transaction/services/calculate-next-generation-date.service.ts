@@ -6,6 +6,7 @@ import {
 } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { Injectable } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { nextOccurrenceAfter } from '@utils/installmentSchedule';
 
 @Injectable()
 export class CalculateNextGenerationDateService extends NextGenerationDateCalculator {
@@ -14,23 +15,20 @@ export class CalculateNextGenerationDateService extends NextGenerationDateCalcul
   }
 
   execute({
+    anchorDate,
     baseDate,
     frequency,
     interval,
     timezone,
   }: NextGenerationDateRequest): Date {
-    switch (frequency) {
-      case RecurrenceFrequency.WEEKLY:
-        return this.dateProvider.add(baseDate, interval * 7, 'day', timezone);
-
-      case RecurrenceFrequency.MONTHLY:
-        return this.dateProvider.add(baseDate, interval, 'month', timezone);
-
-      case RecurrenceFrequency.YEARLY:
-        return this.dateProvider.add(baseDate, interval, 'year', timezone);
-
-      default:
-        throw new UnknownRecurrenceFrequencyError(String(frequency));
+    if (!Object.values(RecurrenceFrequency).includes(frequency)) {
+      throw new UnknownRecurrenceFrequencyError(String(frequency));
     }
+
+    return nextOccurrenceAfter(
+      { startDate: anchorDate, frequency, interval, timezone },
+      baseDate,
+      this.dateProvider,
+    );
   }
 }

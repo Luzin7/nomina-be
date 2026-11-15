@@ -6,10 +6,11 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { APP_LOG_LEVELS } from './app-log-levels';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn'],
+    logger: APP_LOG_LEVELS,
   });
 
   app.enableShutdownHooks();

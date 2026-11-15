@@ -347,6 +347,16 @@ describe('RecurringSummaryService', () => {
     ]);
   });
 
+  it('keeps a month-end rule on its anchor day after short months', async () => {
+    const summary = await run({
+      rules: [makeRule({ startDate: localMidnight('2026-01-31') })],
+    });
+
+    expect(summary.next30Days.map((entry) => entry.date)).toEqual([
+      '2026-09-30',
+    ]);
+  });
+
   it('includes today and the last day of the window', async () => {
     const summary = await run({
       rules: [makeRule({ startDate: localMidnight('2026-09-15') })],

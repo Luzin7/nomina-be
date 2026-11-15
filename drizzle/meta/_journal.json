@@ -204,6 +204,13 @@
       "when": 1794741660479,
       "tag": "0043_fix_legacy_utc_midnight_transaction_dates",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794743302092,
+      "tag": "0044_reconcile_legacy_credit_card_balance",
+      "breakpoints": true
     }
   ]
 }

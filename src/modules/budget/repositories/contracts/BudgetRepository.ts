@@ -10,6 +10,7 @@ export type BudgetCategoryRef = {
   id: string;
   name: string;
   workspaceId: string | null;
+  parentId: string | null;
   isHidden: boolean;
 };
 
