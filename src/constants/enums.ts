@@ -33,6 +33,11 @@ export enum BalanceMovementCause {
   RECONCILIATION = 'RECONCILIATION',
 }
 
+export enum GoalProgressSource {
+  MANUAL = 'manual',
+  ACCOUNT = 'account',
+}
+
 export const CLOSING_DAYS_BEFORE_DUE_OPTIONS = [5, 7, 10] as const;
 
 export type ClosingDaysBeforeDue =

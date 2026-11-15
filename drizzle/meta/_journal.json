@@ -225,6 +225,13 @@
       "when": 1794752054852,
       "tag": "0046_pretty_caretaker",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794753740013,
+      "tag": "0047_bumpy_psynapse",
+      "breakpoints": true
     }
   ]
 }
