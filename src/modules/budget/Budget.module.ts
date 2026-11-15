@@ -4,6 +4,7 @@ import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
 import { ResolveBudgetSuggestionService } from '@modules/budget/services/resolve-budget-suggestion.service';
 import { DateModule } from '@providers/date/Date.module';
+import { SingleFlight } from '@shared/cache/single-flight';
 import { AcceptIncomeSuggestionController } from './features/accept-income-suggestion/accept-income-suggestion.controller';
 import { AcceptIncomeSuggestionService } from './features/accept-income-suggestion/accept-income-suggestion.handler';
 import { AcceptSplitSuggestionController } from './features/accept-split-suggestion/accept-split-suggestion.controller';
@@ -34,6 +35,7 @@ import { SaveBudgetConfigService } from './features/save-config/save-config.hand
     SaveBudgetConfigService,
     GetBudgetSetupService,
     ResolveBudgetSuggestionService,
+    SingleFlight,
     AcceptIncomeSuggestionService,
     AcceptSplitSuggestionService,
     RejectBudgetSuggestionService,

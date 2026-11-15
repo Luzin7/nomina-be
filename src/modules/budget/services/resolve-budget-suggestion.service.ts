@@ -22,6 +22,8 @@ import {
   resolveSplitProgress,
   type IncomeStatus,
 } from '@modules/budget/valueObjects/SuggestionDecisions';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { selectBasisMonths } from '@modules/report/valueObjects/MonthProjection';
 import { LOOKBACK_MONTHS } from '@modules/report/valueObjects/ProjectionRules';
@@ -30,6 +32,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { captureException } from '@sentry/nestjs';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { buildCacheKey } from '@shared/cache/cache-key';
+import { readThrough } from '@shared/cache/read-through';
+import {
+  LEDGER_LIVE_CACHE_TTL_SECONDS,
+  readLedgerGeneration,
+} from '@shared/cache/report-cache';
+import { SingleFlight } from '@shared/cache/single-flight';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, right } from '@shared/core/errors/Either';
 
@@ -101,13 +110,50 @@ export class ResolveBudgetSuggestionService implements Service<
     private readonly monthProjectionRepository: MonthProjectionRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly cache: CacheProvider,
+    private readonly singleFlight: SingleFlight,
   ) {}
 
   async execute({
     workspaceId,
   }: Request): Promise<Either<Error, BudgetSuggestion>> {
+    const [ledger, category] = await Promise.all([
+      readLedgerGeneration(this.cache, workspaceId),
+      readCategoryGeneration(this.cache, workspaceId),
+    ]);
     const timezone = await this.workspaceTimezone.execute(workspaceId);
     const now = this.dateProvider.now();
+    const key = buildCacheKey({
+      route: 'budget:suggestion',
+      version: 'v1',
+      workspaceId,
+      generations: { ledger, category },
+      parts: [this.dateProvider.format(now, 'YYYY-MM-DD', timezone)],
+    });
+
+    return this.singleFlight.run(key, () =>
+      readThrough({
+        cache: this.cache,
+        key,
+        ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
+        load: () => this.resolve(workspaceId, timezone, now),
+      }),
+    );
+  }
+
+  async resolveFresh({
+    workspaceId,
+  }: Request): Promise<Either<Error, BudgetSuggestion>> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+
+    return this.resolve(workspaceId, timezone, this.dateProvider.now());
+  }
+
+  private async resolve(
+    workspaceId: string,
+    timezone: string,
+    now: Date,
+  ): Promise<Either<Error, BudgetSuggestion>> {
     const key = this.dateProvider.format(now, 'YYYY-MM', timezone);
     const start = this.dateProvider.startOfMonth(`${key}-01`, timezone);
 
