@@ -1,5 +1,6 @@
 import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { SQL, sql } from 'drizzle-orm';
+import { instantOf } from '../sql-helpers';
 import * as schema from '../schema';
 
 const rule = schema.recurringTransactions;
@@ -8,7 +9,7 @@ const row = schema.transactions;
 const localDay = (
   instant: SQL | typeof row.date | typeof rule.startDate,
   timezone: string,
-) => sql`((${instant} AT TIME ZONE ${timezone}::text)::date)`;
+) => sql`((${instantOf(instant)} AT TIME ZONE ${timezone}::text)::date)`;
 
 const nonZeroInterval = () => sql`nullif(${rule.interval}, 0)`;
 

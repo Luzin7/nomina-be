@@ -3,7 +3,7 @@ import {
   RecurringSuggestionStatus,
 } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
-import { localDayIn } from '@infra/databases/drizzle/sql-helpers';
+import { instantOf, localDayIn } from '@infra/databases/drizzle/sql-helpers';
 import { SYSTEM_CATEGORY_LIST } from '@modules/category/constants/system-categories';
 import { RecurringSuggestion } from '@modules/transaction/entities/RecurringSuggestion';
 import {
@@ -102,7 +102,7 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
     to,
   }: BillCandidateQuery): Promise<BillDetectionTransaction[]> {
     const localDay = localDayIn(
-      sql`(${schema.transactions.date}::timestamp AT TIME ZONE 'UTC')`,
+      instantOf(schema.transactions.date),
       sql`${timezone}`,
     );
 

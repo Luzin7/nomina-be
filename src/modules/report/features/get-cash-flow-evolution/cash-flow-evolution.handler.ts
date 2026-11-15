@@ -3,6 +3,7 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { instantOf } from '@infra/databases/drizzle/sql-helpers';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -14,7 +15,7 @@ import {
 } from '@shared/cache/report-cache';
 import { right } from '@shared/core/errors/Either';
 import { MoneyUtils } from '@utils/MoneyUtils';
-import { and, desc, eq, gte, lte, ne, or, sql } from 'drizzle-orm';
+import { and, eq, gte, lte, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { CashFlowEvolutionRequest } from './cash-flow-evolution.dto';
 
@@ -74,7 +75,7 @@ export class CashFlowEvolutionService {
 
     const effectiveType = sql<string>`CASE WHEN ${schema.transactions.type} = 'TRANSFER' AND ${destAccount.type} = ${AccountType.CREDIT_CARD} THEN 'EXPENSE' ELSE ${schema.transactions.type} END`;
 
-    const dateFormatted = sql<string>`to_char(${schema.transactions.date} AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'YYYY-MM-DD')`;
+    const dateFormatted = sql<string>`to_char(${instantOf(schema.transactions.date)} AT TIME ZONE ${timezone}, 'YYYY-MM-DD')`;
 
     const incomes =
       sql<number>`COALESCE(SUM(CASE WHEN ${effectiveType} = 'INCOME' THEN ${schema.transactions.amount} ELSE 0 END), 0)`.mapWith(
@@ -121,8 +122,8 @@ export class CashFlowEvolutionService {
           reportFilter,
         ),
       )
-      .groupBy(dateFormatted)
-      .orderBy(desc(dateFormatted));
+      .groupBy(sql`1`)
+      .orderBy(sql`1 desc`);
 
     return aggregates.map((item) => ({
       date: item.date,
