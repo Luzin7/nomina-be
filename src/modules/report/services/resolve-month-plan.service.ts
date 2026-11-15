@@ -19,6 +19,7 @@ import {
 } from '@modules/report/valueObjects/ProvisionalPlan';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable, Logger } from '@nestjs/common';
+import { captureException } from '@sentry/nestjs';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
@@ -45,11 +46,13 @@ export type ResolvedMonthPlan =
       planTotalCents: number;
       basis: ProvisionalBasis;
       spentCents: number;
+      degraded?: true;
     }
   | {
       source: 'nothing-observed';
       recurringDueCents: number;
       spentCents: number;
+      degraded?: true;
     }
   | { source: 'none' };
 
@@ -63,6 +66,11 @@ type MonthWindow = {
 
 const sum = (values: number[]): number =>
   values.reduce((total, value) => total + value, 0);
+
+type SuggestionOutcome = {
+  suggestion: BudgetSuggestion | null;
+  failed: boolean;
+};
 
 const describeError = (error: unknown): string =>
   error instanceof Error
@@ -130,7 +138,7 @@ export class ResolveMonthPlanService implements Service<
       days: daysInMonth(year, month),
       today,
     };
-    const suggestion = await this.suggestionOf(workspaceId);
+    const { suggestion, failed } = await this.suggestionOf(workspaceId);
     if (suggestion?.plan && canSuggest(suggestion)) {
       return right({
         source: 'suggested',
@@ -140,22 +148,26 @@ export class ResolveMonthPlanService implements Service<
       });
     }
 
-    return right(await this.provisionalPlanOf(workspaceId, timezone, window));
+    const fallback = await this.provisionalPlanOf(
+      workspaceId,
+      timezone,
+      window,
+    );
+    return right(failed ? { ...fallback, degraded: true } : fallback);
   }
 
-  private async suggestionOf(
-    workspaceId: string,
-  ): Promise<BudgetSuggestion | null> {
+  private async suggestionOf(workspaceId: string): Promise<SuggestionOutcome> {
     try {
       const result = await this.resolveSuggestion.execute({ workspaceId });
       if (result.isLeft()) throw result.value;
 
-      return result.value;
+      return { suggestion: result.value, failed: false };
     } catch (error) {
-      this.logger.warn(
+      this.logger.error(
         `suggested plan unavailable, using provisional workspaceId=${workspaceId} error=${describeError(error)}`,
       );
-      return null;
+      captureException(error, { extra: { workspaceId } });
+      return { suggestion: null, failed: true };
     }
   }
 

@@ -605,6 +605,21 @@ describe('GetAvailableToSpendService', () => {
       expect(response.insight?.code).toBe('OVER_BUDGET');
     });
 
+    it('caches a fallback built on a failed suggestion for 60 seconds', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'nothing-observed',
+        recurringDueCents: 0,
+        spentCents: 0,
+        degraded: true,
+      });
+      givenSummary(makeSummary());
+
+      await run();
+
+      expect([...cache.ttls.values()]).toEqual([60]);
+    });
+
     it('keeps the suggestion insight while the hero is suggested', async () => {
       givenBudget({ exists: false });
       givenPlan({

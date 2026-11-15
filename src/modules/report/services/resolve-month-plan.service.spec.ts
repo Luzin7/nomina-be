@@ -4,6 +4,8 @@ import {
   ResolveBudgetSuggestionService,
   type BudgetSuggestion,
 } from '@modules/budget/services/resolve-budget-suggestion.service';
+import { Logger } from '@nestjs/common';
+import { captureException } from '@sentry/nestjs';
 import { left, right } from '@shared/core/errors/Either';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import {
@@ -16,6 +18,8 @@ import {
   ResolveMonthPlanService,
   type ResolvedMonthPlan,
 } from './resolve-month-plan.service';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 const WORKSPACE_ID = 'ws-1';
 const SAO_PAULO = 'America/Sao_Paulo';
@@ -236,24 +240,47 @@ describe('ResolveMonthPlanService', () => {
       expect((await resolve()).source).toBe('provisional');
     });
 
-    it('falls back to provisional when the suggestion fails', async () => {
-      resolveSuggestion.execute.mockResolvedValue(
-        left(new Error('suggestion down')),
-      );
+    it('falls back to provisional, degraded, when the suggestion fails', async () => {
+      const failure = new Error('suggestion down');
+      const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      resolveSuggestion.execute.mockResolvedValue(left(failure));
       givenLedger(
         makeLedgerMonth('2026-11', { plainExpenses: [plain(14, 3_000)] }),
       );
 
-      expect((await resolve()).source).toBe('provisional');
+      expect(await resolve()).toMatchObject({
+        source: 'provisional',
+        degraded: true,
+      });
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining(`workspaceId=${WORKSPACE_ID}`),
+      );
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining('suggestion down'),
+      );
+      expect(captureException).toHaveBeenCalledWith(failure, {
+        extra: { workspaceId: WORKSPACE_ID },
+      });
     });
 
-    it('falls back to provisional when the suggestion throws', async () => {
-      resolveSuggestion.execute.mockRejectedValue(new Error('redis down'));
-      givenLedger(
-        makeLedgerMonth('2026-11', { plainExpenses: [plain(14, 3_000)] }),
-      );
+    it('falls back to degraded nothing-observed when the suggestion throws', async () => {
+      const failure = new Error('redis down');
+      jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      resolveSuggestion.execute.mockRejectedValue(failure);
 
-      expect((await resolve()).source).toBe('provisional');
+      expect(await resolve()).toMatchObject({
+        source: 'nothing-observed',
+        degraded: true,
+      });
+      expect(captureException).toHaveBeenCalledWith(failure, {
+        extra: { workspaceId: WORKSPACE_ID },
+      });
+    });
+
+    it('does not mark a rejected fallback as degraded', async () => {
+      givenSuggestion({ split: { status: 'rejected' } });
+
+      expect(await resolve()).not.toHaveProperty('degraded');
     });
 
     it('never writes', async () => {

@@ -31,6 +31,10 @@ import { GetMonthPaceRequest } from './get-month-pace.dto';
 
 type Request = GetMonthPaceRequest & Pick<TokenPayloadSchema, 'workspaceId'>;
 
+const DEGRADED_CACHE_TTL_SECONDS = 60;
+
+type ComputedMonthPace = { pace: MonthPace; degraded: boolean };
+
 const planFieldsOf = (
   plan: ResolvedMonthPlan,
 ): { planTotalCents: number | null; planSource: MonthPlanSource | null } => {
@@ -65,7 +69,7 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
     ]);
     const now = this.dateProvider.now();
 
-    return readThrough({
+    const result = await readThrough({
       cache: this.cache,
       key: buildCacheKey({
         route: 'report:month-pace',
@@ -79,14 +83,19 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
       }),
       ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
       load: () => this.compute(request, now, timezone),
+      ttlFor: ({ degraded }) =>
+        degraded ? DEGRADED_CACHE_TTL_SECONDS : LEDGER_LIVE_CACHE_TTL_SECONDS,
     });
+    if (result.isLeft()) return left(result.value);
+
+    return right(result.value.pace);
   }
 
   private async compute(
     { workspaceId, month, year }: Request,
     now: Date,
     timezone: string,
-  ): Promise<Either<Error, MonthPace>> {
+  ): Promise<Either<Error, ComputedMonthPace>> {
     const monthKey = `${year}-${String(month).padStart(2, '0')}`;
     const referenceDate = `${monthKey}-01`;
     const start = this.dateProvider.startOfMonth(referenceDate, timezone);
@@ -114,8 +123,9 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
 
     if (plan.isLeft()) return left(plan.value);
 
-    return right(
-      buildMonthPace({
+    return right({
+      degraded: 'degraded' in plan.value && plan.value.degraded === true,
+      pace: buildMonthPace({
         month: monthKey,
         daysInMonth: totalDays,
         today: this.resolveToday(monthKey, now, timezone, totalDays),
@@ -141,7 +151,7 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
             Number(this.dateProvider.format(date, 'D', timezone)),
         }),
       }),
-    );
+    });
   }
 
   private resolveToday(

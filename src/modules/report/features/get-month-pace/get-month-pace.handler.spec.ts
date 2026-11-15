@@ -4,16 +4,19 @@ import {
   ResolveBudgetSuggestionService,
   type BudgetSuggestion,
 } from '@modules/budget/services/resolve-budget-suggestion.service';
-import { right } from '@shared/core/errors/Either';
+import { left, right } from '@shared/core/errors/Either';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { RecurringRuleSnapshot } from '@modules/report/valueObjects/MonthProjection';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { LEDGER_LIVE_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { ResolveMonthPlanService } from '../../services/resolve-month-plan.service';
 import { GetMonthPaceService } from './get-month-pace.handler';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 const WORKSPACE_ID = 'ws-1';
 const SAO_PAULO = 'America/Sao_Paulo';
@@ -291,6 +294,17 @@ describe('GetMonthPaceService', () => {
         /^report:month-pace:v5:ws-1:g\d+:c\d+:2026-11:2026-11-15$/,
       ),
     ]);
+  });
+
+  it('caches a pace built on a failed suggestion for 60 seconds', async () => {
+    budgetRepository.resolveSnapshot.mockResolvedValue(null);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    resolveSuggestion.execute.mockResolvedValue(left(new Error('down')));
+
+    const pace = await run();
+
+    expect(pace.planSource).not.toBe('suggested');
+    expect([...cache.ttls.values()]).toEqual([60]);
   });
 
   it('recomputes after the category generation moves', async () => {
