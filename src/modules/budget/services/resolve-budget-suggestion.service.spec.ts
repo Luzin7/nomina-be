@@ -5,6 +5,7 @@ import {
   type InferenceMonthTotals,
   type SuggestionParameters,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
+import { toAllocationInputs } from '@modules/budget/valueObjects/SplitAllocationLayout';
 import { type SuggestionDecisionRecord } from '@modules/budget/valueObjects/SuggestionDecisions';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { type LedgerMonth } from '@modules/report/valueObjects/MonthProjection';
@@ -32,7 +33,10 @@ const NOW = new Date('2026-11-15T15:00:00.000Z');
 const ESSENTIALS_ID = 'cat-essentials';
 const LEISURE_ID = 'cat-leisure';
 
-const makeActiveMonth = (key: string): LedgerMonth => ({
+const makeActiveMonth = (
+  key: string,
+  overrides: Partial<LedgerMonth> = {},
+): LedgerMonth => ({
   key,
   totalIncome: 0,
   totalExpense: 0,
@@ -44,6 +48,7 @@ const makeActiveMonth = (key: string): LedgerMonth => ({
     amount: 100,
     pending: false,
   })),
+  ...overrides,
 });
 
 const makeTotals = (
@@ -306,6 +311,167 @@ describe('ResolveBudgetSuggestionService', () => {
     expect(split).toEqual({ status: 'complete' });
   });
 
+  describe('plan', () => {
+    const planFor = async () => (await resolve()).plan;
+
+    it('is null without basis months', async () => {
+      monthProjectionRepository.findMonthLedger.mockResolvedValue([]);
+
+      expect(await planFor()).toBeNull();
+    });
+
+    it.each([
+      [['2026-10', '2026-09'], 2],
+      [['2026-10', '2026-09', '2026-08'], 3],
+      [
+        [
+          '2026-10',
+          '2026-09',
+          '2026-08',
+          '2026-07',
+          '2026-06',
+          '2026-05',
+          '2026-04',
+          '2026-03',
+        ],
+        6,
+      ],
+    ])('is built from the latest basis months %j', async (keys, expected) => {
+      monthProjectionRepository.findMonthLedger.mockResolvedValue(
+        keys.map((key) => makeActiveMonth(key)),
+      );
+      budgetRepository.findInferenceTotals.mockResolvedValue(
+        keys.map((key) => makeTotals(key)),
+      );
+
+      const plan = await planFor();
+
+      expect(plan?.basisMonths).toBe(expected);
+      expect(plan?.allocations.length).toBeGreaterThan(0);
+    });
+
+    it('totals what accepting the pending split would save', async () => {
+      const { plan, split } = await resolve();
+      if (split.status !== 'pending') throw new Error('split not pending');
+
+      expect(plan?.planTotalCents).toBe(
+        toAllocationInputs(split.allocations).reduce(
+          (total, { targetCents }) => total + targetCents,
+          0,
+        ),
+      );
+      expect(plan?.allocations).toEqual(split.allocations);
+    });
+
+    it('is still computed when the split was rejected this month', async () => {
+      budgetRepository.findSuggestionDecisions.mockResolvedValue([
+        makeDecision({
+          kind: 'split',
+          decision: 'rejected',
+          incomeCents: null,
+        }),
+      ]);
+
+      const { plan, split } = await resolve();
+
+      expect(split).toEqual({ status: 'rejected' });
+      expect(plan?.basisMonths).toBe(3);
+      expect(plan?.planTotalCents).toBeGreaterThan(0);
+    });
+
+    it('keeps the ideal split within the snapshot income', async () => {
+      budgetRepository.resolveSnapshot.mockResolvedValue(makeSnapshot(500_000));
+
+      const plan = await planFor();
+      const idealTotal = (plan?.allocations ?? []).reduce(
+        (total, { idealCents }) => total + (idealCents ?? 0),
+        0,
+      );
+
+      expect(idealTotal).toBeLessThanOrEqual(500_000);
+    });
+
+    it('does not cap the step-k total at the snapshot income', async () => {
+      budgetRepository.resolveSnapshot.mockResolvedValue({
+        ...makeSnapshot(500_000),
+        allocations: [
+          {
+            id: 'allocation-1',
+            categoryId: ESSENTIALS_ID,
+            categoryName: 'Moradia',
+            groupName: 'Essenciais',
+            groupOrder: 0,
+            categoryOrder: 0,
+            percentageOfIncome: null,
+            targetCents: 600_000,
+          },
+        ],
+      });
+      budgetRepository.findSuggestionDecisions.mockResolvedValue([
+        makeDecision({ kind: 'split', month: '2026-09', bracketVersion: 1 }),
+      ]);
+
+      const { plan, split } = await resolve();
+
+      expect(split).toMatchObject({ status: 'pending', step: 3 });
+      expect(plan?.planTotalCents).toBeGreaterThan(500_000);
+    });
+
+    it.each(['rejected', 'accepted'] as const)(
+      'keeps the %s split status with a null plan when there are no allocations',
+      async (decision) => {
+        budgetRepository.findSuggestionDecisions.mockResolvedValue([
+          makeDecision({ kind: 'split', decision, incomeCents: null }),
+        ]);
+        budgetRepository.findSuggestionCategories.mockResolvedValue([]);
+
+        const { split, plan } = await resolve();
+
+        expect(split).toEqual({ status: decision });
+        expect(plan).toBeNull();
+      },
+    );
+
+    it.each(['rejected', 'accepted'] as const)(
+      'keeps the %s split status with a null plan when there are no basis months',
+      async (decision) => {
+        monthProjectionRepository.findMonthLedger.mockResolvedValue([]);
+        budgetRepository.findSuggestionDecisions.mockResolvedValue([
+          makeDecision({ kind: 'split', decision, incomeCents: null }),
+        ]);
+
+        const { split, plan } = await resolve();
+
+        expect(split).toEqual({ status: decision });
+        expect(plan).toBeNull();
+      },
+    );
+
+    it('is null when no category yields an allocation', async () => {
+      budgetRepository.findSuggestionCategories.mockResolvedValue([]);
+
+      expect(await planFor()).toBeNull();
+    });
+  });
+
+  describe('planEligible', () => {
+    const eligibleMonths = ['2026-08', '2026-09', '2026-10'].map((key) =>
+      makeActiveMonth(key, { completedCount: 1 }),
+    );
+
+    it('is true with 3 closed months that have completed transactions', async () => {
+      monthProjectionRepository.findMonthLedger.mockResolvedValue(
+        eligibleMonths,
+      );
+
+      expect((await resolve()).planEligible).toBe(true);
+    });
+
+    it('is false when the closed months have no completed transactions', async () => {
+      expect((await resolve()).planEligible).toBe(false);
+    });
+  });
+
   describe('cache', () => {
     const buildService = (provider: CacheProvider) =>
       new ResolveBudgetSuggestionService(
@@ -327,7 +493,7 @@ describe('ResolveBudgetSuggestionService', () => {
       await resolve();
 
       expect(cache.get).toHaveBeenCalledWith(
-        `budget:suggestion:v2:${WORKSPACE_ID}:g11:c22:2026-11-15`,
+        `budget:suggestion:v4:${WORKSPACE_ID}:g11:c22:2026-11-15`,
       );
     });
 

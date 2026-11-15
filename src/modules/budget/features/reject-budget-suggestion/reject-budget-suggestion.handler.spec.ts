@@ -37,6 +37,8 @@ const makeSuggestion = (
     unmappedCategoryIds: [],
     fingerprint: 'split-fingerprint',
   },
+  plan: null,
+  planEligible: false,
   ...overrides,
 });
 

@@ -13,6 +13,7 @@ import {
   buildSplitSuggestion,
   type SuggestedAllocation,
 } from '@modules/budget/valueObjects/SplitSuggestion';
+import { planTotalOf } from '@modules/budget/valueObjects/SplitAllocationLayout';
 import { fingerprintOf } from '@modules/budget/valueObjects/SuggestionFingerprint';
 import {
   resolveIncomeStatus,
@@ -22,7 +23,10 @@ import {
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
-import { selectBasisMonths } from '@modules/report/valueObjects/MonthProjection';
+import {
+  isPlanEligible,
+  selectBasisMonths,
+} from '@modules/report/valueObjects/MonthProjection';
 import { LOOKBACK_MONTHS } from '@modules/report/valueObjects/ProjectionRules';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable, Logger } from '@nestjs/common';
@@ -67,12 +71,25 @@ export type SplitSuggestionState =
     }
   | { status: 'accepted' | 'rejected' | 'complete' | 'unavailable' };
 
+export type SuggestedPlan = {
+  allocations: SuggestedAllocation[];
+  planTotalCents: number;
+  basisMonths: number;
+};
+
 export type BudgetSuggestion = {
   month: string;
   monthStart: Date;
   basisMonths: number;
   income: IncomeSuggestion;
   split: SplitSuggestionState;
+  plan: SuggestedPlan | null;
+  planEligible: boolean;
+};
+
+type SplitResolution = {
+  split: SplitSuggestionState;
+  plan: SuggestedPlan | null;
 };
 
 type SuggestionDecisions = Awaited<
@@ -87,6 +104,12 @@ type SplitSuggestionInput = {
   parameters: SuggestionParameters;
   decisions: SuggestionDecisions;
 };
+
+const unavailableOf = ({
+  status,
+}: ReturnType<typeof resolveSplitProgress>): SplitSuggestionState => ({
+  status: status === 'open' ? 'unavailable' : status,
+});
 
 const monthIndex = (key: string): number => {
   const [year, month] = key.split('-').map(Number);
@@ -121,7 +144,7 @@ export class ResolveBudgetSuggestionService implements Service<
     const now = this.dateProvider.now();
     const key = buildCacheKey({
       route: 'budget:suggestion',
-      version: 'v2',
+      version: 'v4',
       workspaceId,
       generations: { ledger, category },
       parts: [this.dateProvider.format(now, 'YYYY-MM-DD', timezone)],
@@ -191,7 +214,7 @@ export class ResolveBudgetSuggestionService implements Service<
       snapshot,
       key,
     });
-    const split = this.splitOf(
+    const { split, plan } = this.splitOf(
       {
         workspaceId,
         currentMonth: key,
@@ -209,6 +232,8 @@ export class ResolveBudgetSuggestionService implements Service<
       basisMonths: basisKeys.length,
       income,
       split,
+      plan,
+      planEligible: isPlanEligible(ledger, key),
     });
   }
 
@@ -268,7 +293,7 @@ export class ResolveBudgetSuggestionService implements Service<
     categories: Awaited<
       ReturnType<BudgetRepository['findSuggestionCategories']>
     >,
-  ): SplitSuggestionState {
+  ): SplitResolution {
     const { workspaceId, currentMonth, snapshot, basis, parameters } = input;
     const incomeBasisCents = snapshot?.monthlyIncome ?? null;
     const progress = resolveSplitProgress({
@@ -277,8 +302,8 @@ export class ResolveBudgetSuggestionService implements Service<
       hasIncomeBasis: incomeBasisCents !== null,
       steps: SPLIT_STEPS,
     });
-    if (progress.status !== 'open') return { status: progress.status };
-    if (basis.length === 0) return { status: 'unavailable' };
+    if (basis.length === 0)
+      return { split: unavailableOf(progress), plan: null };
 
     const bracket = this.bracketOf(workspaceId, incomeBasisCents, parameters);
     const { allocations, unmappedCategoryIds } = buildSplitSuggestion({
@@ -296,28 +321,42 @@ export class ResolveBudgetSuggestionService implements Service<
       step: progress.step,
       steps: SPLIT_STEPS,
     });
-    if (allocations.length === 0) return { status: 'unavailable' };
+    if (allocations.length === 0) {
+      return { split: unavailableOf(progress), plan: null };
+    }
+
+    const plan: SuggestedPlan = {
+      allocations,
+      planTotalCents: planTotalOf(allocations),
+      basisMonths: basis.length,
+    };
+    if (progress.status !== 'open') {
+      return { split: { status: progress.status }, plan };
+    }
 
     const bracketVersion = bracket ? parameters.bracketVersion : null;
 
     return {
-      status: 'pending',
-      step: progress.step,
-      steps: SPLIT_STEPS,
-      incomeBasisCents,
-      bracket:
-        bracket && bracketVersion !== null
-          ? { position: bracket.position, version: bracketVersion }
-          : null,
-      allocations,
-      unmappedCategoryIds,
-      fingerprint: fingerprintOf({
-        kind: 'split',
+      plan,
+      split: {
+        status: 'pending',
         step: progress.step,
+        steps: SPLIT_STEPS,
         incomeBasisCents,
-        bracketVersion,
+        bracket:
+          bracket && bracketVersion !== null
+            ? { position: bracket.position, version: bracketVersion }
+            : null,
         allocations,
-      }),
+        unmappedCategoryIds,
+        fingerprint: fingerprintOf({
+          kind: 'split',
+          step: progress.step,
+          incomeBasisCents,
+          bracketVersion,
+          allocations,
+        }),
+      },
     };
   }
 
