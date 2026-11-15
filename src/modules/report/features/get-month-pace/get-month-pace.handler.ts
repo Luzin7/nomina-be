@@ -20,7 +20,7 @@ import {
 } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
-import { nextOccurrence } from '@utils/installmentSchedule';
+import { nextOccurrenceAfter } from '@utils/installmentSchedule';
 import { daysInMonth } from '@utils/calendarMonth';
 import {
   ResolveMonthPlanService,
@@ -121,13 +121,14 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
           rules,
           month: { start, end },
           nextOccurrence: (date, rule) =>
-            nextOccurrence(
+            nextOccurrenceAfter(
               {
-                startDate: date,
+                startDate: rule.startDate,
                 frequency: rule.frequency,
                 interval: rule.interval,
                 timezone: RECURRING_GENERATION_TIMEZONE,
               },
+              date,
               this.dateProvider,
             ),
           dayOf: (date) =>

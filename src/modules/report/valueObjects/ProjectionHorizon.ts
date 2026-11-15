@@ -7,7 +7,7 @@ import type {
 } from '@modules/report/valueObjects/MonthProjection';
 import type { LedgerMonth } from '@modules/report/valueObjects/ProjectionRules';
 import type { PeriodTotals } from '@modules/report/valueObjects/MonthSummary';
-import { nextOccurrence } from '@utils/installmentSchedule';
+import { nextOccurrenceAfter } from '@utils/installmentSchedule';
 import dayjs from 'dayjs';
 import timezonePlugin from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
@@ -117,16 +117,20 @@ const pureDateAdder = {
   ): Date {
     return dayjs(date).tz(timezone).add(amount, unit).toDate();
   },
+  format(date: Date, formatString: string, timezone: string): string {
+    return dayjs(date).tz(timezone).format(formatString);
+  },
 };
 
 const stepOccurrence = (date: Date, rule: RecurringRuleSnapshot): Date =>
-  nextOccurrence(
+  nextOccurrenceAfter(
     {
-      startDate: date,
+      startDate: rule.startDate,
       frequency: rule.frequency,
       interval: rule.interval,
       timezone: RECURRING_GENERATION_TIMEZONE,
     },
+    date,
     pureDateAdder,
   );
 
