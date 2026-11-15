@@ -44,6 +44,7 @@ const active = (
     .filter((entry) => !entry.pending)
     .reduce((total, entry) => total + entry.amount, 0),
   pending: { totalIncome: 0, totalExpense: 0 },
+  completedCount: 0,
   plainExpenses: rows,
 });
 

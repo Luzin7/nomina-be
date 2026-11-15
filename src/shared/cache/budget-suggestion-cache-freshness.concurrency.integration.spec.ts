@@ -1,4 +1,5 @@
 import { TransactionStatus, TransactionType } from '@constants/enums';
+import { SALARY_CATEGORY_NAME } from '@constants/incomeCategories';
 import * as schema from '@infra/databases/drizzle/schema';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { makeCheckingAccount } from '@modules/account/test-helpers/mock-factories';
@@ -55,6 +56,7 @@ describe('budget suggestion cache freshness', () => {
     const userId = randomUUID();
     const accountId = randomUUID();
     const categoryId = randomUUID();
+    const incomeCategoryId = randomUUID();
     workspaceId = randomUUID();
 
     await postgres.db.insert(schema.users).values({
@@ -97,6 +99,21 @@ describe('budget suggestion cache freshness', () => {
       ),
     );
 
+    await app.get(CategoryRepository).create(
+      unwrap<Category>(
+        Category.create(
+          {
+            workspaceId,
+            name: SALARY_CATEGORY_NAME,
+            type: TransactionType.INCOME,
+            parentId: null,
+            isSystemCategory: false,
+          },
+          incomeCategoryId,
+        ),
+      ),
+    );
+
     const create = app.get(CreateTransactionService);
     for (const monthsBack of BASIS_MONTHS) {
       unwrap(
@@ -104,6 +121,7 @@ describe('budget suggestion cache freshness', () => {
           workspaceId,
           sub: userId,
           accountId,
+          categoryId: incomeCategoryId,
           title: 'Salario',
           amount: INCOME_CENTS,
           date: monthOffsetDate(monthsBack, 1),
