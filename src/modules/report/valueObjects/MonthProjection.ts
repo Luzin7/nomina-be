@@ -17,18 +17,13 @@ import {
 import { PeriodTotals } from '@modules/report/valueObjects/MonthSummary';
 import { daysInMonth } from '@utils/calendarMonth';
 import { median } from '@utils/median';
+import { RecurrenceRule, walkOccurrences } from '@utils/recurrenceWalk';
 
-export type RecurringRuleSnapshot = {
+export type RecurringRuleSnapshot = RecurrenceRule & {
   id: string;
   type: 'INCOME' | 'EXPENSE';
   categoryId: string | null;
   amount: number;
-  frequency: RecurrenceFrequency;
-  interval: number;
-  startDate: Date;
-  endDate: Date | null;
-  lastGenerated: Date | null;
-  materializedDates: Date[];
 };
 
 export type { LedgerMonth, PlainExpense };
@@ -61,8 +56,6 @@ export type MonthProjection = {
   hasHistory: boolean;
 };
 
-const MAX_OCCURRENCE_STEPS = 1000;
-
 const monthIndex = (key: string): number => {
   const [year, month] = key.split('-').map(Number);
 
@@ -81,21 +74,33 @@ const completedRows = (month: LedgerMonth): PlainExpense[] =>
 const isActiveMonth = (month: LedgerMonth): boolean =>
   new Set(completedRows(month).map((row) => row.day)).size >= MIN_ACTIVE_DAYS;
 
+const closedAge = (month: LedgerMonth, currentKey: string): number =>
+  monthIndex(currentKey) - monthIndex(month.key);
+
+const isWithinLookback = (month: LedgerMonth, currentKey: string): boolean => {
+  const age = closedAge(month, currentKey);
+
+  return age >= 1 && age <= LOOKBACK_MONTHS;
+};
+
 export const selectBasisMonths = (
   ledger: LedgerMonth[],
   currentKey: string,
-): LedgerMonth[] => {
-  const current = monthIndex(currentKey);
-
-  return ledger
-    .filter((month) => {
-      const age = current - monthIndex(month.key);
-
-      return age >= 1 && age <= LOOKBACK_MONTHS && isActiveMonth(month);
-    })
+): LedgerMonth[] =>
+  ledger
+    .filter(
+      (month) => isWithinLookback(month, currentKey) && isActiveMonth(month),
+    )
     .sort((a, b) => monthIndex(b.key) - monthIndex(a.key))
     .slice(0, MAX_BASIS_MONTHS);
-};
+
+export const isPlanEligible = (
+  ledger: LedgerMonth[],
+  currentKey: string,
+): boolean =>
+  ledger.filter(
+    (month) => isWithinLookback(month, currentKey) && month.completedCount >= 1,
+  ).length >= MIN_BASIS_MONTHS;
 
 const sumAmounts = (rows: PlainExpense[]): number =>
   rows.reduce((total, row) => total + row.amount, 0);
@@ -153,35 +158,18 @@ const usualMonthlyExpense = (
   return Math.round(dailyExpense * monthDays);
 };
 
-const isMaterialized = (rule: RecurringRuleSnapshot, date: Date): boolean =>
-  rule.materializedDates.some((d) => d.getTime() === date.getTime());
-
-const isPendingOccurrence = (
-  rule: RecurringRuleSnapshot,
-  cursor: Date,
-  monthStart: Date,
-): boolean =>
-  cursor.getTime() >= monthStart.getTime() && !isMaterialized(rule, cursor);
-
-const isBeyondRuleEnd = (rule: RecurringRuleSnapshot, cursor: Date): boolean =>
-  rule.endDate !== null && cursor.getTime() > rule.endDate.getTime();
-
 const ruleOccursInMonth = (
   rule: RecurringRuleSnapshot,
   month: MonthProjectionInput['month'],
   nextOccurrence: MonthProjectionInput['nextOccurrence'],
-): boolean => {
-  let cursor = rule.startDate;
-
-  for (let step = 0; step < MAX_OCCURRENCE_STEPS; step++) {
-    if (cursor.getTime() > month.end.getTime()) return false;
-    if (isBeyondRuleEnd(rule, cursor)) return false;
-    if (cursor.getTime() >= month.start.getTime()) return true;
-    cursor = nextOccurrence(cursor, rule);
-  }
-
-  return false;
-};
+): boolean =>
+  walkOccurrences({
+    rule: { ...rule, lastGenerated: null, materializedDates: [] },
+    from: month.start,
+    until: month.end,
+    nextOccurrence: (date) => nextOccurrence(date, rule),
+    limit: 1,
+  }).length > 0;
 
 const isCoveredByActiveRule = (
   bill: FixedBill,
@@ -213,21 +201,13 @@ const sumRuleOccurrences = (
   rule: RecurringRuleSnapshot,
   month: MonthProjectionInput['month'],
   nextOccurrence: MonthProjectionInput['nextOccurrence'],
-): number => {
-  let cursor = rule.lastGenerated
-    ? nextOccurrence(rule.lastGenerated, rule)
-    : rule.startDate;
-  let total = 0;
-
-  for (let step = 0; step < MAX_OCCURRENCE_STEPS; step++) {
-    if (cursor.getTime() > month.end.getTime()) break;
-    if (isBeyondRuleEnd(rule, cursor)) break;
-    if (isPendingOccurrence(rule, cursor, month.start)) total += rule.amount;
-    cursor = nextOccurrence(cursor, rule);
-  }
-
-  return total;
-};
+): number =>
+  walkOccurrences({
+    rule,
+    from: month.start,
+    until: month.end,
+    nextOccurrence,
+  }).length * rule.amount;
 
 export const sumNotYetGeneratedOccurrences = (
   input: Pick<

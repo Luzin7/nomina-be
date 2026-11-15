@@ -20,7 +20,7 @@ import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, right } from '@shared/core/errors/Either';
 import { daysInMonth } from '@utils/calendarMonth';
-import { nextOccurrence } from '@utils/installmentSchedule';
+import { nextOccurrenceAfter } from '@utils/installmentSchedule';
 
 type Request = Pick<TokenPayloadSchema, 'workspaceId'> & {
   month: number;
@@ -196,13 +196,14 @@ export class ResolveMonthPlanService implements Service<
 
   private nextOccurrenceOf() {
     return (date: Date, rule: RecurringRuleSnapshot): Date =>
-      nextOccurrence(
+      nextOccurrenceAfter(
         {
-          startDate: date,
+          startDate: rule.startDate,
           frequency: rule.frequency,
           interval: rule.interval,
           timezone: RECURRING_GENERATION_TIMEZONE,
         },
+        date,
         this.dateProvider,
       );
   }

@@ -7,8 +7,8 @@ import type {
 } from '@modules/report/valueObjects/MonthProjection';
 import type { LedgerMonth } from '@modules/report/valueObjects/ProjectionRules';
 import type { PeriodTotals } from '@modules/report/valueObjects/MonthSummary';
-import { nextOccurrence } from '@utils/installmentSchedule';
-import { addZoned, formatZoned } from '@utils/zonedCalendar';
+import { nextOccurrenceAfter } from '@utils/installmentSchedule';
+import { addZoned, formatZoned, type ZonedFormat } from '@utils/zonedCalendar';
 
 const MAX_OCCURRENCE_STEPS = 1000;
 
@@ -112,16 +112,20 @@ const pureDateAdder = {
   ): Date {
     return addZoned(date, amount, unit, timezone);
   },
+  format(date: Date, formatString: ZonedFormat, timezone: string): string {
+    return formatZoned(date, formatString, timezone);
+  },
 };
 
 const stepOccurrence = (date: Date, rule: RecurringRuleSnapshot): Date =>
-  nextOccurrence(
+  nextOccurrenceAfter(
     {
-      startDate: date,
+      startDate: rule.startDate,
       frequency: rule.frequency,
       interval: rule.interval,
       timezone: RECURRING_GENERATION_TIMEZONE,
     },
+    date,
     pureDateAdder,
   );
 

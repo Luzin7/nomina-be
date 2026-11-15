@@ -9,8 +9,15 @@ import { type SuggestionDecisionRecord } from '@modules/budget/valueObjects/Sugg
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { type LedgerMonth } from '@modules/report/valueObjects/MonthProjection';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Logger } from '@nestjs/common';
 import { captureException } from '@sentry/nestjs';
+import {
+  LEDGER_LIVE_CACHE_TTL_SECONDS,
+  ledgerGenerationKey,
+} from '@shared/cache/report-cache';
+import { SingleFlight } from '@shared/cache/single-flight';
+import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
   ResolveBudgetSuggestionService,
@@ -30,6 +37,7 @@ const makeActiveMonth = (key: string): LedgerMonth => ({
   totalIncome: 0,
   totalExpense: 0,
   pending: { totalIncome: 0, totalExpense: 0 },
+  completedCount: 0,
   plainExpenses: [1, 2, 3, 4, 5].map((day) => ({
     day,
     categoryId: ESSENTIALS_ID,
@@ -98,6 +106,7 @@ describe('ResolveBudgetSuggestionService', () => {
   let budgetRepository: jest.Mocked<BudgetRepository>;
   let monthProjectionRepository: jest.Mocked<MonthProjectionRepository>;
   let dateProvider: DayJsDateProvider;
+  let cache: jest.Mocked<CacheProvider>;
 
   beforeEach(() => {
     budgetRepository = {
@@ -125,6 +134,11 @@ describe('ResolveBudgetSuggestionService', () => {
           makeActiveMonth('2026-10'),
         ]),
     } as unknown as jest.Mocked<MonthProjectionRepository>;
+    cache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+      readCounter: jest.fn().mockResolvedValue(7),
+    } as unknown as jest.Mocked<CacheProvider>;
     dateProvider = new DayJsDateProvider();
     jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
 
@@ -135,6 +149,8 @@ describe('ResolveBudgetSuggestionService', () => {
         execute: jest.fn().mockResolvedValue(SAO_PAULO),
       } as unknown as GetWorkspaceTimezoneService,
       dateProvider,
+      cache,
+      new SingleFlight(),
     );
   });
 
@@ -288,5 +304,100 @@ describe('ResolveBudgetSuggestionService', () => {
     const { split } = await resolve();
 
     expect(split).toEqual({ status: 'complete' });
+  });
+
+  describe('cache', () => {
+    const buildService = (provider: CacheProvider) =>
+      new ResolveBudgetSuggestionService(
+        budgetRepository,
+        monthProjectionRepository,
+        {
+          execute: jest.fn().mockResolvedValue(SAO_PAULO),
+        } as unknown as GetWorkspaceTimezoneService,
+        dateProvider,
+        provider,
+        new SingleFlight(),
+      );
+
+    it('keys by the ledger and category generations and the local day', async () => {
+      cache.readCounter.mockImplementation(async (key) =>
+        key.includes('report') ? 11 : 22,
+      );
+
+      await resolve();
+
+      expect(cache.get).toHaveBeenCalledWith(
+        `budget:suggestion:v3:${WORKSPACE_ID}:g11:c22:2026-11-15`,
+      );
+    });
+
+    it('stores with the live ledger ttl', async () => {
+      await resolve();
+
+      expect(cache.set).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        LEDGER_LIVE_CACHE_TTL_SECONDS,
+      );
+    });
+
+    it('serves the second call from the cache without loading', async () => {
+      const provider = new InMemoryCacheProvider();
+      const cached = buildService(provider);
+
+      const first = await cached.execute({ workspaceId: WORKSPACE_ID });
+      const second = await cached.execute({ workspaceId: WORKSPACE_ID });
+
+      expect(second.value).toEqual(first.value);
+      expect(budgetRepository.findSuggestionDecisions).toHaveBeenCalledTimes(1);
+    });
+
+    it('misses after the ledger generation changes', async () => {
+      const provider = new InMemoryCacheProvider();
+      const cached = buildService(provider);
+
+      await cached.execute({ workspaceId: WORKSPACE_ID });
+      await provider.incrementCounter(
+        ledgerGenerationKey(WORKSPACE_ID),
+        Date.now(),
+      );
+      await cached.execute({ workspaceId: WORKSPACE_ID });
+
+      expect(budgetRepository.findSuggestionDecisions).toHaveBeenCalledTimes(2);
+    });
+
+    it('resolveFresh ignores a stale cached entry and never stores', async () => {
+      const provider = new InMemoryCacheProvider();
+      const cached = buildService(provider);
+      await cached.execute({ workspaceId: WORKSPACE_ID });
+      budgetRepository.findSuggestionDecisions.mockResolvedValue([
+        makeDecision(),
+      ]);
+      const readsBefore = provider.values.size;
+
+      const stale = await cached.execute({ workspaceId: WORKSPACE_ID });
+      const fresh = await cached.resolveFresh({ workspaceId: WORKSPACE_ID });
+
+      expect(stale.value).toMatchObject({ income: { status: 'pending' } });
+      expect(fresh.value).toEqual(
+        expect.objectContaining({ income: { status: 'accepted' } }),
+      );
+      expect(provider.values.size).toBe(readsBefore);
+    });
+
+    it('loads once for two concurrent misses', async () => {
+      await Promise.all([resolve(), resolve()]);
+
+      expect(budgetRepository.findSuggestionDecisions).toHaveBeenCalledTimes(1);
+    });
+
+    it('loads without caching when a generation is unavailable', async () => {
+      cache.readCounter.mockResolvedValue(null);
+
+      await Promise.all([resolve(), resolve()]);
+
+      expect(cache.set).not.toHaveBeenCalled();
+      expect(budgetRepository.findSuggestionDecisions).toHaveBeenCalledTimes(2);
+    });
   });
 });

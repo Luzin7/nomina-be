@@ -119,7 +119,7 @@ describe('resolveSplitProgress', () => {
   ])(
     'counts the step from the first income-based acceptance in %s',
     (month, step) => {
-      const decisions = [makeDecision({ month })];
+      const decisions = [makeDecision({ month, incomeCents: 500_000 })];
 
       expect(resolveSplitProgress({ ...base, decisions })).toEqual({
         status: 'open',
@@ -138,7 +138,7 @@ describe('resolveSplitProgress', () => {
 
   it('skips only the current month after a glide-step rejection', () => {
     const decisions = [
-      makeDecision({ month: '2026-09' }),
+      makeDecision({ month: '2026-09', incomeCents: 500_000 }),
       makeDecision({ month: '2026-10', decision: 'rejected' }),
     ];
 
@@ -152,20 +152,47 @@ describe('resolveSplitProgress', () => {
     ).toBe('rejected');
   });
 
-  it('keeps an initial rejection final', () => {
+  it('keeps rejected in the month of an initial rejection', () => {
+    const decisions = [
+      makeDecision({ month: '2026-11', decision: 'rejected' }),
+    ];
+
+    expect(resolveSplitProgress({ ...base, decisions })).toEqual({
+      status: 'rejected',
+      step: 1,
+    });
+  });
+
+  it('reopens the split the month after an initial rejection', () => {
     const decisions = [
       makeDecision({ month: '2026-08', decision: 'rejected' }),
     ];
 
-    expect(resolveSplitProgress({ ...base, decisions }).status).toBe(
-      'rejected',
+    expect(resolveSplitProgress({ ...base, decisions })).toEqual({
+      status: 'open',
+      step: 1,
+    });
+  });
+
+  it('skips only the month after a rejection following a no-income acceptance', () => {
+    const decisions = [
+      makeDecision({ month: '2026-09', bracketVersion: null }),
+      makeDecision({ month: '2026-10', decision: 'rejected' }),
+    ];
+    const input = { ...base, decisions, hasIncomeBasis: false };
+
+    expect(
+      resolveSplitProgress({ ...input, currentMonth: '2026-10' }).status,
+    ).toBe('rejected');
+    expect(resolveSplitProgress({ ...input, currentMonth: '2026-11' })).toEqual(
+      { status: 'open', step: 1 },
     );
   });
 
   it('is complete once the last step was accepted', () => {
     const decisions = [
-      makeDecision({ month: '2026-03' }),
-      makeDecision({ month: '2026-08' }),
+      makeDecision({ month: '2026-03', incomeCents: 500_000 }),
+      makeDecision({ month: '2026-08', incomeCents: 500_000 }),
     ];
 
     expect(resolveSplitProgress({ ...base, decisions }).status).toBe(
@@ -192,6 +219,21 @@ describe('resolveSplitProgress', () => {
     expect(resolveSplitProgress({ ...base, decisions })).toEqual({
       status: 'open',
       step: 1,
+    });
+  });
+
+  it('anchors the step on the first acceptance that has income', () => {
+    const decisions = [
+      makeDecision({
+        month: '2026-09',
+        incomeCents: 500_000,
+        bracketVersion: null,
+      }),
+    ];
+
+    expect(resolveSplitProgress({ ...base, decisions })).toEqual({
+      status: 'open',
+      step: 3,
     });
   });
 });
