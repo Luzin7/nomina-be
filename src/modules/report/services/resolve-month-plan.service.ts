@@ -1,5 +1,9 @@
 import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import {
+  ResolveBudgetSuggestionService,
+  type BudgetSuggestion,
+} from '@modules/budget/services/resolve-budget-suggestion.service';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { expenseOccurrencesByDay } from '@modules/report/valueObjects/MonthPace';
 import {
@@ -14,7 +18,7 @@ import {
   type ProvisionalBasis,
 } from '@modules/report/valueObjects/ProvisionalPlan';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
@@ -30,6 +34,12 @@ type Request = Pick<TokenPayloadSchema, 'workspaceId'> & {
 
 export type ResolvedMonthPlan =
   | { source: 'declared'; planTotalCents: number }
+  | {
+      source: 'suggested';
+      planTotalCents: number;
+      spentCents: number;
+      basisMonths: number;
+    }
   | {
       source: 'provisional';
       planTotalCents: number;
@@ -54,6 +64,14 @@ type MonthWindow = {
 const sum = (values: number[]): number =>
   values.reduce((total, value) => total + value, 0);
 
+const describeError = (error: unknown): string =>
+  error instanceof Error
+    ? `${error.constructor.name}: ${error.message}`
+    : typeof error;
+
+const canSuggest = ({ planEligible, split }: BudgetSuggestion): boolean =>
+  planEligible && split.status !== 'rejected';
+
 const completedPlainExpensesOf = (ledger: LedgerMonth[]): PlainExpenseOn[] =>
   ledger.flatMap(({ key, plainExpenses }) =>
     plainExpenses
@@ -70,11 +88,14 @@ export class ResolveMonthPlanService implements Service<
   Error,
   ResolvedMonthPlan
 > {
+  private readonly logger = new Logger(ResolveMonthPlanService.name);
+
   constructor(
     private readonly budgetRepository: BudgetRepository,
     private readonly monthProjectionRepository: MonthProjectionRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
+    private readonly resolveSuggestion: ResolveBudgetSuggestionService,
   ) {}
 
   async execute({
@@ -102,15 +123,55 @@ export class ResolveMonthPlanService implements Service<
 
     if (!today.startsWith(key)) return right({ source: 'none' });
 
-    return right(
-      await this.provisionalPlanOf(workspaceId, timezone, {
-        key,
-        start,
-        end: this.dateProvider.endOfMonth(referenceDate, timezone),
-        days: daysInMonth(year, month),
-        today,
-      }),
-    );
+    const window = {
+      key,
+      start,
+      end: this.dateProvider.endOfMonth(referenceDate, timezone),
+      days: daysInMonth(year, month),
+      today,
+    };
+    const suggestion = await this.suggestionOf(workspaceId);
+    if (suggestion?.plan && canSuggest(suggestion)) {
+      return right({
+        source: 'suggested',
+        planTotalCents: suggestion.plan.planTotalCents,
+        spentCents: await this.spentOf(workspaceId, timezone, window),
+        basisMonths: suggestion.plan.basisMonths,
+      });
+    }
+
+    return right(await this.provisionalPlanOf(workspaceId, timezone, window));
+  }
+
+  private async suggestionOf(
+    workspaceId: string,
+  ): Promise<BudgetSuggestion | null> {
+    try {
+      const result = await this.resolveSuggestion.execute({ workspaceId });
+      if (result.isLeft()) throw result.value;
+
+      return result.value;
+    } catch (error) {
+      this.logger.warn(
+        `suggested plan unavailable, using provisional workspaceId=${workspaceId} error=${describeError(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private async spentOf(
+    workspaceId: string,
+    timezone: string,
+    { start, end }: MonthWindow,
+  ): Promise<number> {
+    const rows = await this.budgetRepository.findCompletedExpenseByLocalDay({
+      workspaceId,
+      start,
+      end,
+      timezone,
+    });
+
+    return sum(rows.map(({ totalCents }) => totalCents));
   }
 
   private async provisionalPlanOf(

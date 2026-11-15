@@ -105,7 +105,7 @@ export class GetAvailableToSpendService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'dashboard:available-to-spend',
-        version: 'v4',
+        version: 'v5',
         workspaceId,
         generations: { ledger, goal, category },
         parts: [today],

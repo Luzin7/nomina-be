@@ -1,5 +1,6 @@
 import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import {
@@ -33,7 +34,11 @@ type Request = GetMonthPaceRequest & Pick<TokenPayloadSchema, 'workspaceId'>;
 const planFieldsOf = (
   plan: ResolvedMonthPlan,
 ): { planTotalCents: number | null; planSource: MonthPlanSource | null } => {
-  if (plan.source === 'declared' || plan.source === 'provisional') {
+  if (
+    plan.source === 'declared' ||
+    plan.source === 'suggested' ||
+    plan.source === 'provisional'
+  ) {
     return { planTotalCents: plan.planTotalCents, planSource: plan.source };
   }
 
@@ -53,8 +58,9 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
 
   async execute(request: Request): Promise<Either<Error, MonthPace>> {
     const { workspaceId, month, year } = request;
-    const [ledger, timezone] = await Promise.all([
+    const [ledger, category, timezone] = await Promise.all([
       readLedgerGeneration(this.cache, workspaceId),
+      readCategoryGeneration(this.cache, workspaceId),
       this.workspaceTimezone.execute(workspaceId),
     ]);
     const now = this.dateProvider.now();
@@ -63,9 +69,9 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
       cache: this.cache,
       key: buildCacheKey({
         route: 'report:month-pace',
-        version: 'v2',
+        version: 'v5',
         workspaceId,
-        generations: { ledger },
+        generations: { ledger, category },
         parts: [
           `${year}-${month}`,
           this.dateProvider.format(now, 'YYYY-MM-DD', timezone),

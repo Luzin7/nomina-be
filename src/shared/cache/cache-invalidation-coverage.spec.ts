@@ -60,7 +60,7 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
     { route: 'transaction:list-totals', kinds: ['ledger'] },
   'report/features/get-month-pace/get-month-pace.handler.ts': {
     route: 'report:month-pace',
-    kinds: ['ledger'],
+    kinds: ['ledger', 'category'],
   },
   'transaction/features/list-recurring-transactions/list-recurring-transactions.service.ts':
     { route: 'recurring:list', kinds: ['ledger', 'category'] },
