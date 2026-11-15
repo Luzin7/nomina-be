@@ -1,6 +1,7 @@
 import { RecurrenceFrequency } from '@constants/enums';
 
 export interface NextGenerationDateRequest {
+  anchorDate: Date;
   baseDate: Date;
   frequency: RecurrenceFrequency;
   interval: number;

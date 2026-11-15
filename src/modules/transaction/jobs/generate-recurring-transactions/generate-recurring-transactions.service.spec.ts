@@ -1,3 +1,4 @@
+import { RecurrenceFrequency } from '@constants/enums';
 import {
   CacheProvider,
   LockHandle,
@@ -8,7 +9,9 @@ import { Transaction } from '@modules/transaction/entities/Transaction';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { makeRecurring } from '@modules/transaction/test-helpers/mock-factories';
+import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
 import { Logger } from '@nestjs/common';
+import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { DrizzleQueryError } from 'drizzle-orm/errors';
 import { GenerateRecurringTransactionsJobService } from './generate-recurring-transactions.service';
 
@@ -566,5 +569,76 @@ describe('GenerateRecurringTransactionsJobService', () => {
       });
     expect(loggerError).toHaveBeenCalledTimes(1);
     expect(String(loggerError.mock.calls[0][0])).toContain('sqlState=none');
+  });
+
+  it('passes the rule start date as the anchor of the next date', async () => {
+    const recurring = makeRecurring({ startDate: new Date('2024-01-10') });
+    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-02-10'),
+    );
+
+    await service.execute();
+
+    expect(nextGenerationDateCalculator.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        anchorDate: new Date('2024-01-10'),
+        baseDate: new Date('2024-01-10'),
+      }),
+    );
+  });
+
+  describe('with the real next date calculator', () => {
+    beforeEach(() => {
+      service = new GenerateRecurringTransactionsJobService(
+        recurringRepository,
+        new CalculateNextGenerationDateService(new DayJsDateProvider()),
+        redis,
+        dateProvider,
+      );
+    });
+
+    it.each([
+      ['2026-01-31', 'MONTHLY', 1, '2026-02-28', '2026-03-31'],
+      ['2026-01-31', 'MONTHLY', 1, '2026-03-28', '2026-04-30'],
+      ['2024-02-29', 'YEARLY', 1, '2025-02-28', '2026-02-28'],
+      ['2026-01-31', 'MONTHLY', 2, '2026-03-28', '2026-05-31'],
+    ])(
+      'anchor %s %s every %i after %s generates %s',
+      async (start, frequency, interval, last, expected) => {
+        const recurring = makeRecurring({
+          startDate: new Date(`${start}T12:00:00.000Z`),
+          frequency: frequency as RecurrenceFrequency,
+          interval,
+          lastGenerated: new Date(`${last}T12:00:00.000Z`),
+        });
+        recurringRepository.listNeedingGeneration.mockResolvedValue([
+          recurring,
+        ]);
+        dateProvider.add.mockReturnValue(new Date(`${expected}T13:00:00.000Z`));
+
+        await service.execute();
+
+        const [transactions] =
+          recurringRepository.createGeneratedTransactions.mock.calls[0];
+        expect(transactions.map((transaction) => transaction.date)).toEqual([
+          new Date(`${expected}T12:00:00.000Z`),
+        ]);
+      },
+    );
+
+    it('creates no second row when the generation runs twice', async () => {
+      const recurring = makeRecurring({
+        startDate: new Date('2024-01-10T12:00:00.000Z'),
+      });
+      recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+
+      await service.execute();
+      await service.execute();
+
+      expect(
+        recurringRepository.createGeneratedTransactions,
+      ).toHaveBeenCalledTimes(1);
+    });
   });
 });
