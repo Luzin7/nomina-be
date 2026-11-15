@@ -1,4 +1,5 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { applyBalanceMovement, DrizzleTransaction } from './balance-movement';
 import { AnyAccount } from '@modules/account/entities/types';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AccountNotFoundError } from '@modules/account/errors';
@@ -65,10 +66,6 @@ const compareIds = (left: string, right: string): number => {
   if (left > right) return 1;
   return 0;
 };
-
-type DrizzleTransaction = Parameters<
-  Parameters<DrizzleService['db']['transaction']>[0]
->[0];
 
 type BalanceMovementEntry = {
   transactionId: string | null;
@@ -638,26 +635,15 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
       .sort(([leftId], [rightId]) => compareIds(leftId, rightId));
 
     for (const [accountId, delta] of ordered) {
-      const [account] = await tx
-        .update(schema.accounts)
-        .set({ balance: sql`${schema.accounts.balance} + ${delta}` })
-        .where(eq(schema.accounts.id, accountId))
-        .returning({
-          balance: schema.accounts.balance,
-          workspaceId: schema.accounts.workspaceId,
-        });
-
-      if (!account) throw new AccountNotFoundError('Conta não encontrada.');
-
-      await tx.insert(schema.balanceMovements).values({
-        workspaceId: account.workspaceId,
+      const applied = await applyBalanceMovement(tx, {
         accountId,
-        transactionId: movement.transactionId,
+        delta,
         cause: movement.cause,
-        delta: Number(delta),
-        balanceAfter: account.balance,
+        transactionId: movement.transactionId,
         actorId: movement.actorId,
       });
+
+      if (!applied) throw new AccountNotFoundError('Conta não encontrada.');
     }
   }
 

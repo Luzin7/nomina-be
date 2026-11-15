@@ -1,5 +1,6 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Type } from '@nestjs/common';
+import { AdjustAccountBalanceController } from '@modules/account/features/adjust-account-balance/adjust-account-balance.controller';
 import { CreateInstallmentPurchaseController } from '@modules/transaction/features/create-installment-purchase/create-installment-purchase.controller';
 import { CreateRecurringTransactionController } from '@modules/transaction/features/create-recurring-transaction/create-recurring-transaction.controller';
 import { CreateTransactionController } from '@modules/transaction/features/create-transaction/create-transaction.controller';
@@ -61,5 +62,15 @@ describe('idempotency route coverage', () => {
 
   it('decorates POST /account/:id/invoice/pay with @Idempotent', () => {
     expect(idempotentMetadataOf(PayCreditCardInvoiceController)).toBeDefined();
+  });
+
+  it('protects POST /account/:id/balance-adjustments with IdempotencyGuard', () => {
+    expect(guardsOf(AdjustAccountBalanceController)).toContain(
+      IdempotencyGuard,
+    );
+  });
+
+  it('decorates POST /account/:id/balance-adjustments with @Idempotent', () => {
+    expect(idempotentMetadataOf(AdjustAccountBalanceController)).toBeDefined();
   });
 });

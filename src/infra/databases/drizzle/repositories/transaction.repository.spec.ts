@@ -41,7 +41,7 @@ function makeTx(balanceAfter = 900n) {
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockImplementation((row: MovementRow) => {
         inserted.push(row);
-        return Promise.resolve();
+        return { returning: jest.fn().mockResolvedValue([{ seq: 1 }]) };
       }),
     }),
   };
