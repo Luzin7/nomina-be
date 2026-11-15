@@ -1,16 +1,52 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
+import { BalanceMovementCause } from '@constants/enums';
+import { IdempotencyKeyReusedError } from '@modules/account/errors';
 import {
   AccountListItem,
   AccountRepository,
+  AdjustBalanceInput,
+  AdjustBalanceOutcome,
+  BalanceAdjustmentRecord,
 } from '@modules/account/repositories/contracts/AccountRepository';
 import { Injectable } from '@nestjs/common';
 import { and, count, desc, eq, sql } from 'drizzle-orm';
 import { AccountMapper } from '../mappers/account.mapper';
 import * as schema from '../schema';
+import { applyBalanceMovement, DrizzleTransaction } from './balance-movement';
 import { ensureEntityId } from './ensure-entity-id';
 import { insertOpeningMovement } from './opening-movement';
+
+type BalanceAdjustmentRow = typeof schema.balanceAdjustments.$inferSelect;
+
+function toAdjustmentRecord(
+  row: BalanceAdjustmentRow,
+): BalanceAdjustmentRecord {
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    expectedBalanceCents: row.expectedBalanceCents,
+    targetBalanceCents: row.targetBalanceCents,
+    deltaCents: row.deltaCents,
+    movementSeq: row.movementSeq,
+    createdAt: row.createdAt,
+  };
+}
+
+function replayOf(
+  existing: BalanceAdjustmentRow,
+  input: AdjustBalanceInput,
+): AdjustBalanceOutcome {
+  const samePayload =
+    existing.accountId === input.accountId &&
+    existing.expectedBalanceCents === input.expectedBalanceCents &&
+    existing.targetBalanceCents === input.targetBalanceCents;
+
+  if (!samePayload) return { status: 'key-reused' };
+
+  return { status: 'replayed', adjustment: toAdjustmentRecord(existing) };
+}
 
 @Injectable()
 export class AccountRepositoryImplementation implements AccountRepository {
@@ -103,6 +139,106 @@ export class AccountRepositoryImplementation implements AccountRepository {
     await this.drizzle.db
       .delete(schema.accounts)
       .where(eq(schema.accounts.id, accountId));
+  }
+
+  async adjustBalance(
+    input: AdjustBalanceInput,
+  ): Promise<AdjustBalanceOutcome> {
+    try {
+      return await this.drizzle.db.transaction((tx) =>
+        this.adjustBalanceLocked(tx, input),
+      );
+    } catch (error) {
+      if (error instanceof IdempotencyKeyReusedError) {
+        return { status: 'key-reused' };
+      }
+      throw error;
+    }
+  }
+
+  async listBalanceAdjustments(
+    accountId: string,
+    workspaceId: string,
+    limit: number,
+  ): Promise<BalanceAdjustmentRecord[]> {
+    const rows = await this.drizzle.db
+      .select()
+      .from(schema.balanceAdjustments)
+      .where(
+        and(
+          eq(schema.balanceAdjustments.accountId, accountId),
+          eq(schema.balanceAdjustments.workspaceId, workspaceId),
+        ),
+      )
+      .orderBy(
+        desc(schema.balanceAdjustments.createdAt),
+        desc(schema.balanceAdjustments.movementSeq),
+      )
+      .limit(limit);
+
+    return rows.map(toAdjustmentRecord);
+  }
+
+  private async adjustBalanceLocked(
+    tx: DrizzleTransaction,
+    input: AdjustBalanceInput,
+  ): Promise<AdjustBalanceOutcome> {
+    await tx.execute(sql`set local lock_timeout = '3s'`);
+    await tx.execute(sql`set local statement_timeout = '15s'`);
+
+    const [account] = await tx
+      .select({ balance: schema.accounts.balance })
+      .from(schema.accounts)
+      .where(
+        and(
+          eq(schema.accounts.id, input.accountId),
+          eq(schema.accounts.workspaceId, input.workspaceId),
+        ),
+      )
+      .for('update');
+
+    if (!account) return { status: 'account-not-found' };
+
+    const [existing] = await tx
+      .select()
+      .from(schema.balanceAdjustments)
+      .where(eq(schema.balanceAdjustments.id, input.id));
+
+    if (existing) return replayOf(existing, input);
+    if (account.balance !== input.expectedBalanceCents) {
+      return { status: 'balance-changed' };
+    }
+
+    const deltaCents = input.targetBalanceCents - account.balance;
+    if (deltaCents === 0) return { status: 'unchanged' };
+
+    const movement = await applyBalanceMovement(tx, {
+      accountId: input.accountId,
+      delta: BigInt(deltaCents),
+      cause: BalanceMovementCause.RECONCILIATION,
+      transactionId: null,
+      actorId: input.actorId,
+    });
+    if (!movement) return { status: 'account-not-found' };
+
+    const [inserted] = await tx
+      .insert(schema.balanceAdjustments)
+      .values({
+        id: input.id,
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        actorId: input.actorId,
+        expectedBalanceCents: input.expectedBalanceCents,
+        targetBalanceCents: input.targetBalanceCents,
+        deltaCents,
+        movementSeq: movement.seq,
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    if (!inserted) throw new IdempotencyKeyReusedError();
+
+    return { status: 'applied', adjustment: toAdjustmentRecord(inserted) };
   }
 
   async findManyByWorkspaceId(

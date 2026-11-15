@@ -116,6 +116,10 @@ export class CreditCard extends BaseAccount<CreditCardProps> {
     return this.props.autoPaySourceAccountId;
   }
 
+  public canAdjustBalance(): boolean {
+    return false;
+  }
+
   get type(): string {
     return AccountType.CREDIT_CARD;
   }

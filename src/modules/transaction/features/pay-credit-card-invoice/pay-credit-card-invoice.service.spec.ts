@@ -60,6 +60,8 @@ describe('PayCreditCardInvoiceService', () => {
       findAllByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
       updateAutoPay: jest.fn(),
+      adjustBalance: jest.fn(),
+      listBalanceAdjustments: jest.fn(),
     } as jest.Mocked<AccountRepository>;
 
     transactionRepository = {

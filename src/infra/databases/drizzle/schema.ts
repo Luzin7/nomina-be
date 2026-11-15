@@ -685,6 +685,7 @@ export const balanceAdjustments = pgTable(
       table.accountId,
       table.createdAt.desc(),
     ),
+    index('idx_balance_adjustments_movement_seq').on(table.movementSeq),
   ],
 );
 

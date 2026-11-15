@@ -37,6 +37,8 @@ describe('SetAutopayService', () => {
     accountRepository = {
       findById: jest.fn(),
       updateAutoPay: jest.fn(),
+      adjustBalance: jest.fn(),
+      listBalanceAdjustments: jest.fn(),
     } as unknown as jest.Mocked<AccountRepository>;
     dateProvider = { now: jest.fn() } as unknown as jest.Mocked<DateProvider>;
     dateProvider.now.mockReturnValue(FIRST_ENABLE);

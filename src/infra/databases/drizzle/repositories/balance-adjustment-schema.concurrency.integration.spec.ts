@@ -135,4 +135,14 @@ describe('balance_adjustments schema', () => {
 
     expect(await countAdjustments()).toBe(0);
   });
+
+  it('indexes movement_seq for the balance_movements delete check', async () => {
+    const rows = await db.execute<{ indexdef: string }>(sql`
+      SELECT indexdef FROM pg_indexes
+      WHERE tablename = 'balance_adjustments'
+        AND indexname = 'idx_balance_adjustments_movement_seq'
+    `);
+
+    expect(rows[0].indexdef).toContain('(movement_seq)');
+  });
 });
