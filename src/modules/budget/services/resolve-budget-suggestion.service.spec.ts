@@ -37,6 +37,7 @@ const makeActiveMonth = (key: string): LedgerMonth => ({
   totalIncome: 0,
   totalExpense: 0,
   pending: { totalIncome: 0, totalExpense: 0 },
+  completedCount: 0,
   plainExpenses: [1, 2, 3, 4, 5].map((day) => ({
     day,
     categoryId: ESSENTIALS_ID,
@@ -326,7 +327,7 @@ describe('ResolveBudgetSuggestionService', () => {
       await resolve();
 
       expect(cache.get).toHaveBeenCalledWith(
-        `budget:suggestion:v2:${WORKSPACE_ID}:g11:c22:2026-11-15`,
+        `budget:suggestion:v4:${WORKSPACE_ID}:g11:c22:2026-11-15`,
       );
     });
 

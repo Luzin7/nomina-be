@@ -121,7 +121,7 @@ export class ResolveBudgetSuggestionService implements Service<
     const now = this.dateProvider.now();
     const key = buildCacheKey({
       route: 'budget:suggestion',
-      version: 'v2',
+      version: 'v4',
       workspaceId,
       generations: { ledger, category },
       parts: [this.dateProvider.format(now, 'YYYY-MM-DD', timezone)],

@@ -188,6 +188,44 @@ describe('month projection repository against a real postgres', () => {
           expect(session.TimeZone).toBe(sessionTimeZone);
         });
 
+        it('should count completed income and expense rows outside the system category ids', async () => {
+          const ws = await seedWorkspace();
+          await db.insert(schema.transactions).values([
+            makeRow({ ...ws, date: IN_SEPTEMBER }),
+            makeRow({
+              ...ws,
+              date: IN_SEPTEMBER,
+              type: TransactionType.INCOME,
+            }),
+            makeRow({
+              ...ws,
+              date: IN_SEPTEMBER,
+              status: TransactionStatus.PENDING,
+            }),
+            makeRow({
+              ...ws,
+              date: IN_SEPTEMBER,
+              type: TransactionType.TRANSFER,
+            }),
+            makeRow({
+              ...ws,
+              date: IN_SEPTEMBER,
+              categoryId: ws.legacyOthersCategoryId,
+            }),
+            makeRow({
+              ...ws,
+              date: IN_SEPTEMBER,
+              categoryId: SYSTEM_CATEGORY.CREDIT_CARD_PAYMENT.id,
+            }),
+          ]);
+
+          const ledger = await findLedger(ws.workspaceId);
+
+          expect(ledger).toEqual([
+            expect.objectContaining({ key: '2026-09', completedCount: 3 }),
+          ]);
+        });
+
         it('should put boundary instants in their local month and day', async () => {
           const ws = await seedWorkspace();
           await db.insert(schema.transactions).values([

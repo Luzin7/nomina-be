@@ -17,6 +17,7 @@ const makeMonth = (
   totalIncome: 0,
   totalExpense: 0,
   pending: { totalIncome: 0, totalExpense: 0 },
+  completedCount: 0,
   plainExpenses,
 });
 
