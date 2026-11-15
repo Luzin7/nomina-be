@@ -49,7 +49,7 @@ const ofKind = (
     .sort((a, b) => monthIndex(a.month) - monthIndex(b.month));
 
 const isIncomeBased = (decision: SuggestionDecisionRecord): boolean =>
-  decision.decision === 'accepted' && decision.bracketVersion !== null;
+  decision.decision === 'accepted' && decision.incomeCents !== null;
 
 const hasMovedEnough = (baseCents: number, rejectedCents: number): boolean =>
   Math.abs(baseCents - rejectedCents) >= REJECTION_REOPEN_RATIO * rejectedCents;
