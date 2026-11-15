@@ -104,6 +104,15 @@ describe('migration 0044 reconcile legacy credit card balance', () => {
     >`SELECT cause, delta, balance_after, transaction_id, actor_id FROM balance_movements WHERE account_id = ${accountId}`;
   }
 
+  async function readSnapshot() {
+    const [row] = await adminClient<
+      { movements: string; balances: string }[]
+    >`SELECT
+        (SELECT count(*) FROM balance_movements) AS movements,
+        (SELECT COALESCE(sum(balance), 0) FROM accounts) AS balances`;
+    return row;
+  }
+
   async function runMigration() {
     const client = postgres(container.getConnectionUri(), {
       max: 1,
@@ -149,6 +158,15 @@ describe('migration 0044 reconcile legacy credit card balance', () => {
 
     expect(await readBalance(accountId)).toBe(0);
     expect(await readMovements(accountId)).toEqual([]);
+  });
+
+  it('should insert nothing and change no balance when no card qualifies', async () => {
+    await seedCard(5_000, 0);
+    const before = await readSnapshot();
+
+    await runMigration();
+
+    expect(await readSnapshot()).toEqual(before);
   });
 
   it('should be a no-op when run again', async () => {
