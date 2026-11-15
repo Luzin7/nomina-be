@@ -134,10 +134,16 @@ export const workspaceUsers = pgTable(
       .$default(() => crypto.randomUUID()),
     workspaceId: text('workspace_id')
       .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
+      .references(() => workspaces.id, {
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      }),
     userId: text('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => users.id, {
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      }),
     timezone: text('time_zone').notNull().default(DEFAULT_TIMEZONE),
     isDefault: boolean('is_default').default(false).notNull(),
     role: text('role').notNull(),
@@ -163,11 +169,17 @@ export const workspaceInvites = pgTable(
     code: text('code').notNull().unique('workspace_invites_code_key'),
     workspaceId: text('workspace_id')
       .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
+      .references(() => workspaces.id, {
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      }),
     role: text('role').notNull(),
     createdBy: text('created_by')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => users.id, {
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      }),
     expiresAt: timestamp('expires_at', {
       withTimezone: true,
       mode: 'date',
@@ -196,7 +208,10 @@ export const accounts = pgTable(
       .$default(() => crypto.randomUUID()),
     workspaceId: text('workspace_id')
       .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
+      .references(() => workspaces.id, {
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      }),
     name: text('name').notNull(),
     type: text('type').notNull(),
     balance: bigint('balance', { mode: 'number' }).default(0).notNull(),
@@ -236,12 +251,16 @@ export const categories = pgTable(
       .$default(() => crypto.randomUUID()),
     workspaceId: text('workspace_id').references(() => workspaces.id, {
       onDelete: 'cascade',
+      onUpdate: 'cascade',
     }),
     name: text('name').notNull(),
     type: text('type').notNull(),
     isSystemCategory: boolean('is_system_category').default(false).notNull(),
     isHidden: boolean('is_hidden').default(false).notNull(),
-    parentId: text('parent_id').references((): AnyPgColumn => categories.id),
+    parentId: text('parent_id').references((): AnyPgColumn => categories.id, {
+      onDelete: 'set null',
+      onUpdate: 'cascade',
+    }),
   },
   (table) => [
     uniqueIndex('unq_cat_ws_name_type_parent')
@@ -266,7 +285,10 @@ export const recurringTransactions = pgTable(
       .$default(() => crypto.randomUUID()),
     workspaceId: text('workspace_id')
       .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
+      .references(() => workspaces.id, {
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      }),
     accountId: text('account_id')
       .notNull()
       .references(() => accounts.id, { onDelete: 'cascade' }),
@@ -312,12 +334,18 @@ export const transactions = pgTable(
       .$default(() => crypto.randomUUID()),
     workspaceId: text('workspace_id')
       .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
+      .references(() => workspaces.id, {
+        onDelete: 'cascade',
+        onUpdate: 'cascade',
+      }),
     accountId: text('account_id')
       .notNull()
       .references(() => accounts.id, { onDelete: 'cascade' }),
     categoryId: text('category_id')
-      .references(() => categories.id)
+      .references(() => categories.id, {
+        onDelete: 'restrict',
+        onUpdate: 'cascade',
+      })
       .notNull(),
     title: text('title').notNull(),
     description: text('description'),
@@ -733,7 +761,10 @@ export const subscriptions = pgTable('subscriptions', {
     .$default(() => crypto.randomUUID()),
   userId: text('user_id')
     .notNull()
-    .references(() => users.id),
+    .references(() => users.id, {
+      onDelete: 'restrict',
+      onUpdate: 'cascade',
+    }),
   planId: text('planId').notNull(),
   status: text('status').notNull(),
   currentPeriodEnd: timestamp('current_period_end', {
