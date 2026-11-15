@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
+import { addZoned, formatZoned, isZonedFormat } from '@utils/zonedCalendar';
 import { DateProvider } from '../contracts/DateProvider';
 
 dayjs.extend(utc);
@@ -18,6 +19,7 @@ export class DayJsDateProvider implements DateProvider {
     formatStr: string,
     tz: string = 'America/Sao_Paulo',
   ): string {
+    if (isZonedFormat(formatStr)) return formatZoned(date, formatStr, tz);
     return dayjs(date).tz(tz).format(formatStr);
   }
 
@@ -27,7 +29,7 @@ export class DayJsDateProvider implements DateProvider {
     unit: 'day' | 'month' | 'year',
     tz: string = 'America/Sao_Paulo',
   ): Date {
-    return dayjs(date).tz(tz).add(amount, unit).toDate();
+    return addZoned(date, amount, unit, tz);
   }
 
   parse(date: string | Date): Date {

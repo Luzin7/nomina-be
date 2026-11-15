@@ -8,12 +8,7 @@ import type {
 import type { LedgerMonth } from '@modules/report/valueObjects/ProjectionRules';
 import type { PeriodTotals } from '@modules/report/valueObjects/MonthSummary';
 import { nextOccurrenceAfter } from '@utils/installmentSchedule';
-import dayjs from 'dayjs';
-import timezonePlugin from 'dayjs/plugin/timezone';
-import utc from 'dayjs/plugin/utc';
-
-dayjs.extend(utc);
-dayjs.extend(timezonePlugin);
+import { addZoned, formatZoned, type ZonedFormat } from '@utils/zonedCalendar';
 
 const MAX_OCCURRENCE_STEPS = 1000;
 
@@ -115,10 +110,10 @@ const pureDateAdder = {
     unit: 'day' | 'month' | 'year',
     timezone: string,
   ): Date {
-    return dayjs(date).tz(timezone).add(amount, unit).toDate();
+    return addZoned(date, amount, unit, timezone);
   },
-  format(date: Date, formatString: string, timezone: string): string {
-    return dayjs(date).tz(timezone).format(formatString);
+  format(date: Date, formatString: ZonedFormat, timezone: string): string {
+    return formatZoned(date, formatString, timezone);
   },
 };
 
@@ -135,13 +130,13 @@ const stepOccurrence = (date: Date, rule: RecurringRuleSnapshot): Date =>
   );
 
 const localMonthKey = (instant: Date, timezone: string): string =>
-  dayjs(instant).tz(timezone).format('YYYY-MM');
+  formatZoned(instant, 'YYYY-MM', timezone);
 
 const localDayOfMonth = (instant: Date, timezone: string): number =>
-  Number(dayjs(instant).tz(timezone).format('D'));
+  Number(formatZoned(instant, 'D', timezone));
 
 const localDate = (instant: Date, timezone: string): string =>
-  dayjs(instant).tz(timezone).format('YYYY-MM-DD');
+  formatZoned(instant, 'YYYY-MM-DD', timezone);
 
 const groupInstallmentsByMonth = (
   rows: PendingInstallment[],
