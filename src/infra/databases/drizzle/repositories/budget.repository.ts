@@ -135,6 +135,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         id: schema.categories.id,
         name: schema.categories.name,
         workspaceId: schema.categories.workspaceId,
+        parentId: schema.categories.parentId,
         isHidden: schema.categories.isHidden,
       })
       .from(schema.categories)

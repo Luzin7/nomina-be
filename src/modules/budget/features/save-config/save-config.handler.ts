@@ -6,18 +6,15 @@ import {
   SavedBudgetSnapshot,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
-  BudgetCategoryNotFoundError,
   BudgetSnapshotConflictError,
-  DuplicateBudgetCategoryError,
-  EmptyBudgetAllocationsError,
   ForbiddenBudgetCategoryError,
-  HiddenBudgetCategoryError,
   HistoricalBudgetImmutableError,
   InvalidBudgetEffectiveDateError,
-  InvalidBudgetPercentageSumError,
-  InvalidBudgetTargetError,
-  MixedBudgetModeFieldsError,
 } from '@modules/budget/errors';
+import {
+  type BudgetAllocationFields,
+  ValidateBudgetAllocationsService,
+} from '@modules/budget/services/validate-budget-allocations.service';
 import { resolveAllocationState } from '@modules/budget/valueObjects/BudgetAllocationState';
 import type { BudgetAllocationState } from '@modules/budget/valueObjects/BudgetAllocationState';
 import { distributeTargets } from '@modules/budget/valueObjects/LargestRemainder';
@@ -35,16 +32,6 @@ type Request = SaveBudgetConfigRequest &
 
 type AllocationInput = SaveBudgetConfigRequest['allocations'][number];
 
-type AllocationFields = {
-  percentages: number[];
-  targets: number[];
-};
-
-type ParseAllocationFieldsInput = {
-  mode: BudgetMode;
-  allocations: AllocationInput[];
-};
-
 type EffectiveFromInput = {
   request: Request;
   timezone: string;
@@ -55,13 +42,7 @@ type BuildAllocationsInput = {
   mode: BudgetMode;
   monthlyIncome: number;
   allocations: AllocationInput[];
-  fields: AllocationFields;
-};
-
-type ValidateCategoriesInput = {
-  workspaceId: string;
-  effectiveFrom: Date;
-  allocations: AllocationInput[];
+  fields: BudgetAllocationFields;
 };
 
 type BuildResponseInput = {
@@ -81,7 +62,6 @@ export type SaveBudgetConfigResponse = {
   allocationState: BudgetAllocationState;
 };
 
-const TOTAL_PERCENTAGE = 100;
 const DEFAULT_GROUP_NAME = 'Geral';
 
 @Injectable()
@@ -92,6 +72,7 @@ export class SaveBudgetConfigService implements Service<
 > {
   constructor(
     private readonly budgetRepository: BudgetRepository,
+    private readonly validateAllocations: ValidateBudgetAllocationsService,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
     private readonly cache: CacheProvider,
@@ -103,7 +84,7 @@ export class SaveBudgetConfigService implements Service<
     const { workspaceId, monthlyIncome, allocations } = request;
     const { mode } = request;
 
-    const fields = parseAllocationFields({ mode, allocations });
+    const fields = this.validateAllocations.parseFields(mode, allocations);
     if (fields.isLeft()) return left(fields.value);
 
     const timezone = await this.workspaceTimezone.execute(workspaceId);
@@ -114,10 +95,11 @@ export class SaveBudgetConfigService implements Service<
     });
     if (effectiveFrom.isLeft()) return left(effectiveFrom.value);
 
-    const categoryError = await this.validateCategories({
+    const categoryError = await this.validateAllocations.validateCategories({
       workspaceId,
       effectiveFrom: effectiveFrom.value,
       allocations,
+      requireRootCategories: false,
     });
     if (categoryError) return left(categoryError);
 
@@ -235,124 +217,4 @@ export class SaveBudgetConfigService implements Service<
       allocationState: resolveAllocationState(monthlyIncome, totalTargetCents),
     };
   }
-
-  private async validateCategories({
-    workspaceId,
-    effectiveFrom,
-    allocations,
-  }: ValidateCategoriesInput): Promise<Error | null> {
-    const categories = await this.budgetRepository.findCategoriesByIds(
-      allocations.map((allocation) => allocation.categoryId),
-    );
-    const categoriesById = new Map(
-      categories.map((category) => [category.id, category]),
-    );
-
-    for (const allocation of allocations) {
-      const category = categoriesById.get(allocation.categoryId);
-      if (!category) return new BudgetCategoryNotFoundError();
-
-      if (
-        category.workspaceId !== null &&
-        category.workspaceId !== workspaceId
-      ) {
-        return new ForbiddenBudgetCategoryError();
-      }
-    }
-
-    const hidden = categories.filter((category) => category.isHidden);
-    if (hidden.length === 0) return null;
-
-    const snapshot = await this.budgetRepository.resolveSnapshot(
-      workspaceId,
-      effectiveFrom,
-    );
-    const allocatedIds = new Set(
-      snapshot?.allocations.map((allocation) => allocation.categoryId),
-    );
-
-    return hidden.every((category) => allocatedIds.has(category.id))
-      ? null
-      : new HiddenBudgetCategoryError();
-  }
-}
-
-function parseAllocationFields({
-  mode,
-  allocations,
-}: ParseAllocationFieldsInput): Either<Error, AllocationFields> {
-  if (allocations.length === 0) {
-    return left(new EmptyBudgetAllocationsError());
-  }
-
-  if (hasDuplicateCategory(allocations)) {
-    return left(new DuplicateBudgetCategoryError());
-  }
-
-  const percentages: number[] = [];
-  const targets: number[] = [];
-
-  for (const allocation of allocations) {
-    const error =
-      mode === BUDGET_MODE_DEFAULT
-        ? collectPercentage(allocation, percentages)
-        : collectTarget(allocation, targets);
-    if (error) return left(error);
-  }
-
-  const percentageSum = percentages.reduce(
-    (total, percentage) => total + percentage,
-    0,
-  );
-
-  if (mode === BUDGET_MODE_DEFAULT && percentageSum !== TOTAL_PERCENTAGE) {
-    return left(new InvalidBudgetPercentageSumError(percentageSum));
-  }
-
-  return right({ percentages, targets });
-}
-
-function hasDuplicateCategory(allocations: AllocationInput[]): boolean {
-  const seen = new Set<string>();
-
-  for (const allocation of allocations) {
-    if (seen.has(allocation.categoryId)) return true;
-    seen.add(allocation.categoryId);
-  }
-
-  return false;
-}
-
-function collectPercentage(
-  allocation: AllocationInput,
-  percentages: number[],
-): Error | null {
-  if (
-    allocation.percentageOfIncome === undefined ||
-    allocation.targetCents !== undefined
-  ) {
-    return new MixedBudgetModeFieldsError();
-  }
-
-  percentages.push(allocation.percentageOfIncome);
-  return null;
-}
-
-function collectTarget(
-  allocation: AllocationInput,
-  targets: number[],
-): Error | null {
-  if (
-    allocation.targetCents === undefined ||
-    allocation.percentageOfIncome !== undefined
-  ) {
-    return new MixedBudgetModeFieldsError();
-  }
-
-  if (!Number.isInteger(allocation.targetCents) || allocation.targetCents < 0) {
-    return new InvalidBudgetTargetError();
-  }
-
-  targets.push(allocation.targetCents);
-  return null;
 }
