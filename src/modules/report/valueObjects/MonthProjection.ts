@@ -81,21 +81,33 @@ const completedRows = (month: LedgerMonth): PlainExpense[] =>
 const isActiveMonth = (month: LedgerMonth): boolean =>
   new Set(completedRows(month).map((row) => row.day)).size >= MIN_ACTIVE_DAYS;
 
+const closedAge = (month: LedgerMonth, currentKey: string): number =>
+  monthIndex(currentKey) - monthIndex(month.key);
+
+const isWithinLookback = (month: LedgerMonth, currentKey: string): boolean => {
+  const age = closedAge(month, currentKey);
+
+  return age >= 1 && age <= LOOKBACK_MONTHS;
+};
+
 export const selectBasisMonths = (
   ledger: LedgerMonth[],
   currentKey: string,
-): LedgerMonth[] => {
-  const current = monthIndex(currentKey);
-
-  return ledger
-    .filter((month) => {
-      const age = current - monthIndex(month.key);
-
-      return age >= 1 && age <= LOOKBACK_MONTHS && isActiveMonth(month);
-    })
+): LedgerMonth[] =>
+  ledger
+    .filter(
+      (month) => isWithinLookback(month, currentKey) && isActiveMonth(month),
+    )
     .sort((a, b) => monthIndex(b.key) - monthIndex(a.key))
     .slice(0, MAX_BASIS_MONTHS);
-};
+
+export const isPlanEligible = (
+  ledger: LedgerMonth[],
+  currentKey: string,
+): boolean =>
+  ledger.filter(
+    (month) => isWithinLookback(month, currentKey) && month.completedCount >= 1,
+  ).length >= MIN_BASIS_MONTHS;
 
 const sumAmounts = (rows: PlainExpense[]): number =>
   rows.reduce((total, row) => total + row.amount, 0);

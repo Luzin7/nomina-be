@@ -5,8 +5,10 @@ import { nextOccurrence } from '@utils/installmentSchedule';
 import {
   LedgerMonth,
   MonthProjectionInput,
+  isPlanEligible,
   PlainExpense,
   projectMonthEnd,
+  selectBasisMonths,
   RecurringRuleSnapshot,
 } from './MonthProjection';
 
@@ -61,6 +63,7 @@ const makeLedgerMonth = (
   totalExpense: 0,
   pending: { totalIncome: 0, totalExpense: 0 },
   plainExpenses: [],
+  completedCount: 0,
   ...overrides,
 });
 
@@ -75,6 +78,15 @@ const activeMonth = (
     plainExpenses: [...FIVE_ACTIVE_DAYS, ...extraRows],
     ...overrides,
   });
+
+const daysOf = (count: number): PlainExpense[] =>
+  Array.from({ length: count }, (_, index) => makeRow({ day: index + 1 }));
+
+const activeKeys = (keys: string[]): LedgerMonth[] =>
+  keys.map((key) => activeMonth(key));
+
+const countedMonth = (key: string, completedCount = 1): LedgerMonth =>
+  makeLedgerMonth(key, { completedCount });
 
 const windowRow = (amount: number) => makeRow({ day: 25, amount });
 const luzRow = (amount: number) =>
@@ -1020,6 +1032,123 @@ describe('projectMonthEnd', () => {
 
       expect(projection.realized).toEqual(realized);
       expect(projection.scheduled).toEqual(scheduled);
+    });
+  });
+
+  describe('selectBasisMonths', () => {
+    const keysOf = (ledger: LedgerMonth[]) => ledger.map((month) => month.key);
+
+    it('takes the latest six of eight active closed months', () => {
+      const ledger = activeKeys([
+        '2026-10',
+        '2026-09',
+        '2026-08',
+        '2026-07',
+        '2026-06',
+        '2026-05',
+        '2026-04',
+        '2026-03',
+      ]);
+
+      expect(keysOf(selectBasisMonths(ledger, '2026-11'))).toEqual([
+        '2026-10',
+        '2026-09',
+        '2026-08',
+        '2026-07',
+        '2026-06',
+        '2026-05',
+      ]);
+    });
+
+    it('keeps two active months as a two-month basis', () => {
+      const ledger = activeKeys(['2026-10', '2026-09']);
+
+      expect(keysOf(selectBasisMonths(ledger, '2026-11'))).toEqual([
+        '2026-10',
+        '2026-09',
+      ]);
+    });
+
+    it('excludes an active month at age 13 and keeps age 12', () => {
+      const ledger = activeKeys(['2025-10', '2025-11']);
+
+      expect(keysOf(selectBasisMonths(ledger, '2026-11'))).toEqual(['2025-11']);
+    });
+
+    it('never selects the active current month', () => {
+      const ledger = activeKeys(['2026-11', '2026-10']);
+
+      expect(keysOf(selectBasisMonths(ledger, '2026-11'))).toEqual(['2026-10']);
+    });
+
+    it('selects the prod-shaped basis', () => {
+      const ledger = [
+        makeLedgerMonth('2026-01', { plainExpenses: daysOf(1) }),
+        makeLedgerMonth('2026-08', { plainExpenses: daysOf(26) }),
+        makeLedgerMonth('2026-09', { plainExpenses: daysOf(23) }),
+        makeLedgerMonth('2026-10', { plainExpenses: daysOf(24) }),
+        makeLedgerMonth('2026-11', { plainExpenses: daysOf(10) }),
+      ];
+
+      expect(keysOf(selectBasisMonths(ledger, '2026-11'))).toEqual([
+        '2026-10',
+        '2026-09',
+        '2026-08',
+      ]);
+    });
+  });
+
+  describe('isPlanEligible', () => {
+    it('is not eligible with two closed months and the current one', () => {
+      const ledger = [
+        countedMonth('2026-09'),
+        countedMonth('2026-10'),
+        countedMonth('2026-11', 9),
+      ];
+
+      expect(isPlanEligible(ledger, '2026-11')).toBe(false);
+    });
+
+    it('is eligible with three closed months', () => {
+      const ledger = [
+        countedMonth('2026-08'),
+        countedMonth('2026-09'),
+        countedMonth('2026-10'),
+      ];
+
+      expect(isPlanEligible(ledger, '2026-11')).toBe(true);
+    });
+
+    it('ignores months without completed rows', () => {
+      const ledger = [
+        countedMonth('2026-08'),
+        countedMonth('2026-09'),
+        countedMonth('2026-10', 0),
+      ];
+
+      expect(isPlanEligible(ledger, '2026-11')).toBe(false);
+    });
+
+    it('ignores months older than twelve months', () => {
+      const ledger = [
+        countedMonth('2025-10'),
+        countedMonth('2026-09'),
+        countedMonth('2026-10'),
+      ];
+
+      expect(isPlanEligible(ledger, '2026-11')).toBe(false);
+    });
+
+    it('counts the prod-shaped history as eligible', () => {
+      const ledger = [
+        countedMonth('2026-01'),
+        countedMonth('2026-08'),
+        countedMonth('2026-09'),
+        countedMonth('2026-10'),
+        countedMonth('2026-11'),
+      ];
+
+      expect(isPlanEligible(ledger, '2026-11')).toBe(true);
     });
   });
 });
