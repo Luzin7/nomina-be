@@ -37,6 +37,34 @@ services:
     networks:
       - nomina_net
 
+  api:
+    container_name: nomina_api
+    profiles: ["prod-like"]
+    build:
+      context: .
+      args:
+        GIT_SHA: prod-like
+        APP_VERSION: prod-like
+    cpus: 0.1
+    mem_limit: 512m
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/nomina_db
+      REDIS_ENABLED: "true"
+      REDIS_URL: redis://redis:6379
+      NOMINA_INTERNAL_KEYS: ${NOMINA_INTERNAL_KEYS:-prod-like-local-internal-key-0123456789abcdef}
+    ports:
+      - "${API_HOST_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nomina_net
+
   # Só sobe com `docker compose --profile chaos up -d toxiproxy`. O proxy
   # "redis" é criado pela API de controle em tempo de execução (ver
   # docs/redis-resiliencia/).
