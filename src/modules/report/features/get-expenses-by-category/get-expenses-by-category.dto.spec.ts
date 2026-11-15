@@ -12,6 +12,18 @@ describe('GetExpensesByCategoryPipe', () => {
     });
   });
 
+  it.each(['2000', '2025', '2100'])('accepts year %s', (year) => {
+    expect(GetExpensesByCategoryPipe.transform({ ...base, year })).toEqual(
+      expect.objectContaining({ year: Number(year) }),
+    );
+  });
+
+  it.each(['1999', '2101'])('rejects year %s', (year) => {
+    expect(() =>
+      GetExpensesByCategoryPipe.transform({ ...base, year }),
+    ).toThrow(BadRequestException);
+  });
+
   it.each(['1', '50'])('accepts limit %s', (limit) => {
     expect(GetExpensesByCategoryPipe.transform({ ...base, limit })).toEqual(
       expect.objectContaining({ limit: Number(limit) }),

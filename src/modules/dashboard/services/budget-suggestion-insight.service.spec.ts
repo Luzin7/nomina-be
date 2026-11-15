@@ -6,10 +6,7 @@ import {
 } from '@modules/budget/services/resolve-budget-suggestion.service';
 import { Logger } from '@nestjs/common';
 import { left, right } from '@shared/core/errors/Either';
-import {
-  BUDGET_SUGGESTION_INSIGHT_BUDGET_MS,
-  BudgetSuggestionInsightService,
-} from './budget-suggestion-insight.service';
+import { BudgetSuggestionInsightService } from './budget-suggestion-insight.service';
 
 const PENDING_INCOME: IncomeSuggestion = {
   status: 'pending',
@@ -97,13 +94,29 @@ describe('BudgetSuggestionInsightService', () => {
     );
   });
 
-  it('gives up after its own budget instead of failing the guard', async () => {
-    resolver.execute.mockReturnValue(new Promise(() => undefined));
+  it('logs the error class and message', async () => {
+    resolver.execute.mockResolvedValue(left(new TypeError('pool starved')));
+
+    await run();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('TypeError: pool starved'),
+    );
+  });
+
+  it('waits for a slow resolver instead of timing out', async () => {
+    resolver.execute.mockReturnValue(
+      new Promise((resolve) =>
+        setTimeout(
+          () => resolve(right(makeSuggestion({ income: PENDING_INCOME }))),
+          1_000,
+        ),
+      ),
+    );
 
     const pending = run();
-    await jest.advanceTimersByTimeAsync(BUDGET_SUGGESTION_INSIGHT_BUDGET_MS);
+    await jest.advanceTimersByTimeAsync(1_000);
 
-    expect(await pending).toBeNull();
-    expect(warn).toHaveBeenCalled();
+    expect(await pending).toMatchObject({ args: { kind: 'income' } });
   });
 });

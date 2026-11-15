@@ -1,8 +1,7 @@
 import { ResolveBudgetSuggestionService } from '@modules/budget/services/resolve-budget-suggestion.service';
 import { Injectable, Logger } from '@nestjs/common';
 import type { AvailableToSpendInsight } from '../valueObjects/AvailableToSpend';
-
-export const BUDGET_SUGGESTION_INSIGHT_BUDGET_MS = 200;
+import { describeError } from '@modules/dashboard/services/describe-error';
 
 type Request = { workspaceId: string };
 
@@ -18,30 +17,12 @@ export class BudgetSuggestionInsightService {
     workspaceId,
   }: Request): Promise<AvailableToSpendInsight | null> {
     try {
-      return await this.withinBudget(workspaceId);
+      return await this.pendingOf(workspaceId);
     } catch (error) {
       this.logger.warn(
-        `budget-suggestion insight skipped workspaceId=${workspaceId} error=${error instanceof Error ? error.constructor.name : typeof error}`,
+        `budget-suggestion insight skipped workspaceId=${workspaceId} error=${describeError(error)}`,
       );
       return null;
-    }
-  }
-
-  private async withinBudget(
-    workspaceId: string,
-  ): Promise<AvailableToSpendInsight | null> {
-    let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(
-        () => reject(new Error('budget-suggestion insight timed out')),
-        BUDGET_SUGGESTION_INSIGHT_BUDGET_MS,
-      );
-    });
-
-    try {
-      return await Promise.race([this.pendingOf(workspaceId), timeout]);
-    } finally {
-      clearTimeout(timer);
     }
   }
 
