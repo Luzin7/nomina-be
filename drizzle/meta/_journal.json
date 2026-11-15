@@ -211,6 +211,13 @@
       "when": 1794743302092,
       "tag": "0044_reconcile_legacy_credit_card_balance",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1794751654063,
+      "tag": "0045_deep_the_anarchist",
+      "breakpoints": true
     }
   ]
 }
