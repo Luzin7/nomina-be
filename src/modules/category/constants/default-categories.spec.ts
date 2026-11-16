@@ -1,10 +1,15 @@
 import { TransactionType } from '@constants/enums';
-import { DEFAULT_CATEGORIES } from './default-categories';
+import {
+  DEFAULT_CATEGORIES,
+  buildDefaultCategories,
+} from './default-categories';
 
 const allNames = DEFAULT_CATEGORIES.flatMap((node) => [
   node.name,
   ...(node.children ?? []),
 ]);
+
+const allRootNames = DEFAULT_CATEGORIES.map((node) => node.name);
 
 const allIdentities = DEFAULT_CATEGORIES.flatMap((node) => [
   `${node.type}:${node.name}:root`,
@@ -70,12 +75,12 @@ describe('DEFAULT_CATEGORIES', () => {
     }
   });
 
-  it('has 11 EXPENSE parents, 5 INCOME parents and 22 children', () => {
+  it('has 13 EXPENSE parents, 5 INCOME parents and 50 children', () => {
     expect(
       DEFAULT_CATEGORIES.filter(
         (node) => node.type === TransactionType.EXPENSE,
       ),
-    ).toHaveLength(11);
+    ).toHaveLength(13);
     expect(
       DEFAULT_CATEGORIES.filter((node) => node.type === TransactionType.INCOME),
     ).toHaveLength(5);
@@ -84,7 +89,7 @@ describe('DEFAULT_CATEGORIES', () => {
         (total, node) => total + (node.children?.length ?? 0),
         0,
       ),
-    ).toBe(22);
+    ).toBe(50);
   });
 
   it('has Investimentos as a top-level EXPENSE category', () => {
@@ -97,21 +102,63 @@ describe('DEFAULT_CATEGORIES', () => {
   it('uses the pt-BR starter names', () => {
     for (const name of [
       'Alimentação',
-      'Mercado',
-      'Transporte',
-      'Moradia',
-      'Saúde',
-      'Educação',
-      'Lazer',
-      'Serviços',
+      'Supermercado',
       'Compras',
+      'Moradia',
+      'Serviços',
+      'Saúde',
+      'Pets',
+      'Transporte',
+      'Lazer',
+      'Educação',
       'Impostos',
+      'Investimentos',
       'Outros Gastos',
       'Salário',
+      'Reembolsos',
       'Outros',
     ]) {
       expect(allNames).toContain(name);
     }
+  });
+
+  it('does not contain the retired starter names', () => {
+    for (const retired of [
+      'Mercado',
+      'Beleza',
+      'Vestuário',
+      'Presente',
+      'Saída (bar, cinema, show)',
+      'Assinatura (streaming, academia)',
+    ]) {
+      expect(allNames).not.toContain(retired);
+    }
+  });
+
+  it('no longer uses Higiene or Telefonia as a root', () => {
+    expect(allRootNames).not.toContain('Higiene');
+    expect(allRootNames).not.toContain('Telefonia');
+  });
+
+  it('gives every seeded leaf a parent and leaves every root at the top level', () => {
+    const categories = buildDefaultCategories('workspace-1');
+    const rootNames = new Set(allRootNames);
+
+    for (const category of categories) {
+      if (rootNames.has(category.name)) {
+        expect(category.parentId).toBeNull();
+        continue;
+      }
+      expect(category.parentId).not.toBeNull();
+    }
+  });
+
+  it('has no duplicate EXPENSE name across roots and children', () => {
+    const expenseNames = buildDefaultCategories('workspace-1')
+      .filter((category) => category.type === TransactionType.EXPENSE)
+      .map((category) => category.name);
+
+    expect(new Set(expenseNames).size).toBe(expenseNames.length);
   });
 
   it('does not contain the English names from an earlier iteration', () => {

@@ -6,6 +6,7 @@ import {
 } from '@constants/enums';
 import {
   INVESTMENTS_CATEGORY_NAME,
+  NON_INCOME_ROOT_NAMES,
   REAL_INCOME_ROOT_NAMES,
   YIELD_SUBCATEGORY_NAMES,
 } from '@constants/incomeCategories';
@@ -50,6 +51,7 @@ import {
   isNull,
   lte,
   ne,
+  notInArray,
   or,
   type SQL,
   sql,
@@ -68,6 +70,7 @@ function isRealIncome(): SQL {
   return and(
     eq(schema.transactions.type, TransactionType.INCOME),
     eq(schema.categories.isSystemCategory, false),
+    notInArray(incomeRootName, [...NON_INCOME_ROOT_NAMES]),
     or(
       inArray(incomeRootName, [...REAL_INCOME_ROOT_NAMES]),
       and(

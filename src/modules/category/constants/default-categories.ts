@@ -2,6 +2,7 @@ import { TransactionType } from '@constants/enums';
 import {
   FREELANCE_CATEGORY_NAME,
   INVESTMENTS_CATEGORY_NAME,
+  REIMBURSEMENTS_CATEGORY_NAME,
   SALARY_CATEGORY_NAME,
 } from '@constants/incomeCategories';
 import { Category } from '@modules/category/entities/Category';
@@ -16,22 +17,74 @@ export const DEFAULT_CATEGORIES: readonly DefaultCategoryNode[] = [
   {
     name: 'Alimentação',
     type: TransactionType.EXPENSE,
-    children: ['Mercado', 'Restaurante', 'Delivery'],
+    children: ['Restaurante', 'Delivery', 'Lanche', 'Café/Padaria'],
   },
   {
-    name: 'Transporte',
+    name: 'Supermercado',
     type: TransactionType.EXPENSE,
-    children: ['Combustível', 'Estacionamento', 'Transporte Público'],
+    children: ['Mercearia', 'Higiene', 'Limpeza', 'Bebidas', 'Utilidades'],
+  },
+  {
+    name: 'Compras',
+    type: TransactionType.EXPENSE,
+    children: [
+      'Cosméticos',
+      'Roupas',
+      'Acessórios',
+      'Eletrônicos',
+      'Presentes',
+    ],
   },
   {
     name: 'Moradia',
     type: TransactionType.EXPENSE,
-    children: ['Aluguel', 'Condomínio', 'Água', 'Luz', 'Internet'],
+    children: [
+      'Aluguel',
+      'Condomínio',
+      'Luz',
+      'Água',
+      'Internet',
+      'Manutenção da Casa',
+    ],
+  },
+  {
+    name: 'Serviços',
+    type: TransactionType.EXPENSE,
+    children: ['Telefonia', 'Assinatura (software)', 'Seguro'],
   },
   {
     name: 'Saúde',
     type: TransactionType.EXPENSE,
-    children: ['Plano de Saúde', 'Farmácia', 'Consulta/Exame'],
+    children: ['Consulta/Exame', 'Farmácia', 'Plano de Saúde', 'Academia'],
+  },
+  {
+    name: 'Pets',
+    type: TransactionType.EXPENSE,
+    children: ['Ração', 'Petshop', 'Veterinário', 'Plano de Saúde Pet'],
+  },
+  {
+    name: 'Transporte',
+    type: TransactionType.EXPENSE,
+    children: [
+      'Combustível',
+      'Estacionamento',
+      'Manutenção do Carro',
+      'Transporte Público',
+      'Pedágio',
+      'App/Corrida',
+    ],
+  },
+  {
+    name: 'Lazer',
+    type: TransactionType.EXPENSE,
+    children: [
+      'Cinema',
+      'Bar/Show',
+      'Eventos',
+      'Hobbies',
+      'Viagem',
+      'Streaming',
+    ],
   },
   {
     name: 'Educação',
@@ -39,28 +92,21 @@ export const DEFAULT_CATEGORIES: readonly DefaultCategoryNode[] = [
     children: ['Curso/Mensalidade', 'Material'],
   },
   {
-    name: 'Lazer',
+    name: 'Impostos',
     type: TransactionType.EXPENSE,
-    children: [
-      'Assinatura (streaming, academia)',
-      'Viagem',
-      'Saída (bar, cinema, show)',
-    ],
+    children: ['IR', 'IPVA', 'IPTU', 'Taxas'],
   },
-  {
-    name: 'Serviços',
-    type: TransactionType.EXPENSE,
-    children: ['Assinatura (software)', 'Seguro'],
-  },
-  { name: 'Compras', type: TransactionType.EXPENSE, children: ['Vestuário'] },
-  { name: 'Impostos', type: TransactionType.EXPENSE },
   { name: INVESTMENTS_CATEGORY_NAME, type: TransactionType.EXPENSE },
   { name: 'Outros Gastos', type: TransactionType.EXPENSE },
   { name: SALARY_CATEGORY_NAME, type: TransactionType.INCOME },
-  { name: INVESTMENTS_CATEGORY_NAME, type: TransactionType.INCOME },
   { name: FREELANCE_CATEGORY_NAME, type: TransactionType.INCOME },
-  { name: 'Presente', type: TransactionType.INCOME },
+  { name: REIMBURSEMENTS_CATEGORY_NAME, type: TransactionType.INCOME },
   { name: 'Outros', type: TransactionType.INCOME },
+  {
+    name: INVESTMENTS_CATEGORY_NAME,
+    type: TransactionType.INCOME,
+    children: ['Rendimento CDB'],
+  },
 ] as const;
 
 export function buildDefaultCategories(workspaceId: string): Category[] {

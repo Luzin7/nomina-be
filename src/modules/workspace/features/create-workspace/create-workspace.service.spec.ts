@@ -73,7 +73,7 @@ describe('CreateWorkspaceService', () => {
 
     await service.execute(makeRequest());
 
-    expect(categoriesFromLastCall(workspaceRepository)).toHaveLength(38);
+    expect(categoriesFromLastCall(workspaceRepository)).toHaveLength(68);
   });
 
   it('should give every category a unique id and link children to their parent', async () => {
@@ -88,7 +88,9 @@ describe('CreateWorkspaceService', () => {
     const parent = categories.find(
       (category) => category.name === 'Alimentação',
     );
-    const child = categories.find((category) => category.name === 'Mercado');
+    const child = categories.find(
+      (category) => category.name === 'Restaurante',
+    );
     expect(parent?.parentId).toBeNull();
     expect(child?.parentId).toBe(parent?.id);
     expect(
