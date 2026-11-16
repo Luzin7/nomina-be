@@ -7,6 +7,8 @@ export const REAL_INCOME_ROOT_NAMES = [
   FREELANCE_CATEGORY_NAME,
 ] as const;
 
+export const NON_INCOME_ROOT_NAMES = ['Reembolsos'] as const;
+
 export const YIELD_SUBCATEGORY_NAMES = [
   'Rendimento CDB',
   'Rendimento',
