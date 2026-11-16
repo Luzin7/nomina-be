@@ -180,6 +180,7 @@ const BUDGET_STATUS_GOLDEN = {
   investSpendCents: 0,
   investPlanCents: 0,
   unbudgetedSpendCents: 0,
+  unbudgetedCategories: [],
   overPlanCents: 0,
   projection: { ...MONTH_SUMMARY_GOLDEN.projection },
 };
@@ -349,12 +350,23 @@ describe('report regression goldens', () => {
           'cat-2': 30000,
         }),
         findCategoryMap: jest.fn().mockResolvedValue({
-          'cat-1': { name: 'Moradia', type: 'EXPENSE', parentId: null },
-          'cat-2': { name: 'Lazer', type: 'EXPENSE', parentId: null },
+          'cat-1': {
+            name: 'Moradia',
+            type: 'EXPENSE',
+            parentId: null,
+            isHidden: false,
+          },
+          'cat-2': {
+            name: 'Lazer',
+            type: 'EXPENSE',
+            parentId: null,
+            isHidden: false,
+          },
           'cat-invest': {
             name: INVESTMENTS_CATEGORY_NAME,
             type: 'EXPENSE',
             parentId: null,
+            isHidden: false,
           },
         }),
       } as never,

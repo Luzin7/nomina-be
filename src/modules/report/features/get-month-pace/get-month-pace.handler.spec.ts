@@ -376,17 +376,25 @@ describe('GetMonthPaceService', () => {
         name: 'Moradia',
         type: TransactionType.EXPENSE,
         parentId: null,
+        isHidden: false,
       },
-      'cat-2': { name: 'Lazer', type: TransactionType.EXPENSE, parentId: null },
+      'cat-2': {
+        name: 'Lazer',
+        type: TransactionType.EXPENSE,
+        parentId: null,
+        isHidden: false,
+      },
       'cat-aporte': {
         name: 'Aporte',
         type: TransactionType.EXPENSE,
         parentId: investRoot,
+        isHidden: false,
       },
       [investRoot]: {
         name: INVESTMENTS_CATEGORY_NAME,
         type: TransactionType.EXPENSE,
         parentId: null,
+        isHidden: false,
       },
     });
     budgetRepository.findCompletedExpenseByCategoryDay.mockResolvedValue([
@@ -423,8 +431,14 @@ describe('GetMonthPaceService', () => {
         name: 'Moradia',
         type: TransactionType.EXPENSE,
         parentId: null,
+        isHidden: false,
       },
-      'cat-2': { name: 'Lazer', type: TransactionType.EXPENSE, parentId: null },
+      'cat-2': {
+        name: 'Lazer',
+        type: TransactionType.EXPENSE,
+        parentId: null,
+        isHidden: false,
+      },
     });
 
     const pace = await run();

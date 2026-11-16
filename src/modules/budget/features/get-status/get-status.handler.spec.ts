@@ -81,7 +81,13 @@ const INVESTMENTS_ROOT = '20dad8a4-4f14-473e-ae46-6886206e1c50';
 const expenseCategory = (
   name: string,
   parentId: string | null = null,
-): CategoryMapEntry => ({ name, type: TransactionType.EXPENSE, parentId });
+  isHidden = false,
+): CategoryMapEntry => ({
+  name,
+  type: TransactionType.EXPENSE,
+  parentId,
+  isHidden,
+});
 
 const ROOT_CATEGORIES: Record<string, CategoryMapEntry> = {
   'cat-1': expenseCategory('Moradia'),
@@ -339,6 +345,7 @@ describe('GetBudgetStatusService', () => {
       investSpendCents: 0,
       investPlanCents: 0,
       unbudgetedSpendCents: 0,
+      unbudgetedCategories: [],
       overPlanCents: 0,
       projection: {
         expectedIncome: 1000,
@@ -990,7 +997,9 @@ describe('GetBudgetStatusService', () => {
     });
 
     expect(result.isRight()).toBe(true);
-    if (!result.isRight() || !result.value.exists) return;
+    if (!result.isRight() || !result.value.exists) {
+      throw new Error('expected a declared budget status');
+    }
     expect(result.value.controlledSpendCents).toBe(55_000);
     expect(result.value.unbudgetedSpendCents).toBe(8_000);
     expect(result.value.investSpendCents).toBe(30_000);
@@ -1023,7 +1032,9 @@ describe('GetBudgetStatusService', () => {
     });
 
     expect(result.isRight()).toBe(true);
-    if (!result.isRight() || !result.value.exists) return;
+    if (!result.isRight() || !result.value.exists) {
+      throw new Error('expected a declared budget status');
+    }
     expect(result.value.investSpendCents).toBe(30_000);
     expect(result.value.unbudgetedSpendCents).toBe(5_000);
     expect(result.value.unallocatedSpent).toBe(35_000);
@@ -1284,5 +1295,263 @@ describe('GetBudgetStatusService', () => {
     expect(after.isRight() && after.value).toEqual(
       before.isRight() && before.value,
     );
+  });
+
+  describe('unbudgeted categories', () => {
+    const readDeclaredStatus = async () => {
+      const result = await service.execute({
+        workspaceId: 'ws-1',
+        sub: 'user-1',
+        month: 11,
+        year: 2026,
+      });
+
+      if (!result.isRight()) throw result.value;
+      if (!result.value.exists) {
+        throw new Error('expected a declared budget status');
+      }
+
+      return result.value;
+    };
+
+    it('splits the unbudgeted spend by root with name and amount', async () => {
+      repository.resolveSnapshot.mockResolvedValueOnce(
+        makeSnapshot({ allocations: planAllocationsOf(300_000, 209_278) }),
+      );
+      repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+        'cat-1': 250_000,
+        'cat-2': 186_648,
+        [INVESTMENTS_ROOT]: 30_000,
+        'cat-compras': 70_033,
+        'cat-servicos': 10_175,
+        'cat-outros': 5_907,
+      });
+      repository.findCategoryMap.mockResolvedValueOnce(
+        categoryMapOf({
+          'cat-compras': expenseCategory('Compras'),
+          'cat-servicos': expenseCategory('Serviços'),
+          'cat-outros': expenseCategory('Outros Gastos'),
+        }),
+      );
+
+      const status = await readDeclaredStatus();
+
+      expect(status.unbudgetedCategories).toEqual([
+        {
+          categoryId: 'cat-compras',
+          categoryName: 'Compras',
+          spendCents: 70_033,
+        },
+        {
+          categoryId: 'cat-servicos',
+          categoryName: 'Serviços',
+          spendCents: 10_175,
+        },
+        {
+          categoryId: 'cat-outros',
+          categoryName: 'Outros Gastos',
+          spendCents: 5_907,
+        },
+      ]);
+      expect(status.unbudgetedSpendCents).toBe(86_115);
+      expect(
+        status.unbudgetedCategories.reduce(
+          (total, { spendCents }) => total + spendCents,
+          0,
+        ),
+      ).toBe(status.unbudgetedSpendCents);
+    });
+
+    it('lists a root that already has an allocated child with its partial share', async () => {
+      repository.resolveSnapshot.mockResolvedValueOnce(
+        makeSnapshot({
+          allocations: [
+            {
+              id: 'allocation-aluguel',
+              categoryId: 'cat-aluguel',
+              categoryName: 'Aluguel',
+              groupName: 'Custos fixos',
+              groupOrder: 0,
+              categoryOrder: 0,
+              percentageOfIncome: 60,
+              targetCents: 55_000,
+            },
+            makeSnapshot().allocations[1],
+          ],
+        }),
+      );
+      repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+        'cat-aluguel': 55_000,
+        'cat-condominio': 20_000,
+      });
+      repository.findCategoryMap.mockResolvedValueOnce(
+        categoryMapOf({
+          'cat-aluguel': expenseCategory('Aluguel', 'cat-1'),
+          'cat-condominio': expenseCategory('Condomínio', 'cat-1'),
+        }),
+      );
+
+      const status = await readDeclaredStatus();
+
+      expect(status.unbudgetedSpendCents).toBe(20_000);
+      expect(status.unbudgetedCategories).toEqual([
+        { categoryId: 'cat-1', categoryName: 'Moradia', spendCents: 20_000 },
+      ]);
+      expect(status.controlledSpendCents).toBe(55_000);
+      expect(status.controlledSpendCents + status.unbudgetedSpendCents).toBe(
+        status.totalSpent,
+      );
+    });
+
+    it('keeps a hidden root in the aggregate and out of the list', async () => {
+      repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+      repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+        'cat-compras': 3_000,
+        'cat-oculta': 7_000,
+      });
+      repository.findCategoryMap.mockResolvedValueOnce(
+        categoryMapOf({
+          'cat-compras': expenseCategory('Compras'),
+          'cat-oculta': expenseCategory('Oculta', null, true),
+        }),
+      );
+
+      const status = await readDeclaredStatus();
+      const listed = status.unbudgetedCategories.reduce(
+        (total, { spendCents }) => total + spendCents,
+        0,
+      );
+
+      expect(status.unbudgetedSpendCents).toBe(10_000);
+      expect(status.unbudgetedCategories).toEqual([
+        {
+          categoryId: 'cat-compras',
+          categoryName: 'Compras',
+          spendCents: 3_000,
+        },
+      ]);
+      expect(status.unbudgetedSpendCents - listed).toBe(7_000);
+    });
+
+    it('keeps a non-expense root in the aggregate and out of the list', async () => {
+      repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+      repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+        'cat-reembolso': 4_000,
+      });
+      repository.findCategoryMap.mockResolvedValueOnce(
+        categoryMapOf({
+          'cat-reembolso': {
+            name: 'Reembolso',
+            type: TransactionType.INCOME,
+            parentId: null,
+            isHidden: false,
+          },
+        }),
+      );
+
+      const status = await readDeclaredStatus();
+
+      expect(status.unbudgetedSpendCents).toBe(4_000);
+      expect(status.unbudgetedCategories).toEqual([]);
+    });
+
+    it('counts spend without a category in the aggregate only', async () => {
+      repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+      repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+        'cat-1': 10_000,
+        null: 4_000,
+      });
+
+      const status = await readDeclaredStatus();
+
+      expect(status.unbudgetedSpendCents).toBe(4_000);
+      expect(status.unbudgetedCategories).toEqual([]);
+    });
+
+    it('sums every listed root to the aggregate when no spend is excluded', async () => {
+      repository.resolveSnapshot.mockResolvedValueOnce(
+        makeSnapshot({ allocations: [makeSnapshot().allocations[1]] }),
+      );
+      repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+        'cat-1': 10_000,
+        'cat-condominio': 12_000,
+        'cat-servicos': 8_000,
+      });
+      repository.findCategoryMap.mockResolvedValueOnce(
+        categoryMapOf({
+          'cat-condominio': expenseCategory('Condomínio', 'cat-1'),
+          'cat-servicos': expenseCategory('Serviços'),
+        }),
+      );
+
+      const status = await readDeclaredStatus();
+
+      expect(status.unbudgetedSpendCents).toBe(30_000);
+      expect(status.unbudgetedCategories).toEqual([
+        { categoryId: 'cat-1', categoryName: 'Moradia', spendCents: 22_000 },
+        {
+          categoryId: 'cat-servicos',
+          categoryName: 'Serviços',
+          spendCents: 8_000,
+        },
+      ]);
+      expect(
+        status.unbudgetedCategories.reduce(
+          (total, { spendCents }) => total + spendCents,
+          0,
+        ),
+      ).toBe(status.unbudgetedSpendCents);
+    });
+
+    it('orders equal spend by category name', async () => {
+      repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+      repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+        'cat-zebra': 5_000,
+        'cat-agua': 5_000,
+      });
+      repository.findCategoryMap.mockResolvedValueOnce(
+        categoryMapOf({
+          'cat-zebra': expenseCategory('Zebra'),
+          'cat-agua': expenseCategory('Água'),
+        }),
+      );
+
+      const status = await readDeclaredStatus();
+
+      expect(
+        status.unbudgetedCategories.map(({ categoryName }) => categoryName),
+      ).toEqual(['Água', 'Zebra']);
+      expect(status.unbudgetedSpendCents).toBe(10_000);
+    });
+
+    it('is empty and keeps unbudgetedSpendCents at zero when every spend has a line', async () => {
+      repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+      repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+        'cat-1': 10_000,
+      });
+
+      const status = await readDeclaredStatus();
+
+      expect(status.unbudgetedSpendCents).toBe(0);
+      expect(status.unbudgetedCategories).toEqual([]);
+    });
+
+    it('leaves spend under Investimentos out of the list', async () => {
+      repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+      repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+        'cat-aporte': 30_000,
+      });
+      repository.findCategoryMap.mockResolvedValueOnce(
+        categoryMapOf({
+          'cat-aporte': expenseCategory('Aporte', INVESTMENTS_ROOT),
+        }),
+      );
+
+      const status = await readDeclaredStatus();
+
+      expect(status.investSpendCents).toBe(30_000);
+      expect(status.unbudgetedSpendCents).toBe(0);
+      expect(status.unbudgetedCategories).toEqual([]);
+    });
   });
 });

@@ -81,6 +81,7 @@ export type CategoryMapEntry = {
   name: string;
   type: TransactionType;
   parentId: string | null;
+  isHidden: boolean;
 };
 
 export type CompletedExpenseOfCategoryDay = {

@@ -5,7 +5,11 @@ import {
   resolveAllocationState,
   type BudgetAllocationState,
 } from '@modules/budget/valueObjects/BudgetAllocationState';
-import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
+import {
+  attributeSpendToAllocations,
+  unbudgetedSpendOf,
+  type UnbudgetedCategory,
+} from '@modules/budget/valueObjects/BudgetSpendAttribution';
 import {
   controlledCategoryIdsOf,
   parentMapOf,
@@ -67,6 +71,7 @@ export type BudgetStatusResponse =
       totalSpent: number;
       investRootCategoryId: string | null;
       controlledCategoryIds: string[];
+      unbudgetedCategories: UnbudgetedCategory[];
       projection: MonthProjection | null;
     } & BudgetPlanSides);
 
@@ -108,7 +113,7 @@ export class GetBudgetStatusService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'budget:status',
-        version: 'v4',
+        version: 'v5',
         workspaceId,
         generations: { ledger, category },
         parts: [`${year}-${month}`, localDay],
@@ -204,10 +209,17 @@ export class GetBudgetStatusService implements Service<
       (total, value) => total + value,
       0,
     );
+    const unbudgeted = unbudgetedSpendOf({
+      unallocatedSpendByCategory,
+      parentByCategory,
+      categoryMap,
+      investRootCategoryId,
+    });
     const planSides = splitBudgetPlanSides({
       allocations: visibleAllocations,
       spentByAllocation,
       unallocatedSpendByCategory,
+      unbudgetedSpendCents: unbudgeted.spendCents,
       parentByCategory,
       investRootCategoryId,
     });
@@ -229,6 +241,7 @@ export class GetBudgetStatusService implements Service<
           investRootCategoryId,
         ),
       ],
+      unbudgetedCategories: unbudgeted.categories,
       ...planSides,
       unallocatedIncomeCents:
         snapshot.monthlyIncome === null
