@@ -1,4 +1,9 @@
 import type { BudgetStatusResponse } from '@modules/budget/features/get-status/get-status.handler';
+import {
+  pickPlanSides,
+  zeroPlanSides,
+  type BudgetPlanSides,
+} from '@modules/budget/valueObjects/BudgetPlanSides';
 import type { ResolvedMonthPlan } from '@modules/report/services/resolve-month-plan.service';
 import type { ProvisionalBasis } from '@modules/report/valueObjects/ProvisionalPlan';
 
@@ -63,7 +68,7 @@ export type AvailableToSpendResponse = {
   perDayCents: number | null;
   state: AvailableToSpendState;
   insight: AvailableToSpendInsight | null;
-};
+} & BudgetPlanSides;
 
 export type SpendableFigureInput = {
   budget: BudgetStatusResponse;
@@ -85,6 +90,9 @@ export type SpendableFigure = Pick<
 
 const stateOf = (spendableCents: number): AvailableToSpendState =>
   spendableCents < 0 ? 'over-budget' : 'within-budget';
+
+export const planSidesOf = (budget: BudgetStatusResponse): BudgetPlanSides =>
+  budget.exists ? pickPlanSides(budget) : zeroPlanSides();
 
 const perDayOf = (spendableCents: number, daysRemaining: number): number =>
   Math.floor(spendableCents / Math.max(daysRemaining, 1));

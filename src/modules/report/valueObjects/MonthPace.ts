@@ -4,6 +4,8 @@ export type MonthPaceDay = {
   day: number;
   spentCents: number | null;
   planCents: number | null;
+  controlledSpentCents: number | null;
+  controlledPlanCents: number | null;
 };
 
 export type MonthPlanSource = 'declared' | 'suggested' | 'provisional';
@@ -14,7 +16,14 @@ export type MonthPace = {
   today: number;
   planTotalCents: number | null;
   planSource: MonthPlanSource | null;
+  controlledPlanTotalCents: number | null;
   days: MonthPaceDay[];
+};
+
+export type ControlledPace = {
+  planTotalCents: number;
+  spentByDay: Record<number, number>;
+  fixedByDay: Record<number, number>;
 };
 
 export type MonthPaceInput = {
@@ -25,6 +34,7 @@ export type MonthPaceInput = {
   planTotalCents: number | null;
   planSource: MonthPlanSource | null;
   fixedByDay: Record<number, number>;
+  controlled: ControlledPace | null;
 };
 
 export type ExpenseOccurrencesInput = {
@@ -61,8 +71,22 @@ export function expenseOccurrencesByDay({
   return byDay;
 }
 
-function cumulativeSpent(input: MonthPaceInput): Array<number | null> {
-  const { today, daysInMonth, spentByDay } = input;
+type SpentCurveInput = {
+  today: number;
+  daysInMonth: number;
+  spentByDay: Record<number, number>;
+};
+
+type PlanCurveInput = {
+  daysInMonth: number;
+  fixedByDay: Record<number, number>;
+};
+
+function cumulativeSpent({
+  today,
+  daysInMonth,
+  spentByDay,
+}: SpentCurveInput): Array<number | null> {
   const perDay = new Array<number>(daysInMonth + 1).fill(0);
 
   for (const [key, amount] of Object.entries(spentByDay)) {
@@ -78,10 +102,9 @@ function cumulativeSpent(input: MonthPaceInput): Array<number | null> {
 }
 
 function cumulativePlan(
-  input: MonthPaceInput,
+  { daysInMonth, fixedByDay }: PlanCurveInput,
   planTotalCents: number,
 ): number[] {
-  const { daysInMonth, fixedByDay } = input;
   let fixedLeft = planTotalCents;
   const fixed = days(daysInMonth).map((day) => {
     const amount = Math.min(fixedByDay[day] ?? 0, fixedLeft);
@@ -101,10 +124,26 @@ function cumulativePlan(
 }
 
 export function buildMonthPace(input: MonthPaceInput): MonthPace {
-  const { month, daysInMonth, today, planTotalCents, planSource } = input;
+  const { month, daysInMonth, today, planTotalCents, planSource, controlled } =
+    input;
   const spent = cumulativeSpent(input);
   const plan =
     planTotalCents === null ? null : cumulativePlan(input, planTotalCents);
+  const controlledSpent =
+    controlled === null
+      ? null
+      : cumulativeSpent({
+          today,
+          daysInMonth,
+          spentByDay: controlled.spentByDay,
+        });
+  const controlledPlan =
+    controlled === null
+      ? null
+      : cumulativePlan(
+          { daysInMonth, fixedByDay: controlled.fixedByDay },
+          controlled.planTotalCents,
+        );
 
   return {
     month,
@@ -112,10 +151,15 @@ export function buildMonthPace(input: MonthPaceInput): MonthPace {
     today,
     planTotalCents,
     planSource,
+    controlledPlanTotalCents: controlled?.planTotalCents ?? null,
     days: days(daysInMonth).map((day) => ({
       day,
       spentCents: spent[day - 1],
       planCents: plan === null ? null : plan[day - 1],
+      controlledSpentCents:
+        controlledSpent === null ? null : controlledSpent[day - 1],
+      controlledPlanCents:
+        controlledPlan === null ? null : controlledPlan[day - 1],
     })),
   };
 }

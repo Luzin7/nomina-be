@@ -15,6 +15,7 @@ function makeInput(overrides: Partial<MonthPaceInput> = {}): MonthPaceInput {
     planTotalCents: 876_000,
     planSource: 'declared',
     fixedByDay: {},
+    controlled: null,
     ...overrides,
   };
 }

@@ -194,14 +194,14 @@ describe('ResolveMonthPlanService', () => {
     });
 
     it('prefers the declared plan', async () => {
-      budgetRepository.resolveSnapshot.mockResolvedValue(
-        makeSnapshot([700]) as never,
-      );
+      const snapshot = makeSnapshot([700]) as never;
+      budgetRepository.resolveSnapshot.mockResolvedValue(snapshot);
       givenSuggestion();
 
       expect(await resolve()).toEqual({
         source: 'declared',
         planTotalCents: 700,
+        snapshot,
       });
       expect(resolveSuggestion.execute).not.toHaveBeenCalled();
     });
@@ -295,24 +295,27 @@ describe('ResolveMonthPlanService', () => {
   });
 
   it('declares the snapshot total without reading the ledger', async () => {
-    budgetRepository.resolveSnapshot.mockResolvedValue(
-      makeSnapshot([700, 300]) as never,
-    );
+    const snapshot = makeSnapshot([700, 300]) as never;
+    budgetRepository.resolveSnapshot.mockResolvedValue(snapshot);
 
     const plan = await resolve();
 
-    expect(plan).toEqual({ source: 'declared', planTotalCents: 1_000 });
+    expect(plan).toEqual({
+      source: 'declared',
+      planTotalCents: 1_000,
+      snapshot,
+    });
     expect(monthProjectionRepository.findMonthLedger).not.toHaveBeenCalled();
   });
 
   it('declares a past month snapshot', async () => {
-    budgetRepository.resolveSnapshot.mockResolvedValue(
-      makeSnapshot([500]) as never,
-    );
+    const snapshot = makeSnapshot([500]) as never;
+    budgetRepository.resolveSnapshot.mockResolvedValue(snapshot);
 
     expect(await resolve(10)).toEqual({
       source: 'declared',
       planTotalCents: 500,
+      snapshot,
     });
   });
 

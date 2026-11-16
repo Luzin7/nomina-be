@@ -32,6 +32,7 @@ import { BudgetSuggestionInsightService } from '../../services/budget-suggestion
 import { ProjectionShortfallInsightService } from '../../services/projection-shortfall-insight.service';
 import {
   buildSpendableFigure,
+  planSidesOf,
   type AvailableToSpendInsight,
   type AvailableToSpendResponse,
   type SpendableFigure,
@@ -111,7 +112,7 @@ export class GetAvailableToSpendService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'dashboard:available-to-spend',
-        version: 'v5',
+        version: 'v6',
         workspaceId,
         generations: { ledger, goal, category },
         parts: [today],
@@ -169,6 +170,7 @@ export class GetAvailableToSpendService implements Service<
         month: today.slice(0, 7),
         daysRemaining: projection.daysRemaining,
         ...figure,
+        ...planSidesOf(budget.value),
         insight: ranked.insight,
       },
     });
@@ -204,13 +206,14 @@ export class GetAvailableToSpendService implements Service<
     workspaceId,
     sub,
     budget,
-    figure,
     today,
   }: InsightContext): InsightSource[] {
     return [
       {
         code: 'OVER_BUDGET',
-        resolve: sync(() => overBudgetInsight(figure.spendableCents)),
+        resolve: sync(() =>
+          overBudgetInsight(budget.exists ? budget.overPlanCents : null),
+        ),
       },
       {
         code: 'CARD_BILL_DUE',
