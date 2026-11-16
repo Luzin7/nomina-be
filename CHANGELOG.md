@@ -3,6 +3,13 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.5.1](https://github.com/Luzin7/nomina-be/compare/v2.5.0...v2.5.1) (2026-11-16)
+
+### Bug Fixes
+
+* **transaction:** block accepting a recurring suggestion whose bill already has an active rule ([bc6b5d1](https://github.com/Luzin7/nomina-be/commit/bc6b5d1164304cdeb82e7661f23acbb42c0b1344))
+* **transaction:** serialise accepts per bill and keep the replay contract ([2a5b988](https://github.com/Luzin7/nomina-be/commit/2a5b988e411c7d16eb546848ddecaff2955d9efa))
+
 ## [2.5.0](https://github.com/Luzin7/nomina-be/compare/v2.4.0...v2.5.0) (2026-11-16)
 
 ### Features
