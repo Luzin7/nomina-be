@@ -3,6 +3,12 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.6.0](https://github.com/Luzin7/nomina-be/compare/v2.5.2...v2.6.0) (2026-11-16)
+
+### Features
+
+* **budget:** list unbudgeted roots in the status ([54f909c](https://github.com/Luzin7/nomina-be/commit/54f909c13c83a20486960c5f154be00ca6b1368c))
+
 ## [2.5.2](https://github.com/Luzin7/nomina-be/compare/v2.5.1...v2.5.2) (2026-11-16)
 
 ### Bug Fixes
