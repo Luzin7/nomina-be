@@ -232,6 +232,13 @@
       "when": 1794753740013,
       "tag": "0047_bumpy_psynapse",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794796294685,
+      "tag": "0048_budget_category_groups_taxonomy",
+      "breakpoints": true
     }
   ]
 }
