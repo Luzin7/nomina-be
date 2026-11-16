@@ -1,4 +1,3 @@
-import { DEFAULT_CATEGORIES } from '@modules/category/constants/default-categories';
 import {
   PostgreSqlContainer,
   StartedPostgreSqlContainer,
@@ -137,6 +136,63 @@ function path(name: string, parent: string | null): string {
   return parent ? `${parent}>${name}` : name;
 }
 
+// A migration test pins the schema and data of its own `when`: 0024 merged the
+// workspace tree seeded at 0018, not whatever the live constant says today.
+const TREE_AT_0024: readonly {
+  name: string;
+  type: 'EXPENSE' | 'INCOME';
+  children?: readonly string[];
+}[] = [
+  {
+    name: 'Alimentação',
+    type: 'EXPENSE',
+    children: ['Mercado', 'Restaurante', 'Delivery'],
+  },
+  {
+    name: 'Transporte',
+    type: 'EXPENSE',
+    children: ['Combustível', 'Estacionamento', 'Transporte Público'],
+  },
+  {
+    name: 'Moradia',
+    type: 'EXPENSE',
+    children: ['Aluguel', 'Condomínio', 'Água', 'Luz', 'Internet'],
+  },
+  {
+    name: 'Saúde',
+    type: 'EXPENSE',
+    children: ['Plano de Saúde', 'Farmácia', 'Consulta/Exame'],
+  },
+  {
+    name: 'Educação',
+    type: 'EXPENSE',
+    children: ['Curso/Mensalidade', 'Material'],
+  },
+  {
+    name: 'Lazer',
+    type: 'EXPENSE',
+    children: [
+      'Assinatura (streaming, academia)',
+      'Viagem',
+      'Saída (bar, cinema, show)',
+    ],
+  },
+  {
+    name: 'Serviços',
+    type: 'EXPENSE',
+    children: ['Assinatura (software)', 'Seguro'],
+  },
+  { name: 'Compras', type: 'EXPENSE', children: ['Vestuário'] },
+  { name: 'Impostos', type: 'EXPENSE' },
+  { name: 'Investimentos', type: 'EXPENSE' },
+  { name: 'Outros Gastos', type: 'EXPENSE' },
+  { name: 'Salário', type: 'INCOME' },
+  { name: 'Investimentos', type: 'INCOME' },
+  { name: 'Freela/Projeto', type: 'INCOME' },
+  { name: 'Presente', type: 'INCOME' },
+  { name: 'Outros', type: 'INCOME' },
+];
+
 describe('0024 merge legacy duplicate categories', () => {
   let container: StartedPostgreSqlContainer;
   let admin: Sql;
@@ -237,7 +293,7 @@ describe('0024 merge legacy duplicate categories', () => {
     workspaceId: string,
   ): Promise<Map<string, string>> {
     const ids = new Map<string, string>();
-    for (const node of DEFAULT_CATEGORIES) {
+    for (const node of TREE_AT_0024) {
       const parentId = await insertCategory(
         client,
         workspaceId,
