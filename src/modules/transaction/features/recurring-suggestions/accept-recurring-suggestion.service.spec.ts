@@ -1,12 +1,17 @@
-import { RecurringSuggestionStatus } from '@constants/enums';
+import {
+  RecurrenceFrequency,
+  RecurringSuggestionStatus,
+} from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import {
+  RecurringRuleAlreadyExistsError,
   RecurringRuleMissingError,
   RecurringSuggestionDismissedError,
   RecurringSuggestionNotFoundError,
 } from '@modules/transaction/errors';
 import { RecurringSuggestionRepository } from '@modules/transaction/repositories/contracts/RecurringSuggestionRepository';
 import { makeSuggestion } from '@modules/transaction/test-helpers/mock-factories';
+import { ActiveBillRule } from '@modules/transaction/valueObjects/BillSuggestionDetection';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { AcceptRecurringSuggestionService } from './accept-recurring-suggestion.service';
@@ -14,13 +19,25 @@ import { AcceptRecurringSuggestionService } from './accept-recurring-suggestion.
 const makeRepository = (): jest.Mocked<RecurringSuggestionRepository> => ({
   findDetectionState: jest.fn(),
   findBillCandidates: jest.fn(),
-  findActiveExpenseRules: jest.fn(),
+  findActiveExpenseRules: jest.fn().mockResolvedValue([]),
   persistDetection: jest.fn(),
   findPendingByWorkspace: jest.fn(),
   findByIdForWorkspace: jest.fn(),
   markShown: jest.fn(),
   accept: jest.fn(),
   dismiss: jest.fn(),
+});
+
+const makeActiveRule = (
+  overrides: Partial<ActiveBillRule> = {},
+): ActiveBillRule => ({
+  categoryId: 'cat-1',
+  amount: 150000,
+  frequency: RecurrenceFrequency.MONTHLY,
+  interval: 1,
+  startDate: new Date('2026-11-05T03:00:00.000Z'),
+  endDate: null,
+  ...overrides,
 });
 
 const makeRequest = (suggestionId = 'suggestion-1') => ({
@@ -79,6 +96,27 @@ describe('AcceptRecurringSuggestionService', () => {
     expect(cacheProvider.incrementCounter).not.toHaveBeenCalled();
   });
 
+  it('replays an accepted suggestion even when its rule is still active', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(
+      makeSuggestion({
+        status: RecurringSuggestionStatus.ACCEPTED,
+        recurringId: 'rec-1',
+      }),
+    );
+    repository.findActiveExpenseRules.mockResolvedValue([makeActiveRule()]);
+    repository.accept.mockResolvedValue({
+      kind: 'already-accepted',
+      recurringId: 'rec-1',
+    });
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.recurringId).toBe('rec-1');
+    expect(repository.accept).toHaveBeenCalledTimes(1);
+    expect(cacheProvider.incrementCounter).not.toHaveBeenCalled();
+  });
+
   it('reports a missing rule when the accepted suggestion lost its link', async () => {
     repository.findByIdForWorkspace.mockResolvedValue(
       makeSuggestion({ status: RecurringSuggestionStatus.ACCEPTED }),
@@ -133,6 +171,112 @@ describe('AcceptRecurringSuggestionService', () => {
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
+  });
+
+  it('refuses a suggestion whose bill already has an active rule', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(makeSuggestion());
+    repository.findActiveExpenseRules.mockResolvedValue([makeActiveRule()]);
+    repository.accept.mockResolvedValue({
+      kind: 'accepted',
+      recurringId: 'rec-2',
+    });
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(RecurringRuleAlreadyExistsError);
+    expect(repository.accept).not.toHaveBeenCalled();
+    expect(cacheProvider.incrementCounter).not.toHaveBeenCalled();
+  });
+
+  it('refuses a suggestion when the active rule amount is only similar', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(
+      makeSuggestion({ amount: 23000n }),
+    );
+    repository.findActiveExpenseRules.mockResolvedValue([
+      makeActiveRule({ amount: 27863 }),
+    ]);
+    repository.accept.mockResolvedValue({
+      kind: 'accepted',
+      recurringId: 'rec-2',
+    });
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(RecurringRuleAlreadyExistsError);
+    expect(repository.accept).not.toHaveBeenCalled();
+  });
+
+  it('accepts when the same category amount is outside the similarity ratio', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(
+      makeSuggestion({ amount: 100000n }),
+    );
+    repository.findActiveExpenseRules.mockResolvedValue([
+      makeActiveRule({ amount: 160000 }),
+    ]);
+    repository.accept.mockResolvedValue({
+      kind: 'accepted',
+      recurringId: 'rec-1',
+    });
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isRight()).toBe(true);
+    expect(repository.accept).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts when the active rule is not monthly', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(makeSuggestion());
+    repository.findActiveExpenseRules.mockResolvedValue([
+      makeActiveRule({ frequency: RecurrenceFrequency.YEARLY }),
+    ]);
+    repository.accept.mockResolvedValue({
+      kind: 'accepted',
+      recurringId: 'rec-1',
+    });
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isRight()).toBe(true);
+    expect(repository.accept).toHaveBeenCalledTimes(1);
+  });
+
+  it('looks up the rules of the request workspace only', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(makeSuggestion());
+    repository.accept.mockResolvedValue({
+      kind: 'accepted',
+      recurringId: 'rec-1',
+    });
+
+    await service.execute(makeRequest());
+
+    expect(repository.findActiveExpenseRules).toHaveBeenCalledWith('ws-1');
+  });
+
+  it('maps a rule detected inside the transaction to the conflict', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(makeSuggestion());
+    repository.accept.mockResolvedValue({ kind: 'rule-exists' });
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(RecurringRuleAlreadyExistsError);
+    expect(cacheProvider.incrementCounter).not.toHaveBeenCalled();
+  });
+
+  it('accepts a suggestion whose rule became inactive', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(makeSuggestion());
+    repository.findActiveExpenseRules.mockResolvedValue([]);
+    repository.accept.mockResolvedValue({
+      kind: 'accepted',
+      recurringId: 'rec-1',
+    });
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isRight()).toBe(true);
+    expect(repository.accept).toHaveBeenCalledTimes(1);
   });
 
   it('computes a strictly future start date from the suggestion day', async () => {

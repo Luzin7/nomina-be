@@ -56,6 +56,12 @@ export class RecurringSuggestionNotFoundError extends NotFoundDomainError {
   }
 }
 
+export class RecurringRuleAlreadyExistsError extends ConflictDomainError {
+  constructor() {
+    super('Este gasto já possui uma recorrência ativa.');
+  }
+}
+
 export class RecurringSuggestionDismissedError extends ConflictDomainError {
   constructor() {
     super('Esta sugestão foi dispensada e não pode ser aceita.');

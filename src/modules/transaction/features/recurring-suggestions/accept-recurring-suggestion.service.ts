@@ -6,11 +6,13 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import {
+  RecurringRuleAlreadyExistsError,
   RecurringRuleMissingError,
   RecurringSuggestionDismissedError,
   RecurringSuggestionNotFoundError,
 } from '@modules/transaction/errors';
 import { RecurringSuggestionRepository } from '@modules/transaction/repositories/contracts/RecurringSuggestionRepository';
+import { hasActiveMonthlyRuleForBill } from '@modules/transaction/valueObjects/BillSuggestionDetection';
 import {
   CalendarDate,
   nextStrictlyFutureOccurrence,
@@ -68,6 +70,23 @@ export class AcceptRecurringSuggestionService implements Service<
       return left(new RecurringSuggestionDismissedError());
     }
 
+    if (suggestion.status === RecurringSuggestionStatus.PENDING) {
+      const activeRules =
+        await this.suggestionRepository.findActiveExpenseRules(workspaceId);
+
+      if (
+        hasActiveMonthlyRuleForBill(
+          {
+            categoryId: suggestion.categoryId,
+            amount: Number(suggestion.amount),
+          },
+          activeRules,
+        )
+      ) {
+        return left(new RecurringRuleAlreadyExistsError());
+      }
+    }
+
     const timezone = await this.timezoneService.execute(workspaceId);
     const startDate = this.nextOccurrenceStart(suggestion.dayOfMonth, timezone);
 
@@ -98,6 +117,9 @@ export class AcceptRecurringSuggestionService implements Service<
     }
     if (outcome.kind === 'dismissed') {
       return left(new RecurringSuggestionDismissedError());
+    }
+    if (outcome.kind === 'rule-exists') {
+      return left(new RecurringRuleAlreadyExistsError());
     }
 
     if (outcome.kind === 'accepted') {
