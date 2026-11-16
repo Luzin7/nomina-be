@@ -1,3 +1,5 @@
+import { TransactionType } from '@constants/enums';
+import { INVESTMENTS_CATEGORY_NAME } from '@constants/incomeCategories';
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { makeCreditCard } from '@modules/account/test-helpers/mock-factories';
@@ -5,6 +7,7 @@ import { BudgetPresenter } from '@modules/budget/presenters/Budget.presenter';
 import {
   BudgetSnapshot,
   BudgetRepository,
+  CategoryMapEntry,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
 import { SaveCardCycleBudgetService } from '@modules/card-cycle/features/save-card-cycle-budget/save-card-cycle-budget.handler';
 import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
@@ -73,6 +76,61 @@ function makeSnapshot(overrides: Partial<BudgetSnapshot> = {}): BudgetSnapshot {
   };
 }
 
+const INVESTMENTS_ROOT = '20dad8a4-4f14-473e-ae46-6886206e1c50';
+
+const expenseCategory = (
+  name: string,
+  parentId: string | null = null,
+): CategoryMapEntry => ({ name, type: TransactionType.EXPENSE, parentId });
+
+const ROOT_CATEGORIES: Record<string, CategoryMapEntry> = {
+  'cat-1': expenseCategory('Moradia'),
+  'cat-2': expenseCategory('Lazer'),
+  [INVESTMENTS_ROOT]: expenseCategory(INVESTMENTS_CATEGORY_NAME),
+};
+
+const categoryMapOf = (
+  overrides: Record<string, CategoryMapEntry> = {},
+): Record<string, CategoryMapEntry> => ({ ...ROOT_CATEGORIES, ...overrides });
+
+function planAllocationsOf(
+  housingCents: number,
+  leisureCents: number,
+): BudgetSnapshot['allocations'] {
+  return [
+    {
+      id: 'allocation-1',
+      categoryId: 'cat-1',
+      categoryName: 'Moradia',
+      groupName: 'Custos fixos',
+      groupOrder: 0,
+      categoryOrder: 0,
+      percentageOfIncome: 20,
+      targetCents: housingCents,
+    },
+    {
+      id: 'allocation-2',
+      categoryId: 'cat-2',
+      categoryName: 'Lazer',
+      groupName: 'Conforto',
+      groupOrder: 1,
+      categoryOrder: 0,
+      percentageOfIncome: 20,
+      targetCents: leisureCents,
+    },
+    {
+      id: 'allocation-3',
+      categoryId: INVESTMENTS_ROOT,
+      categoryName: 'Investimentos',
+      groupName: 'Investimentos',
+      groupOrder: 2,
+      categoryOrder: 0,
+      percentageOfIncome: 10,
+      targetCents: 30_000,
+    },
+  ];
+}
+
 function makeSummary(): MonthSummary {
   return MonthSummary.create({
     month: NOVEMBER_START,
@@ -99,7 +157,7 @@ describe('GetBudgetStatusService', () => {
       resolveSnapshot: jest.fn(),
       findCategoriesByIds: jest.fn(),
       findCompletedExpenseByCategory: jest.fn().mockResolvedValue({}),
-      findCategoryParentMap: jest.fn().mockResolvedValue({}),
+      findCategoryMap: jest.fn().mockResolvedValue(ROOT_CATEGORIES),
       saveSnapshot: jest.fn(),
       findMonthlyIncomeSuggestion: jest.fn(),
       findPresetCategories: jest.fn(),
@@ -275,6 +333,13 @@ describe('GetBudgetStatusService', () => {
       unallocatedIncomeCents: 0,
       allocationState: 'balanced',
       totalSpent: 0,
+      investRootCategoryId: INVESTMENTS_ROOT,
+      controlledSpendCents: 0,
+      controlledPlanCents: 100_000,
+      investSpendCents: 0,
+      investPlanCents: 0,
+      unbudgetedSpendCents: 0,
+      overPlanCents: 0,
       projection: {
         expectedIncome: 1000,
         expectedExpense: 600,
@@ -467,15 +532,162 @@ describe('GetBudgetStatusService', () => {
     ]);
   });
 
+  it('ignores Investimentos over plan while every controlled root is under', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(250_000, 250_000),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 240_000,
+      'cat-2': 240_000,
+      'cat-aporte': 80_000,
+    });
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({
+        'cat-aporte': expenseCategory('Aporte', INVESTMENTS_ROOT),
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledPlanCents).toBe(500_000);
+    expect(result.value.controlledSpendCents).toBe(480_000);
+    expect(result.value.investPlanCents).toBe(30_000);
+    expect(result.value.investSpendCents).toBe(80_000);
+    expect(result.value.unbudgetedSpendCents).toBe(0);
+    expect(result.value.overPlanCents).toBe(0);
+  });
+
+  it('charges the overage of an allocated root even when unbudgeted spend exists', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(300_000, 209_278),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 300_000,
+      'cat-2': 222_763,
+      [INVESTMENTS_ROOT]: 30_000,
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledPlanCents).toBe(509_278);
+    expect(result.value.controlledSpendCents).toBe(522_763);
+    expect(result.value.investSpendCents).toBe(30_000);
+    expect(result.value.unbudgetedSpendCents).toBe(0);
+    expect(result.value.overPlanCents).toBe(13_485);
+    expect(result.value.totalSpent).toBe(552_763);
+  });
+
+  it('keeps spend outside the plan out of the overage', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(300_000, 209_278),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 250_000,
+      'cat-2': 186_648,
+      [INVESTMENTS_ROOT]: 30_000,
+      'cat-compras': 70_033,
+      'cat-servicos': 10_175,
+      'cat-outros': 5_907,
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledSpendCents).toBe(436_648);
+    expect(result.value.unbudgetedSpendCents).toBe(86_115);
+    expect(result.value.investSpendCents).toBe(30_000);
+    expect(result.value.overPlanCents).toBe(0);
+    expect(result.value.totalSpent).toBe(552_763);
+  });
+
+  it('reports the overage of a controlled root above its line', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(60_000, 40_000),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-aluguel': 65_000,
+      'cat-2': 40_000,
+      [INVESTMENTS_ROOT]: 30_000,
+    });
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({ 'cat-aluguel': expenseCategory('Aluguel', 'cat-1') }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledSpendCents).toBe(105_000);
+    expect(result.value.controlledPlanCents).toBe(100_000);
+    expect(result.value.overPlanCents).toBe(5_000);
+  });
+
+  it('does not offset a controlled overage with the Investimentos leftover', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(60_000, 40_000),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 60_000,
+      'cat-2': 45_000,
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.investSpendCents).toBe(0);
+    expect(result.value.investPlanCents).toBe(30_000);
+    expect(result.value.overPlanCents).toBe(5_000);
+  });
+
   it('rolls a child transaction up to its allocated parent', async () => {
     repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
     repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
       'cat-aluguel': 15_000,
     });
-    repository.findCategoryParentMap.mockResolvedValueOnce({
-      'cat-1': null,
-      'cat-aluguel': 'cat-1',
-    });
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({ 'cat-aluguel': expenseCategory('Aluguel', 'cat-1') }),
+    );
 
     const result = await service.execute({
       workspaceId: 'ws-1',
@@ -506,11 +718,12 @@ describe('GetBudgetStatusService', () => {
       'cat-aluguel': 10_000,
       'cat-internet': 5_000,
     });
-    repository.findCategoryParentMap.mockResolvedValueOnce({
-      'cat-1': null,
-      'cat-aluguel': 'cat-1',
-      'cat-internet': 'cat-1',
-    });
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({
+        'cat-aluguel': expenseCategory('Aluguel', 'cat-1'),
+        'cat-internet': expenseCategory('Internet', 'cat-1'),
+      }),
+    );
 
     const result = await service.execute({
       workspaceId: 'ws-1',
@@ -530,10 +743,12 @@ describe('GetBudgetStatusService', () => {
     repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
       'cat-cinema': 5_000,
     });
-    repository.findCategoryParentMap.mockResolvedValueOnce({
-      'cat-lazer': null,
-      'cat-cinema': 'cat-lazer',
-    });
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({
+        'cat-lazer': expenseCategory('Lazer'),
+        'cat-cinema': expenseCategory('Cinema', 'cat-lazer'),
+      }),
+    );
 
     const result = await service.execute({
       workspaceId: 'ws-1',
@@ -569,10 +784,9 @@ describe('GetBudgetStatusService', () => {
     repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
       'cat-aluguel': 10_000,
     });
-    repository.findCategoryParentMap.mockResolvedValueOnce({
-      'cat-1': null,
-      'cat-aluguel': 'cat-1',
-    });
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({ 'cat-aluguel': expenseCategory('Aluguel', 'cat-1') }),
+    );
 
     const result = await service.execute({
       workspaceId: 'ws-1',
@@ -642,6 +856,218 @@ describe('GetBudgetStatusService', () => {
         (allocation) => allocation.categoryId === 'cat-deleted',
       ),
     ).toBe(false);
+  });
+
+  it('resolves the Investimentos root by name in each workspace', async () => {
+    const otherInvestRoot = 'ws-2-investments-root';
+    repository.resolveSnapshot
+      .mockResolvedValueOnce(
+        makeSnapshot({ allocations: planAllocationsOf(60_000, 40_000) }),
+      )
+      .mockResolvedValueOnce(
+        makeSnapshot({
+          allocations: [...planAllocationsOf(60_000, 40_000)].map(
+            (allocation) =>
+              allocation.categoryId === INVESTMENTS_ROOT
+                ? { ...allocation, categoryId: otherInvestRoot }
+                : allocation,
+          ),
+        }),
+      );
+    repository.findCompletedExpenseByCategory
+      .mockResolvedValueOnce({ [INVESTMENTS_ROOT]: 20_000 })
+      .mockResolvedValueOnce({ [otherInvestRoot]: 20_000 });
+    repository.findCategoryMap
+      .mockResolvedValueOnce(ROOT_CATEGORIES)
+      .mockResolvedValueOnce({
+        'cat-1': expenseCategory('Moradia'),
+        'cat-2': expenseCategory('Lazer'),
+        [otherInvestRoot]: expenseCategory(INVESTMENTS_CATEGORY_NAME),
+      });
+
+    const first = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+    const second = await service.execute({
+      workspaceId: 'ws-2',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    if (!first.isRight() || !first.value.exists) throw first.value;
+    if (!second.isRight() || !second.value.exists) throw second.value;
+    expect(first.value.investRootCategoryId).toBe(INVESTMENTS_ROOT);
+    expect(second.value.investRootCategoryId).toBe(otherInvestRoot);
+    expect(first.value.investSpendCents).toBe(20_000);
+    expect(second.value.investSpendCents).toBe(20_000);
+    expect(first.value.overPlanCents).toBe(0);
+    expect(second.value.overPlanCents).toBe(0);
+  });
+
+  it('keeps every root controlled when the workspace has no Investimentos category', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 110_000,
+    });
+    repository.findCategoryMap.mockResolvedValueOnce({
+      'cat-1': expenseCategory('Moradia'),
+      'cat-2': expenseCategory('Lazer'),
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.investRootCategoryId).toBeNull();
+    expect(result.value.controlledSpendCents).toBe(110_000);
+    expect(result.value.investSpendCents).toBe(0);
+    expect(result.value.overPlanCents).toBe(10_000);
+  });
+
+  it('leaves a hidden allocation out of the controlled plan', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: [
+          ...makeSnapshot().allocations,
+          {
+            id: 'allocation-3',
+            categoryId: 'cat-orfa',
+            categoryName: null,
+            groupName: 'Conforto',
+            groupOrder: 1,
+            categoryOrder: 1,
+            percentageOfIncome: 0,
+            targetCents: 50_000,
+          },
+        ],
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledPlanCents).toBe(100_000);
+    expect(result.value.totalTargetCents).toBe(150_000);
+  });
+
+  it('splits an allocated child and its unallocated sibling into disjoint buckets', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({ allocations: planAllocationsOf(60_000, 40_000) }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-aluguel': 55_000,
+      'cat-extra': 8_000,
+      'cat-aporte': 30_000,
+    });
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({
+        'cat-aluguel': expenseCategory('Aluguel', 'cat-1'),
+        'cat-extra': expenseCategory('Extra', 'cat-novo'),
+        'cat-aporte': expenseCategory('Aporte', INVESTMENTS_ROOT),
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledSpendCents).toBe(55_000);
+    expect(result.value.unbudgetedSpendCents).toBe(8_000);
+    expect(result.value.investSpendCents).toBe(30_000);
+    expect(result.value.totalSpent).toBe(93_000);
+    expect(
+      result.value.controlledSpendCents +
+        result.value.unbudgetedSpendCents +
+        result.value.investSpendCents,
+    ).toBe(result.value.totalSpent);
+  });
+
+  it('counts unallocated spend under Investimentos as invest spend', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 10_000,
+      'cat-aporte': 30_000,
+      'cat-compras': 5_000,
+    });
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({
+        'cat-aporte': expenseCategory('Aporte', INVESTMENTS_ROOT),
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.investSpendCents).toBe(30_000);
+    expect(result.value.unbudgetedSpendCents).toBe(5_000);
+    expect(result.value.unallocatedSpent).toBe(35_000);
+    expect(
+      result.value.controlledSpendCents +
+        result.value.investSpendCents +
+        result.value.unbudgetedSpendCents,
+    ).toBe(result.value.totalSpent);
+  });
+
+  it('keeps a child of Investimentos out of the controlled set', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: [
+          ...makeSnapshot().allocations,
+          {
+            id: 'allocation-3',
+            categoryId: 'cat-aporte',
+            categoryName: 'Aporte',
+            groupName: 'Investimentos',
+            groupOrder: 2,
+            categoryOrder: 0,
+            percentageOfIncome: 10,
+            targetCents: 10_000,
+          },
+        ],
+      }),
+    );
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({
+        'cat-aporte': expenseCategory('Aporte', INVESTMENTS_ROOT),
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledCategoryIds).toEqual(['cat-1', 'cat-2']);
   });
 
   it('reports the declared income and the summed plan separately in fixed mode', async () => {

@@ -1,5 +1,8 @@
 import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
-import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import {
+  BudgetRepository,
+  type BudgetSnapshot,
+} from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
   ResolveBudgetSuggestionService,
   type BudgetSuggestion,
@@ -34,7 +37,7 @@ type Request = Pick<TokenPayloadSchema, 'workspaceId'> & {
 };
 
 export type ResolvedMonthPlan =
-  | { source: 'declared'; planTotalCents: number }
+  | { source: 'declared'; planTotalCents: number; snapshot: BudgetSnapshot }
   | {
       source: 'suggested';
       planTotalCents: number;
@@ -125,8 +128,12 @@ export class ResolveMonthPlanService implements Service<
       (total, { targetCents }) => total + targetCents,
       0,
     );
-    if (declaredCents > 0) {
-      return right({ source: 'declared', planTotalCents: declaredCents });
+    if (snapshot && declaredCents > 0) {
+      return right({
+        source: 'declared',
+        planTotalCents: declaredCents,
+        snapshot,
+      });
     }
 
     if (!today.startsWith(key)) return right({ source: 'none' });

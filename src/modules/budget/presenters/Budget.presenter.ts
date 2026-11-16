@@ -35,6 +35,13 @@ export class BudgetPresenter {
       unallocatedIncomeCents: response.unallocatedIncomeCents,
       allocationState: response.allocationState,
       totalSpent: response.totalSpent,
+      investRootCategoryId: response.investRootCategoryId,
+      controlledSpendCents: response.controlledSpendCents,
+      controlledPlanCents: response.controlledPlanCents,
+      investSpendCents: response.investSpendCents,
+      investPlanCents: response.investPlanCents,
+      unbudgetedSpendCents: response.unbudgetedSpendCents,
+      overPlanCents: response.overPlanCents,
       projection:
         response.projection === null
           ? null

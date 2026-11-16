@@ -6,6 +6,13 @@ import {
   type BudgetAllocationState,
 } from '@modules/budget/valueObjects/BudgetAllocationState';
 import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
+import {
+  controlledCategoryIdsOf,
+  parentMapOf,
+  resolveInvestmentsRootId,
+  splitBudgetPlanSides,
+  type BudgetPlanSides,
+} from '@modules/budget/valueObjects/BudgetPlanSides';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
@@ -46,7 +53,7 @@ export type BudgetStatusPillar = {
 
 export type BudgetStatusResponse =
   | { exists: false }
-  | {
+  | ({
       exists: true;
       mode: BudgetMode;
       monthlyIncomeCents: number | null;
@@ -58,8 +65,10 @@ export type BudgetStatusResponse =
       unallocatedIncomeCents: number;
       allocationState: BudgetAllocationState;
       totalSpent: number;
+      investRootCategoryId: string | null;
+      controlledCategoryIds: string[];
       projection: MonthProjection | null;
-    };
+    } & BudgetPlanSides);
 
 const sumPercentages = (
   current: number | null,
@@ -99,7 +108,7 @@ export class GetBudgetStatusService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'budget:status',
-        version: 'v2',
+        version: 'v4',
         workspaceId,
         generations: { ledger, category },
         parts: [`${year}-${month}`, localDay],
@@ -129,13 +138,13 @@ export class GetBudgetStatusService implements Service<
     );
     if (!snapshot) return right({ exists: false });
 
-    const [expensesByCategory, categoryParentMap, summary] = await Promise.all([
+    const [expensesByCategory, categoryMap, summary] = await Promise.all([
       this.budgetRepository.findCompletedExpenseByCategory(
         workspaceId,
         monthStart,
         monthEnd,
       ),
-      this.budgetRepository.findCategoryParentMap(workspaceId),
+      this.budgetRepository.findCategoryMap(workspaceId),
       isCurrentMonth
         ? this.findMonthSummary.execute({ workspaceId, sub: request.sub })
         : Promise.resolve(null),
@@ -143,6 +152,8 @@ export class GetBudgetStatusService implements Service<
 
     if (summary?.isLeft()) return left(summary.value);
 
+    const parentByCategory = parentMapOf(categoryMap);
+    const investRootCategoryId = resolveInvestmentsRootId(categoryMap);
     const visibleAllocations = snapshot.allocations.filter(
       (allocation) => allocation.categoryName !== null,
     );
@@ -150,11 +161,12 @@ export class GetBudgetStatusService implements Service<
       (total, allocation) => total + allocation.targetCents,
       0,
     );
-    const { spentByAllocation, unallocatedSpent } = attributeSpendToAllocations(
-      expensesByCategory,
-      categoryParentMap,
-      new Set(visibleAllocations.map((allocation) => allocation.categoryId)),
-    );
+    const { spentByAllocation, unallocatedSpendByCategory, unallocatedSpent } =
+      attributeSpendToAllocations(
+        expensesByCategory,
+        parentByCategory,
+        new Set(visibleAllocations.map((allocation) => allocation.categoryId)),
+      );
     const pillars = new Map<string, BudgetStatusPillar>();
     const allocations = visibleAllocations.map((allocation) => {
       const spentCents = spentByAllocation[allocation.categoryId] ?? 0;
@@ -192,6 +204,13 @@ export class GetBudgetStatusService implements Service<
       (total, value) => total + value,
       0,
     );
+    const planSides = splitBudgetPlanSides({
+      allocations: visibleAllocations,
+      spentByAllocation,
+      unallocatedSpendByCategory,
+      parentByCategory,
+      investRootCategoryId,
+    });
 
     return right({
       exists: true,
@@ -202,6 +221,15 @@ export class GetBudgetStatusService implements Service<
       pillars: [...pillars.values()],
       unallocatedSpent,
       totalTargetCents,
+      investRootCategoryId,
+      controlledCategoryIds: [
+        ...controlledCategoryIdsOf(
+          visibleAllocations,
+          parentByCategory,
+          investRootCategoryId,
+        ),
+      ],
+      ...planSides,
       unallocatedIncomeCents:
         snapshot.monthlyIncome === null
           ? 0

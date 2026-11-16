@@ -1,7 +1,11 @@
 export type BudgetSpendAttribution = {
   spentByAllocation: Record<string, number>;
+  unallocatedSpendByCategory: Record<string, number>;
   unallocatedSpent: number;
 };
+
+const sum = (values: number[]): number =>
+  values.reduce((total, value) => total + value, 0);
 
 export function attributeSpendToAllocations(
   expensesByCategory: Record<string, number>,
@@ -9,7 +13,7 @@ export function attributeSpendToAllocations(
   allocatedCategoryIds: Set<string>,
 ): BudgetSpendAttribution {
   const spentByAllocation: Record<string, number> = {};
-  let unallocatedSpent = 0;
+  const unallocatedSpendByCategory: Record<string, number> = {};
 
   for (const [categoryId, amount] of Object.entries(expensesByCategory)) {
     const allocationId = findNearestAllocatedCategory(
@@ -19,7 +23,8 @@ export function attributeSpendToAllocations(
     );
 
     if (allocationId === null) {
-      unallocatedSpent += amount;
+      unallocatedSpendByCategory[categoryId] =
+        (unallocatedSpendByCategory[categoryId] ?? 0) + amount;
       continue;
     }
 
@@ -27,7 +32,11 @@ export function attributeSpendToAllocations(
       (spentByAllocation[allocationId] ?? 0) + amount;
   }
 
-  return { spentByAllocation, unallocatedSpent };
+  return {
+    spentByAllocation,
+    unallocatedSpendByCategory,
+    unallocatedSpent: sum(Object.values(unallocatedSpendByCategory)),
+  };
 }
 
 function findNearestAllocatedCategory(

@@ -1,14 +1,28 @@
 import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
-import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import {
+  BudgetRepository,
+  type BudgetSnapshot,
+  type CompletedExpenseOfCategoryDay,
+} from '@modules/budget/repositories/contracts/BudgetRepository';
+import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
+import {
+  controlledCategoryIdsOf,
+  controlledRootIdsOf,
+  parentMapOf,
+  resolveInvestmentsRootId,
+  rootOf,
+} from '@modules/budget/valueObjects/BudgetPlanSides';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import {
   buildMonthPace,
   expenseOccurrencesByDay,
   MonthPace,
   MonthPlanSource,
+  type ControlledPace,
 } from '@modules/report/valueObjects/MonthPace';
+import type { RecurringRuleSnapshot } from '@modules/report/valueObjects/MonthProjection';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
@@ -31,6 +45,20 @@ import { GetMonthPaceRequest } from './get-month-pace.dto';
 
 type Request = GetMonthPaceRequest & Pick<TokenPayloadSchema, 'workspaceId'>;
 
+type PaceWindow = {
+  workspaceId: string;
+  start: Date;
+  end: Date;
+  timezone: string;
+};
+
+type ControlledSpendInput = {
+  rows: CompletedExpenseOfCategoryDay[];
+  parentByCategory: Record<string, string | null>;
+  allocatedCategoryIds: Set<string>;
+  controlledCategoryIds: Set<string>;
+};
+
 const DEGRADED_CACHE_TTL_SECONDS = 60;
 
 type ComputedMonthPace = { pace: MonthPace; degraded: boolean };
@@ -48,6 +76,16 @@ const planFieldsOf = (
 
   return { planTotalCents: null, planSource: null };
 };
+
+const controlledSpentOf = (
+  spentByAllocation: Record<string, number>,
+  controlledCategoryIds: Set<string>,
+): number =>
+  Object.entries(spentByAllocation).reduce(
+    (total, [categoryId, cents]) =>
+      controlledCategoryIds.has(categoryId) ? total + cents : total,
+    0,
+  );
 
 @Injectable()
 export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
@@ -73,7 +111,7 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
       cache: this.cache,
       key: buildCacheKey({
         route: 'report:month-pace',
-        version: 'v5',
+        version: 'v6',
         workspaceId,
         generations: { ledger, category },
         parts: [
@@ -98,8 +136,12 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
   ): Promise<Either<Error, ComputedMonthPace>> {
     const monthKey = `${year}-${String(month).padStart(2, '0')}`;
     const referenceDate = `${monthKey}-01`;
-    const start = this.dateProvider.startOfMonth(referenceDate, timezone);
-    const end = this.dateProvider.endOfMonth(referenceDate, timezone);
+    const window: PaceWindow = {
+      workspaceId,
+      start: this.dateProvider.startOfMonth(referenceDate, timezone),
+      end: this.dateProvider.endOfMonth(referenceDate, timezone),
+      timezone,
+    };
     const totalDays = daysInMonth(year, month);
 
     const [plan, spentRows, rules] = await Promise.all([
@@ -109,19 +151,19 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
         year,
         today: this.dateProvider.format(now, 'YYYY-MM-DD', timezone),
       }),
-      this.budgetRepository.findCompletedExpenseByLocalDay({
-        workspaceId,
-        start,
-        end,
-        timezone,
-      }),
+      this.budgetRepository.findCompletedExpenseByLocalDay(window),
       this.monthProjectionRepository.findActiveRecurringRules(workspaceId, {
-        start,
-        end,
+        start: window.start,
+        end: window.end,
       }),
     ]);
 
     if (plan.isLeft()) return left(plan.value);
+
+    const controlled =
+      plan.value.source === 'declared'
+        ? await this.controlledPaceOf(window, rules, plan.value.snapshot)
+        : null;
 
     return right({
       degraded: 'degraded' in plan.value && plan.value.degraded === true,
@@ -133,24 +175,108 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
           spentRows.map(({ day, totalCents }) => [day, totalCents]),
         ),
         ...planFieldsOf(plan.value),
-        fixedByDay: expenseOccurrencesByDay({
-          rules,
-          month: { start, end },
-          nextOccurrence: (date, rule) =>
-            nextOccurrenceAfter(
-              {
-                startDate: rule.startDate,
-                frequency: rule.frequency,
-                interval: rule.interval,
-                timezone: RECURRING_GENERATION_TIMEZONE,
-              },
-              date,
-              this.dateProvider,
-            ),
-          dayOf: (date) =>
-            Number(this.dateProvider.format(date, 'D', timezone)),
-        }),
+        fixedByDay: this.occurrencesByDay(rules, window),
+        controlled,
       }),
+    });
+  }
+
+  private async controlledPaceOf(
+    window: PaceWindow,
+    rules: RecurringRuleSnapshot[],
+    snapshot: BudgetSnapshot,
+  ): Promise<ControlledPace> {
+    const { workspaceId } = window;
+
+    const [categoryMap, rows] = await Promise.all([
+      this.budgetRepository.findCategoryMap(workspaceId),
+      this.budgetRepository.findCompletedExpenseByCategoryDay(window),
+    ]);
+    const parentByCategory = parentMapOf(categoryMap);
+    const investRootCategoryId = resolveInvestmentsRootId(categoryMap);
+    const allocations = snapshot.allocations.filter(
+      ({ categoryName }) => categoryName !== null,
+    );
+    const controlledCategoryIds = controlledCategoryIdsOf(
+      allocations,
+      parentByCategory,
+      investRootCategoryId,
+    );
+    const controlledRootIds = controlledRootIdsOf(
+      allocations,
+      parentByCategory,
+      investRootCategoryId,
+    );
+
+    return {
+      planTotalCents: allocations
+        .filter(({ categoryId }) => controlledCategoryIds.has(categoryId))
+        .reduce((total, { targetCents }) => total + targetCents, 0),
+      spentByDay: this.controlledSpendByDay({
+        rows,
+        parentByCategory,
+        allocatedCategoryIds: new Set(
+          allocations.map(({ categoryId }) => categoryId),
+        ),
+        controlledCategoryIds,
+      }),
+      fixedByDay: this.occurrencesByDay(
+        rules.filter(
+          ({ categoryId }) =>
+            categoryId === null ||
+            controlledRootIds.has(rootOf(categoryId, parentByCategory)),
+        ),
+        window,
+      ),
+    };
+  }
+
+  private controlledSpendByDay({
+    rows,
+    parentByCategory,
+    allocatedCategoryIds,
+    controlledCategoryIds,
+  }: ControlledSpendInput): Record<number, number> {
+    const categorySpendByDay = new Map<number, Record<string, number>>();
+
+    for (const { day, categoryId, totalCents } of rows) {
+      const spend = categorySpendByDay.get(day) ?? {};
+      spend[categoryId] = (spend[categoryId] ?? 0) + totalCents;
+      categorySpendByDay.set(day, spend);
+    }
+
+    const byDay: Record<number, number> = {};
+    for (const [day, spend] of categorySpendByDay) {
+      const { spentByAllocation } = attributeSpendToAllocations(
+        spend,
+        parentByCategory,
+        allocatedCategoryIds,
+      );
+      byDay[day] = controlledSpentOf(spentByAllocation, controlledCategoryIds);
+    }
+
+    return byDay;
+  }
+
+  private occurrencesByDay(
+    rules: RecurringRuleSnapshot[],
+    { start, end, timezone }: PaceWindow,
+  ): Record<number, number> {
+    return expenseOccurrencesByDay({
+      rules,
+      month: { start, end },
+      nextOccurrence: (date, rule) =>
+        nextOccurrenceAfter(
+          {
+            startDate: rule.startDate,
+            frequency: rule.frequency,
+            interval: rule.interval,
+            timezone: RECURRING_GENERATION_TIMEZONE,
+          },
+          date,
+          this.dateProvider,
+        ),
+      dayOf: (date) => Number(this.dateProvider.format(date, 'D', timezone)),
     });
   }
 
