@@ -1,4 +1,5 @@
 import { TransactionStatus, TransactionType } from '@constants/enums';
+import { REIMBURSEMENTS_CATEGORY_NAME } from '@constants/incomeCategories';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
@@ -190,6 +191,54 @@ describe('budget inference totals against a real postgres', () => {
         month: '2026-02',
         incomeCents: 710_000,
         expenseByCategory: { [expenseCategoryId]: 10_000 },
+      },
+    ]);
+  });
+
+  it('keeps reimbursements out of the income base', async () => {
+    const salary = await insertCategory('Salário');
+    const reimbursements = await insertCategory(REIMBURSEMENTS_CATEGORY_NAME);
+
+    await income(salary, 500_000);
+    await income(reimbursements, 80_000);
+    await insertTransaction({ amount: 80_000 });
+
+    const totals = await repository.findInferenceTotals({
+      workspaceId,
+      start: new Date('2026-01-01T00:00:00.000Z'),
+      end: new Date('2026-03-31T23:59:59.999Z'),
+      timezone: 'UTC',
+    });
+
+    expect(totals).toEqual([
+      {
+        month: '2026-02',
+        incomeCents: 500_000,
+        expenseByCategory: { [expenseCategoryId]: 80_000 },
+      },
+    ]);
+  });
+
+  it('keeps recurring reimbursements out of the income base', async () => {
+    const salary = await insertCategory('Salário');
+    const reimbursements = await insertCategory(REIMBURSEMENTS_CATEGORY_NAME);
+
+    await income(salary, 500_000);
+    await income(reimbursements, 80_000, await insertRecurring(reimbursements));
+    await insertTransaction({ amount: 80_000 });
+
+    const totals = await repository.findInferenceTotals({
+      workspaceId,
+      start: new Date('2026-01-01T00:00:00.000Z'),
+      end: new Date('2026-03-31T23:59:59.999Z'),
+      timezone: 'UTC',
+    });
+
+    expect(totals).toEqual([
+      {
+        month: '2026-02',
+        incomeCents: 500_000,
+        expenseByCategory: { [expenseCategoryId]: 80_000 },
       },
     ]);
   });
