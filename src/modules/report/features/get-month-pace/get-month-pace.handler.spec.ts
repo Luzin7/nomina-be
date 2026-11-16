@@ -406,6 +406,33 @@ describe('GetMonthPaceService', () => {
     expect(pace.days[29].planCents).toBe(110_000);
   });
 
+  it('reads the budget snapshot once for a declared plan', async () => {
+    budgetRepository.resolveSnapshot.mockResolvedValue({
+      id: 'snapshot-1',
+      workspaceId: WORKSPACE_ID,
+      effectiveFrom: new Date('2026-11-01T03:00:00.000Z'),
+      monthlyIncome: 1_000_000,
+      mode: 'fixed',
+      allocations: [
+        allocationOf('cat-1', 'Moradia', 60_000),
+        allocationOf('cat-2', 'Lazer', 40_000),
+      ],
+    });
+    budgetRepository.findCategoryMap.mockResolvedValue({
+      'cat-1': {
+        name: 'Moradia',
+        type: TransactionType.EXPENSE,
+        parentId: null,
+      },
+      'cat-2': { name: 'Lazer', type: TransactionType.EXPENSE, parentId: null },
+    });
+
+    const pace = await run();
+
+    expect(budgetRepository.resolveSnapshot).toHaveBeenCalledTimes(1);
+    expect(pace.controlledPlanTotalCents).toBe(100_000);
+  });
+
   it('nulls the controlled curve when the plan is not declared', async () => {
     budgetRepository.resolveSnapshot.mockResolvedValue(null);
 

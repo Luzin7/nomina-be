@@ -3,6 +3,7 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import {
   BudgetRepository,
+  type BudgetSnapshot,
   type CompletedExpenseOfCategoryDay,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
 import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
@@ -161,7 +162,7 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
 
     const controlled =
       plan.value.source === 'declared'
-        ? await this.controlledPaceOf(window, rules)
+        ? await this.controlledPaceOf(window, rules, plan.value.snapshot)
         : null;
 
     return right({
@@ -183,13 +184,9 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
   private async controlledPaceOf(
     window: PaceWindow,
     rules: RecurringRuleSnapshot[],
-  ): Promise<ControlledPace | null> {
-    const { workspaceId, start } = window;
-    const snapshot = await this.budgetRepository.resolveSnapshot(
-      workspaceId,
-      start,
-    );
-    if (!snapshot) return null;
+    snapshot: BudgetSnapshot,
+  ): Promise<ControlledPace> {
+    const { workspaceId } = window;
 
     const [categoryMap, rows] = await Promise.all([
       this.budgetRepository.findCategoryMap(workspaceId),
