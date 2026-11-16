@@ -3,6 +3,17 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.5.0](https://github.com/Luzin7/nomina-be/compare/v2.4.0...v2.5.0) (2026-11-16)
+
+### Features
+
+* **budget:** map the new taxonomy roots to budget groups ([f56638c](https://github.com/Luzin7/nomina-be/commit/f56638cb780e5de619634cd39453fac49435b2be))
+* **categories:** expand default workspace category taxonomy ([495744c](https://github.com/Luzin7/nomina-be/commit/495744c78a94f1934761b66a45273045140d4a06))
+
+### Bug Fixes
+
+* **budget:** exclude recurring reimbursements from real income ([0ec6800](https://github.com/Luzin7/nomina-be/commit/0ec6800702fa47ba1e2b88033d7e2b1b9ebe2a6f))
+
 ## [2.4.0](https://github.com/Luzin7/nomina-be/compare/v2.3.1...v2.4.0) (2026-11-15)
 
 ### Features
