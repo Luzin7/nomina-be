@@ -1,5 +1,6 @@
 import {
   AccountType,
+  RecurrenceFrequency,
   RecurringSuggestionStatus,
   TransactionStatus,
   TransactionType,
@@ -311,6 +312,35 @@ describe('RecurringSuggestionRepositoryImplementation against a real postgres', 
     expect(secondView.suggestion.accountId).toBe(otherAccountId);
     expect(secondView.suggestion.suggestedTitle).toBe('Aluguel');
     expect(secondView.accountName).toBe('Conta nova');
+  });
+
+  it('lists only active monthly expense rules for the workspace', async () => {
+    const { workspaceId, accountId, categoryId } = await seedWorkspace();
+    const ruleRow = {
+      workspaceId,
+      accountId,
+      categoryId,
+      title: 'Aluguel',
+      amount: 150_000,
+      frequency: RecurrenceFrequency.MONTHLY,
+      interval: 1,
+      startDate: new Date('2026-11-05T03:00:00.000Z'),
+      type: TransactionType.EXPENSE,
+    };
+
+    await db.insert(schema.recurringTransactions).values([
+      { ...ruleRow, active: true },
+      { ...ruleRow, active: false },
+    ]);
+
+    const rules = await repository.findActiveExpenseRules(workspaceId);
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({
+      categoryId,
+      amount: 150_000,
+      frequency: RecurrenceFrequency.MONTHLY,
+    });
   });
 
   it('creates exactly one rule for two concurrent accepts', async () => {
