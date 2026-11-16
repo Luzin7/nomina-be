@@ -1,4 +1,5 @@
 import type { BudgetStatusResponse } from '@modules/budget/features/get-status/get-status.handler';
+import type { UnbudgetedCategory } from '@modules/budget/valueObjects/BudgetSpendAttribution';
 import {
   pickPlanSides,
   zeroPlanSides,
@@ -37,6 +38,7 @@ export type AvailableToSpendBudget =
       provisional: false;
       totalTargetCents: number;
       totalSpentCents: number;
+      unbudgetedCategories: UnbudgetedCategory[];
     }
   | {
       exists: true;
@@ -45,6 +47,7 @@ export type AvailableToSpendBudget =
       totalTargetCents: number;
       totalSpentCents: number;
       basisMonths: number;
+      unbudgetedCategories: UnbudgetedCategory[];
     }
   | {
       exists: true;
@@ -53,6 +56,7 @@ export type AvailableToSpendBudget =
       totalTargetCents: number;
       totalSpentCents: number;
       basis: ProvisionalBasis;
+      unbudgetedCategories: UnbudgetedCategory[];
     };
 
 export type AvailableToSpendResponse = {
@@ -68,6 +72,7 @@ export type AvailableToSpendResponse = {
   perDayCents: number | null;
   state: AvailableToSpendState;
   insight: AvailableToSpendInsight | null;
+  unbudgetedCategories: UnbudgetedCategory[];
 } & BudgetPlanSides;
 
 export type SpendableFigureInput = {
@@ -99,6 +104,10 @@ const perDayOf = (spendableCents: number, daysRemaining: number): number =>
 
 type FigureBudget = Extract<AvailableToSpendBudget, { exists: true }>;
 
+const unbudgetedCategoriesInBudget = (
+  budget: BudgetStatusResponse,
+): UnbudgetedCategory[] => (budget.exists ? budget.unbudgetedCategories : []);
+
 const figureBudgetOf = (
   budget: BudgetStatusResponse,
   plan: ResolvedMonthPlan,
@@ -111,6 +120,7 @@ const figureBudgetOf = (
       totalTargetCents: plan.planTotalCents,
       totalSpentCents: plan.spentCents,
       basis: plan.basis,
+      unbudgetedCategories: unbudgetedCategoriesInBudget(budget),
     };
   }
 
@@ -122,6 +132,7 @@ const figureBudgetOf = (
       totalTargetCents: plan.planTotalCents,
       totalSpentCents: plan.spentCents,
       basisMonths: plan.basisMonths,
+      unbudgetedCategories: unbudgetedCategoriesInBudget(budget),
     };
   }
 
@@ -133,6 +144,7 @@ const figureBudgetOf = (
     provisional: false,
     totalTargetCents: budget.totalTargetCents,
     totalSpentCents: budget.totalSpent,
+    unbudgetedCategories: budget.unbudgetedCategories,
   };
 };
 

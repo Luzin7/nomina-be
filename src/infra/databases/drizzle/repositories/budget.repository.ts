@@ -238,6 +238,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         name: schema.categories.name,
         type: schema.categories.type,
         parentId: schema.categories.parentId,
+        isHidden: schema.categories.isHidden,
       })
       .from(schema.categories)
       .where(
@@ -254,6 +255,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
           name: row.name,
           type: row.type as TransactionType,
           parentId: row.parentId,
+          isHidden: row.isHidden,
         },
       ]),
     );

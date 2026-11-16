@@ -142,6 +142,7 @@ const makeBudget = (
   investSpendCents: 0,
   investPlanCents: 0,
   unbudgetedSpendCents: 0,
+  unbudgetedCategories: [],
   overPlanCents: 0,
   projection: makeSpendProjection(),
   ...overrides,
@@ -444,6 +445,7 @@ describe('GetAvailableToSpendService', () => {
         investSpendCents: 0,
         investPlanCents: 0,
         unbudgetedSpendCents: 0,
+        unbudgetedCategories: [],
         overPlanCents: 0,
         insight: null,
       });
@@ -469,6 +471,46 @@ describe('GetAvailableToSpendService', () => {
       expect(response.investPlanCents).toBe(30_000);
       expect(response.unbudgetedSpendCents).toBe(86_115);
       expect(response.overPlanCents).toBe(0);
+    });
+
+    it('carries the unbudgeted categories next to the plan sides', async () => {
+      const unbudgetedCategories = [
+        {
+          categoryId: 'cat-compras',
+          categoryName: 'Compras',
+          spendCents: 70_033,
+        },
+        {
+          categoryId: 'cat-servicos',
+          categoryName: 'Serviços',
+          spendCents: 10_175,
+        },
+      ];
+      givenBudget(
+        makeBudget({
+          unbudgetedSpendCents: 80_208,
+          unbudgetedCategories,
+        }),
+      );
+
+      const response = await run();
+
+      expect(response.unbudgetedCategories).toEqual(unbudgetedCategories);
+      expect(response.budget).toMatchObject({ unbudgetedCategories });
+    });
+
+    it('has no unbudgeted category without a budget snapshot', async () => {
+      givenBudget({ exists: false });
+      givenPlan({
+        source: 'nothing-observed',
+        recurringDueCents: 0,
+        spentCents: 0,
+      });
+      givenSummary(makeSummary());
+
+      const response = await run();
+
+      expect(response.unbudgetedCategories).toEqual([]);
     });
 
     it('does not add unallocated income to spendable', async () => {
@@ -873,12 +915,12 @@ describe('GetAvailableToSpendService', () => {
       expect(second).toEqual(first);
     });
 
-    it('keys the cache under v5', async () => {
+    it('keys the cache under v7', async () => {
       await service.execute(REQUEST);
 
       expect([...cache.values.keys()]).toEqual([
         expect.stringMatching(
-          /^dashboard:available-to-spend:v6:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
+          /^dashboard:available-to-spend:v7:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
         ),
       ]);
     });

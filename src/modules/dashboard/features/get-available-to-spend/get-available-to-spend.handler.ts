@@ -112,7 +112,7 @@ export class GetAvailableToSpendService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'dashboard:available-to-spend',
-        version: 'v6',
+        version: 'v7',
         workspaceId,
         generations: { ledger, goal, category },
         parts: [today],
@@ -171,6 +171,9 @@ export class GetAvailableToSpendService implements Service<
         daysRemaining: projection.daysRemaining,
         ...figure,
         ...planSidesOf(budget.value),
+        unbudgetedCategories: budget.value.exists
+          ? budget.value.unbudgetedCategories
+          : [],
         insight: ranked.insight,
       },
     });

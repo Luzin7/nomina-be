@@ -41,6 +41,13 @@ export class BudgetPresenter {
       investSpendCents: response.investSpendCents,
       investPlanCents: response.investPlanCents,
       unbudgetedSpendCents: response.unbudgetedSpendCents,
+      unbudgetedCategories: response.unbudgetedCategories.map(
+        ({ categoryId, categoryName, spendCents }) => ({
+          categoryId,
+          categoryName,
+          spendCents,
+        }),
+      ),
       overPlanCents: response.overPlanCents,
       projection:
         response.projection === null
