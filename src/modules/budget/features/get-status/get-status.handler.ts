@@ -7,6 +7,7 @@ import {
 } from '@modules/budget/valueObjects/BudgetAllocationState';
 import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
 import {
+  controlledCategoryIdsOf,
   parentMapOf,
   resolveInvestmentsRootId,
   splitBudgetPlanSides,
@@ -65,6 +66,7 @@ export type BudgetStatusResponse =
       allocationState: BudgetAllocationState;
       totalSpent: number;
       investRootCategoryId: string | null;
+      controlledCategoryIds: string[];
       projection: MonthProjection | null;
     } & BudgetPlanSides);
 
@@ -106,7 +108,7 @@ export class GetBudgetStatusService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'budget:status',
-        version: 'v3',
+        version: 'v4',
         workspaceId,
         generations: { ledger, category },
         parts: [`${year}-${month}`, localDay],
@@ -159,11 +161,12 @@ export class GetBudgetStatusService implements Service<
       (total, allocation) => total + allocation.targetCents,
       0,
     );
-    const { spentByAllocation, unallocatedSpent } = attributeSpendToAllocations(
-      expensesByCategory,
-      parentByCategory,
-      new Set(visibleAllocations.map((allocation) => allocation.categoryId)),
-    );
+    const { spentByAllocation, unallocatedSpendByCategory, unallocatedSpent } =
+      attributeSpendToAllocations(
+        expensesByCategory,
+        parentByCategory,
+        new Set(visibleAllocations.map((allocation) => allocation.categoryId)),
+      );
     const pillars = new Map<string, BudgetStatusPillar>();
     const allocations = visibleAllocations.map((allocation) => {
       const spentCents = spentByAllocation[allocation.categoryId] ?? 0;
@@ -204,7 +207,7 @@ export class GetBudgetStatusService implements Service<
     const planSides = splitBudgetPlanSides({
       allocations: visibleAllocations,
       spentByAllocation,
-      unallocatedSpent,
+      unallocatedSpendByCategory,
       parentByCategory,
       investRootCategoryId,
     });
@@ -219,6 +222,13 @@ export class GetBudgetStatusService implements Service<
       unallocatedSpent,
       totalTargetCents,
       investRootCategoryId,
+      controlledCategoryIds: [
+        ...controlledCategoryIdsOf(
+          visibleAllocations,
+          parentByCategory,
+          investRootCategoryId,
+        ),
+      ],
       ...planSides,
       unallocatedIncomeCents:
         snapshot.monthlyIncome === null

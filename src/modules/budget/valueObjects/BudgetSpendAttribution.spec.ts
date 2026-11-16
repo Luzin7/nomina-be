@@ -19,6 +19,7 @@ describe('attributeSpendToAllocations', () => {
       ),
     ).toEqual({
       spentByAllocation: { moradia: 150_000 },
+      unallocatedSpendByCategory: {},
       unallocatedSpent: 0,
     });
   });
@@ -32,6 +33,7 @@ describe('attributeSpendToAllocations', () => {
       ),
     ).toEqual({
       spentByAllocation: { moradia: 162_000 },
+      unallocatedSpendByCategory: {},
       unallocatedSpent: 0,
     });
   });
@@ -45,6 +47,7 @@ describe('attributeSpendToAllocations', () => {
       ),
     ).toEqual({
       spentByAllocation: {},
+      unallocatedSpendByCategory: { cinema: 8_000 },
       unallocatedSpent: 8_000,
     });
   });
@@ -58,6 +61,7 @@ describe('attributeSpendToAllocations', () => {
       ),
     ).toEqual({
       spentByAllocation: { aluguel: 150_000 },
+      unallocatedSpendByCategory: {},
       unallocatedSpent: 0,
     });
   });
@@ -71,6 +75,7 @@ describe('attributeSpendToAllocations', () => {
       ),
     ).toEqual({
       spentByAllocation: {},
+      unallocatedSpendByCategory: { unknown: 1_000 },
       unallocatedSpent: 1_000,
     });
   });

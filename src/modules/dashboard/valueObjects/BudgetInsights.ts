@@ -38,7 +38,7 @@ export function categoryBreachInsight(
     .filter(
       (allocation) =>
         allocation.percentageUsed > 100 &&
-        allocation.categoryId !== budget.investRootCategoryId,
+        budget.controlledCategoryIds.includes(allocation.categoryId),
     )
     .sort(byLargestOverageThenName);
   if (!worst) return null;

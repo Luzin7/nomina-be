@@ -56,6 +56,7 @@ function makeStatus(projection: MonthProjection | null): BudgetStatusResponse {
     allocationState: 'balanced',
     totalSpent: 200_000,
     investRootCategoryId: null,
+    controlledCategoryIds: ['cat-1'],
     controlledSpendCents: 200_000,
     controlledPlanCents: 500_000,
     investSpendCents: 0,

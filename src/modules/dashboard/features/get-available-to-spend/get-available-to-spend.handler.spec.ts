@@ -136,6 +136,7 @@ const makeBudget = (
   allocationState: 'balanced',
   totalSpent: 500,
   investRootCategoryId: null,
+  controlledCategoryIds: [],
   controlledSpendCents: 500,
   controlledPlanCents: 1_500,
   investSpendCents: 0,
@@ -148,7 +149,18 @@ const makeBudget = (
 
 const declaredPlanOf = (budget: BudgetStatusResponse): ResolvedMonthPlan =>
   budget.exists && budget.totalTargetCents > 0
-    ? { source: 'declared', planTotalCents: budget.totalTargetCents }
+    ? {
+        source: 'declared',
+        planTotalCents: budget.totalTargetCents,
+        snapshot: {
+          id: 'snapshot-1',
+          workspaceId: REQUEST.workspaceId,
+          effectiveFrom: budget.effectiveFrom,
+          monthlyIncome: budget.monthlyIncomeCents,
+          mode: budget.mode,
+          allocations: [],
+        },
+      }
     : { source: 'nothing-observed', recurringDueCents: 0, spentCents: 0 };
 
 const makeBasis = (
@@ -990,6 +1002,7 @@ describe('GetAvailableToSpendService', () => {
     it('CATEGORY_BREACH', async () => {
       givenBudget(
         makeBudget({
+          controlledCategoryIds: ['cat-1', 'cat-9', 'cat-8'],
           allocations: [
             makeAllocation(),
             makeBreach('cat-9', 'Lazer', 300),
@@ -1012,6 +1025,7 @@ describe('GetAvailableToSpendService', () => {
       givenBudget(
         makeBudget({
           investRootCategoryId: 'cat-invest',
+          controlledCategoryIds: ['cat-7'],
           allocations: [
             makeBreach('cat-invest', 'Investimentos', 900),
             makeBreach('cat-7', 'Mercado', 200),
@@ -1027,11 +1041,35 @@ describe('GetAvailableToSpendService', () => {
       });
     });
 
+    it('keeps a controlled category at 120% in CATEGORY_BREACH', async () => {
+      givenBudget(
+        makeBudget({
+          investRootCategoryId: 'cat-invest',
+          controlledCategoryIds: ['cat-1'],
+          allocations: [
+            makeBreach('cat-1', 'Moradia', 200),
+            makeBreach('cat-aporte', 'Aporte', 900),
+          ],
+        }),
+      );
+
+      const response = await run();
+
+      expect(response.insight).toMatchObject({
+        code: 'CATEGORY_BREACH',
+        args: { categoryId: 'cat-1', categoryName: 'Moradia' },
+      });
+    });
+
     it('stays silent when only Investimentos breaches', async () => {
       givenBudget(
         makeBudget({
           investRootCategoryId: 'cat-invest',
-          allocations: [makeBreach('cat-invest', 'Investimentos', 900)],
+          controlledCategoryIds: ['cat-7'],
+          allocations: [
+            makeAllocation({ categoryId: 'cat-7', categoryName: 'Mercado' }),
+            makeBreach('cat-aporte', 'Aporte', 900),
+          ],
         }),
       );
 
@@ -1043,6 +1081,7 @@ describe('GetAvailableToSpendService', () => {
     it('CATEGORY_BREACH breaks ties with pt-BR collation', async () => {
       givenBudget(
         makeBudget({
+          controlledCategoryIds: ['cat-z', 'cat-a'],
           allocations: [
             makeBreach('cat-z', 'Zebra', 200),
             makeBreach('cat-a', 'Água', 200),
@@ -1223,6 +1262,7 @@ describe('GetAvailableToSpendService', () => {
         givenBudget(
           makeBudget({
             unallocatedIncomeCents: unallocated ? 800 : 0,
+            controlledCategoryIds: breach ? ['cat-9'] : [],
             allocations: breach ? [makeBreach('cat-9', 'Lazer', 300)] : [],
           }),
         );

@@ -1002,6 +1002,74 @@ describe('GetBudgetStatusService', () => {
     ).toBe(result.value.totalSpent);
   });
 
+  it('counts unallocated spend under Investimentos as invest spend', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 10_000,
+      'cat-aporte': 30_000,
+      'cat-compras': 5_000,
+    });
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({
+        'cat-aporte': expenseCategory('Aporte', INVESTMENTS_ROOT),
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.investSpendCents).toBe(30_000);
+    expect(result.value.unbudgetedSpendCents).toBe(5_000);
+    expect(result.value.unallocatedSpent).toBe(35_000);
+    expect(
+      result.value.controlledSpendCents +
+        result.value.investSpendCents +
+        result.value.unbudgetedSpendCents,
+    ).toBe(result.value.totalSpent);
+  });
+
+  it('keeps a child of Investimentos out of the controlled set', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: [
+          ...makeSnapshot().allocations,
+          {
+            id: 'allocation-3',
+            categoryId: 'cat-aporte',
+            categoryName: 'Aporte',
+            groupName: 'Investimentos',
+            groupOrder: 2,
+            categoryOrder: 0,
+            percentageOfIncome: 10,
+            targetCents: 10_000,
+          },
+        ],
+      }),
+    );
+    repository.findCategoryMap.mockResolvedValueOnce(
+      categoryMapOf({
+        'cat-aporte': expenseCategory('Aporte', INVESTMENTS_ROOT),
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledCategoryIds).toEqual(['cat-1', 'cat-2']);
+  });
+
   it('reports the declared income and the summed plan separately in fixed mode', async () => {
     repository.resolveSnapshot.mockResolvedValueOnce(
       makeSnapshot({
