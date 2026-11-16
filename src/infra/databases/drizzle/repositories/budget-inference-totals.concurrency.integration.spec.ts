@@ -1,4 +1,5 @@
 import { TransactionStatus, TransactionType } from '@constants/enums';
+import { REIMBURSEMENTS_CATEGORY_NAME } from '@constants/incomeCategories';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
@@ -196,7 +197,7 @@ describe('budget inference totals against a real postgres', () => {
 
   it('keeps reimbursements out of the income base', async () => {
     const salary = await insertCategory('Salário');
-    const reimbursements = await insertCategory('Reembolsos');
+    const reimbursements = await insertCategory(REIMBURSEMENTS_CATEGORY_NAME);
 
     await income(salary, 500_000);
     await income(reimbursements, 80_000);
@@ -220,7 +221,7 @@ describe('budget inference totals against a real postgres', () => {
 
   it('keeps recurring reimbursements out of the income base', async () => {
     const salary = await insertCategory('Salário');
-    const reimbursements = await insertCategory('Reembolsos');
+    const reimbursements = await insertCategory(REIMBURSEMENTS_CATEGORY_NAME);
 
     await income(salary, 500_000);
     await income(reimbursements, 80_000, await insertRecurring(reimbursements));

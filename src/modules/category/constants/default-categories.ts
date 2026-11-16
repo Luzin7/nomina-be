@@ -2,6 +2,7 @@ import { TransactionType } from '@constants/enums';
 import {
   FREELANCE_CATEGORY_NAME,
   INVESTMENTS_CATEGORY_NAME,
+  REIMBURSEMENTS_CATEGORY_NAME,
   SALARY_CATEGORY_NAME,
 } from '@constants/incomeCategories';
 import { Category } from '@modules/category/entities/Category';
@@ -99,7 +100,7 @@ export const DEFAULT_CATEGORIES: readonly DefaultCategoryNode[] = [
   { name: 'Outros Gastos', type: TransactionType.EXPENSE },
   { name: SALARY_CATEGORY_NAME, type: TransactionType.INCOME },
   { name: FREELANCE_CATEGORY_NAME, type: TransactionType.INCOME },
-  { name: 'Reembolsos', type: TransactionType.INCOME },
+  { name: REIMBURSEMENTS_CATEGORY_NAME, type: TransactionType.INCOME },
   { name: 'Outros', type: TransactionType.INCOME },
   {
     name: INVESTMENTS_CATEGORY_NAME,
