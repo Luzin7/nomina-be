@@ -390,6 +390,47 @@ describe('RecurringSuggestionRepositoryImplementation against a real postgres', 
     expect(suggestion.recurringId).toBe(recurringIds[0]);
   });
 
+  it('creates one rule for two concurrent accepts of two suggestions of the same bill', async () => {
+    const { workspaceId, accountId, categoryId } = await seedWorkspace();
+    const suggestionIds = [randomUUID(), randomUUID()];
+
+    await db.insert(schema.recurringSuggestions).values(
+      suggestionIds.map((id) => ({
+        id,
+        workspaceId,
+        categoryId,
+        accountId,
+        suggestedTitle: 'Aluguel',
+        amount: 150_000,
+        dayOfMonth: 5,
+        status: RecurringSuggestionStatus.PENDING,
+      })),
+    );
+
+    const rule = () =>
+      makeRecurring({
+        workspaceId,
+        accountId,
+        categoryId,
+        amount: 150_000n,
+        startDate: new Date('2026-12-05T03:00:00.000Z'),
+      });
+
+    const outcomes = await Promise.all(
+      suggestionIds.map((suggestionId) =>
+        repository.accept({ suggestionId, workspaceId, rule: rule() }),
+      ),
+    );
+
+    expect(
+      outcomes.filter((outcome) => outcome.kind === 'accepted'),
+    ).toHaveLength(1);
+    expect(
+      outcomes.filter((outcome) => outcome.kind === 'rule-exists'),
+    ).toHaveLength(1);
+    expect(await countRows(schema.recurringTransactions)).toBe(1);
+  });
+
   it('writes nothing when accepting from another workspace', async () => {
     const { workspaceId, accountId, categoryId } = await seedWorkspace();
     await seedBillTransactions(workspaceId, accountId, categoryId);

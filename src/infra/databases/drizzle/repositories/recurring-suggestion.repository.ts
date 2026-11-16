@@ -23,6 +23,7 @@ import {
   BillDetectionTransaction,
   DAY_TOLERANCE,
   DetectedBillSuggestion,
+  hasActiveMonthlyRuleForBill,
 } from '@modules/transaction/valueObjects/BillSuggestionDetection';
 import { isSimilarAmount } from '@modules/report/valueObjects/FixedBills';
 import { Injectable, Logger } from '@nestjs/common';
@@ -136,7 +137,20 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
   }
 
   async findActiveExpenseRules(workspaceId: string): Promise<ActiveBillRule[]> {
-    const rows = await this.drizzle.db
+    return this.loadActiveExpenseRules(this.drizzle.db, workspaceId);
+  }
+
+  private async loadActiveExpenseRules(
+    db: DrizzleService['db'],
+    workspaceId: string,
+    categoryId?: string,
+  ): Promise<ActiveBillRule[]> {
+    const categoryFilter =
+      categoryId === undefined
+        ? []
+        : [eq(schema.recurringTransactions.categoryId, categoryId)];
+
+    const rows = await db
       .select({
         categoryId: schema.recurringTransactions.categoryId,
         amount: schema.recurringTransactions.amount,
@@ -152,6 +166,7 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
           eq(schema.recurringTransactions.active, true),
           eq(schema.recurringTransactions.type, 'EXPENSE'),
           isNotNull(schema.recurringTransactions.categoryId),
+          ...categoryFilter,
         ),
       );
 
@@ -411,6 +426,25 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
       }
       if (suggestion.status === RecurringSuggestionStatus.DISMISSED) {
         return { kind: 'dismissed' };
+      }
+
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${workspaceId}), hashtext(${rule.categoryId}))`,
+      );
+
+      const activeRules = await this.loadActiveExpenseRules(
+        tx,
+        workspaceId,
+        rule.categoryId,
+      );
+
+      if (
+        hasActiveMonthlyRuleForBill(
+          { categoryId: rule.categoryId, amount: Number(rule.amount) },
+          activeRules,
+        )
+      ) {
+        return { kind: 'rule-exists' };
       }
 
       const [created] = await tx

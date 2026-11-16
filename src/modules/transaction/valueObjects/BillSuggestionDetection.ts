@@ -93,8 +93,8 @@ const occurrenceInMonth = (month: string, dayOfMonth: number): Date => {
 export type BillIdentity = { categoryId: string; amount: number };
 
 export const isSameMonthlyBill = (
-  rule: ActiveBillRule,
   bill: BillIdentity,
+  rule: ActiveBillRule,
 ): boolean =>
   rule.categoryId === bill.categoryId &&
   isSimilarAmount(rule.amount, bill.amount) &&
@@ -104,7 +104,7 @@ export const isSameMonthlyBill = (
 export const hasActiveMonthlyRuleForBill = (
   bill: BillIdentity,
   rules: ActiveBillRule[],
-): boolean => rules.some((rule) => isSameMonthlyBill(rule, bill));
+): boolean => rules.some((rule) => isSameMonthlyBill(bill, rule));
 
 const isCoveredByRule = (
   categoryId: string,
@@ -117,7 +117,7 @@ const isCoveredByRule = (
 
   return rules.some(
     (rule) =>
-      isSameMonthlyBill(rule, { categoryId, amount }) &&
+      isSameMonthlyBill({ categoryId, amount }, rule) &&
       rule.startDate.getTime() <= occurrence.getTime() &&
       (rule.endDate === null || rule.endDate.getTime() >= occurrence.getTime()),
   );

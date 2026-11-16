@@ -70,19 +70,21 @@ export class AcceptRecurringSuggestionService implements Service<
       return left(new RecurringSuggestionDismissedError());
     }
 
-    const activeRules =
-      await this.suggestionRepository.findActiveExpenseRules(workspaceId);
+    if (suggestion.status === RecurringSuggestionStatus.PENDING) {
+      const activeRules =
+        await this.suggestionRepository.findActiveExpenseRules(workspaceId);
 
-    if (
-      hasActiveMonthlyRuleForBill(
-        {
-          categoryId: suggestion.categoryId,
-          amount: Number(suggestion.amount),
-        },
-        activeRules,
-      )
-    ) {
-      return left(new RecurringRuleAlreadyExistsError());
+      if (
+        hasActiveMonthlyRuleForBill(
+          {
+            categoryId: suggestion.categoryId,
+            amount: Number(suggestion.amount),
+          },
+          activeRules,
+        )
+      ) {
+        return left(new RecurringRuleAlreadyExistsError());
+      }
     }
 
     const timezone = await this.timezoneService.execute(workspaceId);
@@ -115,6 +117,9 @@ export class AcceptRecurringSuggestionService implements Service<
     }
     if (outcome.kind === 'dismissed') {
       return left(new RecurringSuggestionDismissedError());
+    }
+    if (outcome.kind === 'rule-exists') {
+      return left(new RecurringRuleAlreadyExistsError());
     }
 
     if (outcome.kind === 'accepted') {
