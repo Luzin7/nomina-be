@@ -135,6 +135,12 @@ const makeBudget = (
   unallocatedIncomeCents: 0,
   allocationState: 'balanced',
   totalSpent: 500,
+  controlledSpendCents: 500,
+  controlledPlanCents: 1_500,
+  investSpendCents: 0,
+  investPlanCents: 0,
+  unbudgetedSpendCents: 0,
+  overPlanCents: 0,
   projection: makeSpendProjection(),
   ...overrides,
 });
@@ -420,8 +426,36 @@ describe('GetAvailableToSpendService', () => {
         spendableCents: null,
         perDayCents: null,
         state: 'no-budget',
+        controlledSpendCents: 0,
+        controlledPlanCents: 0,
+        investSpendCents: 0,
+        investPlanCents: 0,
+        unbudgetedSpendCents: 0,
+        overPlanCents: 0,
         insight: null,
       });
+    });
+
+    it('exposes the controlled, Investimentos and unbudgeted sides of the month', async () => {
+      givenBudget(
+        makeBudget({
+          controlledSpendCents: 436_648,
+          controlledPlanCents: 509_278,
+          investSpendCents: 30_000,
+          investPlanCents: 30_000,
+          unbudgetedSpendCents: 86_115,
+          overPlanCents: 0,
+        }),
+      );
+
+      const response = await run();
+
+      expect(response.controlledSpendCents).toBe(436_648);
+      expect(response.controlledPlanCents).toBe(509_278);
+      expect(response.investSpendCents).toBe(30_000);
+      expect(response.investPlanCents).toBe(30_000);
+      expect(response.unbudgetedSpendCents).toBe(86_115);
+      expect(response.overPlanCents).toBe(0);
     });
 
     it('does not add unallocated income to spendable', async () => {
@@ -831,7 +865,7 @@ describe('GetAvailableToSpendService', () => {
 
       expect([...cache.values.keys()]).toEqual([
         expect.stringMatching(
-          /^dashboard:available-to-spend:v5:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
+          /^dashboard:available-to-spend:v6:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
         ),
       ]);
     });

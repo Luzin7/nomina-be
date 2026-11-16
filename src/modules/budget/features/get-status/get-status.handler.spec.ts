@@ -73,6 +73,46 @@ function makeSnapshot(overrides: Partial<BudgetSnapshot> = {}): BudgetSnapshot {
   };
 }
 
+const INVESTMENTS_ROOT = '20dad8a4-4f14-473e-ae46-6886206e1c50';
+
+function planAllocationsOf(
+  housingCents: number,
+  leisureCents: number,
+): BudgetSnapshot['allocations'] {
+  return [
+    {
+      id: 'allocation-1',
+      categoryId: 'cat-1',
+      categoryName: 'Moradia',
+      groupName: 'Custos fixos',
+      groupOrder: 0,
+      categoryOrder: 0,
+      percentageOfIncome: 20,
+      targetCents: housingCents,
+    },
+    {
+      id: 'allocation-2',
+      categoryId: 'cat-2',
+      categoryName: 'Lazer',
+      groupName: 'Conforto',
+      groupOrder: 1,
+      categoryOrder: 0,
+      percentageOfIncome: 20,
+      targetCents: leisureCents,
+    },
+    {
+      id: 'allocation-3',
+      categoryId: INVESTMENTS_ROOT,
+      categoryName: 'Investimentos',
+      groupName: 'Investimentos',
+      groupOrder: 2,
+      categoryOrder: 0,
+      percentageOfIncome: 10,
+      targetCents: 30_000,
+    },
+  ];
+}
+
 function makeSummary(): MonthSummary {
   return MonthSummary.create({
     month: NOVEMBER_START,
@@ -275,6 +315,12 @@ describe('GetBudgetStatusService', () => {
       unallocatedIncomeCents: 0,
       allocationState: 'balanced',
       totalSpent: 0,
+      controlledSpendCents: 0,
+      controlledPlanCents: 100_000,
+      investSpendCents: 0,
+      investPlanCents: 0,
+      unbudgetedSpendCents: 0,
+      overPlanCents: 0,
       projection: {
         expectedIncome: 1000,
         expectedExpense: 600,
@@ -465,6 +511,155 @@ describe('GetBudgetStatusService', () => {
         percentage: 40,
       },
     ]);
+  });
+
+  it('ignores Investimentos over plan while every controlled root is under', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(250_000, 250_000),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 240_000,
+      'cat-2': 240_000,
+      'cat-aporte': 80_000,
+    });
+    repository.findCategoryParentMap.mockResolvedValueOnce({
+      'cat-1': null,
+      'cat-2': null,
+      'cat-aporte': INVESTMENTS_ROOT,
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledPlanCents).toBe(500_000);
+    expect(result.value.controlledSpendCents).toBe(480_000);
+    expect(result.value.investPlanCents).toBe(30_000);
+    expect(result.value.investSpendCents).toBe(80_000);
+    expect(result.value.unbudgetedSpendCents).toBe(0);
+    expect(result.value.overPlanCents).toBe(0);
+  });
+
+  it('charges the overage of an allocated root even when unbudgeted spend exists', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(300_000, 209_278),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 300_000,
+      'cat-2': 222_763,
+      [INVESTMENTS_ROOT]: 30_000,
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledPlanCents).toBe(509_278);
+    expect(result.value.controlledSpendCents).toBe(522_763);
+    expect(result.value.investSpendCents).toBe(30_000);
+    expect(result.value.unbudgetedSpendCents).toBe(0);
+    expect(result.value.overPlanCents).toBe(13_485);
+    expect(result.value.totalSpent).toBe(552_763);
+  });
+
+  it('keeps spend outside the plan out of the overage', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(300_000, 209_278),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 250_000,
+      'cat-2': 186_648,
+      [INVESTMENTS_ROOT]: 30_000,
+      'cat-compras': 70_033,
+      'cat-servicos': 10_175,
+      'cat-outros': 5_907,
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledSpendCents).toBe(436_648);
+    expect(result.value.unbudgetedSpendCents).toBe(86_115);
+    expect(result.value.investSpendCents).toBe(30_000);
+    expect(result.value.overPlanCents).toBe(0);
+    expect(result.value.totalSpent).toBe(552_763);
+  });
+
+  it('reports the overage of a controlled root above its line', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(60_000, 40_000),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-aluguel': 65_000,
+      'cat-2': 40_000,
+      [INVESTMENTS_ROOT]: 30_000,
+    });
+    repository.findCategoryParentMap.mockResolvedValueOnce({
+      'cat-1': null,
+      'cat-aluguel': 'cat-1',
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.controlledSpendCents).toBe(105_000);
+    expect(result.value.controlledPlanCents).toBe(100_000);
+    expect(result.value.overPlanCents).toBe(5_000);
+  });
+
+  it('does not offset a controlled overage with the Investimentos leftover', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        allocations: planAllocationsOf(60_000, 40_000),
+      }),
+    );
+    repository.findCompletedExpenseByCategory.mockResolvedValueOnce({
+      'cat-1': 60_000,
+      'cat-2': 45_000,
+    });
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight() || !result.value.exists) return;
+    expect(result.value.investSpendCents).toBe(0);
+    expect(result.value.investPlanCents).toBe(30_000);
+    expect(result.value.overPlanCents).toBe(5_000);
   });
 
   it('rolls a child transaction up to its allocated parent', async () => {

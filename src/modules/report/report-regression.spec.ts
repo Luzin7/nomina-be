@@ -173,6 +173,12 @@ const BUDGET_STATUS_GOLDEN = {
   unallocatedIncomeCents: 0,
   allocationState: 'balanced',
   totalSpent: 80000,
+  controlledSpendCents: 80000,
+  controlledPlanCents: 300000,
+  investSpendCents: 0,
+  investPlanCents: 0,
+  unbudgetedSpendCents: 0,
+  overPlanCents: 0,
   projection: { ...MONTH_SUMMARY_GOLDEN.projection },
 };
 
@@ -332,7 +338,7 @@ describe('report regression goldens', () => {
     );
   });
 
-  it('keeps the budget-status response unchanged', async () => {
+  it('pins the budget-status response with the plan sides', async () => {
     const service = new GetBudgetStatusService(
       {
         resolveSnapshot: jest.fn().mockResolvedValue(makeBudgetSnapshot()),

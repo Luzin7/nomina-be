@@ -6,6 +6,10 @@ import {
   type BudgetAllocationState,
 } from '@modules/budget/valueObjects/BudgetAllocationState';
 import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
+import {
+  splitBudgetPlanSides,
+  type BudgetPlanSides,
+} from '@modules/budget/valueObjects/BudgetPlanSides';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
@@ -46,7 +50,7 @@ export type BudgetStatusPillar = {
 
 export type BudgetStatusResponse =
   | { exists: false }
-  | {
+  | ({
       exists: true;
       mode: BudgetMode;
       monthlyIncomeCents: number | null;
@@ -59,7 +63,7 @@ export type BudgetStatusResponse =
       allocationState: BudgetAllocationState;
       totalSpent: number;
       projection: MonthProjection | null;
-    };
+    } & BudgetPlanSides);
 
 const sumPercentages = (
   current: number | null,
@@ -99,7 +103,7 @@ export class GetBudgetStatusService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'budget:status',
-        version: 'v2',
+        version: 'v3',
         workspaceId,
         generations: { ledger, category },
         parts: [`${year}-${month}`, localDay],
@@ -192,6 +196,11 @@ export class GetBudgetStatusService implements Service<
       (total, value) => total + value,
       0,
     );
+    const planSides = splitBudgetPlanSides(
+      snapshot.allocations,
+      expensesByCategory,
+      categoryParentMap,
+    );
 
     return right({
       exists: true,
@@ -202,6 +211,7 @@ export class GetBudgetStatusService implements Service<
       pillars: [...pillars.values()],
       unallocatedSpent,
       totalTargetCents,
+      ...planSides,
       unallocatedIncomeCents:
         snapshot.monthlyIncome === null
           ? 0
