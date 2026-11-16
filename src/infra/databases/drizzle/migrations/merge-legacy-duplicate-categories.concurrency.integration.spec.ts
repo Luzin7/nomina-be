@@ -136,8 +136,6 @@ function path(name: string, parent: string | null): string {
   return parent ? `${parent}>${name}` : name;
 }
 
-// A migration test pins the schema and data of its own `when`: 0024 merged the
-// workspace tree seeded at 0018, not whatever the live constant says today.
 const TREE_AT_0024: readonly {
   name: string;
   type: 'EXPENSE' | 'INCOME';

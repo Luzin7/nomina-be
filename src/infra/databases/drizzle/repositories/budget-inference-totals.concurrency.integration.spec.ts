@@ -194,6 +194,30 @@ describe('budget inference totals against a real postgres', () => {
     ]);
   });
 
+  it('keeps reimbursements out of the income base', async () => {
+    const salary = await insertCategory('Salário');
+    const reimbursements = await insertCategory('Reembolsos');
+
+    await income(salary, 500_000);
+    await income(reimbursements, 80_000);
+    await insertTransaction({ amount: 80_000 });
+
+    const totals = await repository.findInferenceTotals({
+      workspaceId,
+      start: new Date('2026-01-01T00:00:00.000Z'),
+      end: new Date('2026-03-31T23:59:59.999Z'),
+      timezone: 'UTC',
+    });
+
+    expect(totals).toEqual([
+      {
+        month: '2026-02',
+        incomeCents: 500_000,
+        expenseByCategory: { [expenseCategoryId]: 80_000 },
+      },
+    ]);
+  });
+
   it('ignores income that is not completed', async () => {
     const salary = await insertCategory('Salário');
     await insertTransaction({
