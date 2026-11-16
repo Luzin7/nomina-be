@@ -40,6 +40,7 @@ export type AcceptSuggestionOutcome =
   | { kind: 'accepted'; recurringId: string }
   | { kind: 'already-accepted'; recurringId: string | null }
   | { kind: 'dismissed' }
+  | { kind: 'rule-exists' }
   | { kind: 'not-found' };
 
 export type DismissSuggestionInput = {
