@@ -3,6 +3,18 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.5.2](https://github.com/Luzin7/nomina-be/compare/v2.5.1...v2.5.2) (2026-11-16)
+
+### Bug Fixes
+
+* **budget:** classify breaches by the controlled set ([ca85323](https://github.com/Luzin7/nomina-be/commit/ca85323c847315ccc1ea2330e602177c53be97a5))
+* **budget:** report over plan only from controlled allocated roots ([c5b15aa](https://github.com/Luzin7/nomina-be/commit/c5b15aa83ff7038bbab3ef7d1cc8d61cdd92c576))
+* **budget:** treat savings as a floor and exclude unbudgeted categories from over plan ([46a54df](https://github.com/Luzin7/nomina-be/commit/46a54df7706959f5b40710ebd187014fab9c4dcb))
+
+### Performance Improvements
+
+* **report:** read the budget snapshot once ([5b07c26](https://github.com/Luzin7/nomina-be/commit/5b07c265d2793e12c1828fca49dd395036a4ec95))
+
 ## [2.5.1](https://github.com/Luzin7/nomina-be/compare/v2.5.0...v2.5.1) (2026-11-16)
 
 ### Bug Fixes
