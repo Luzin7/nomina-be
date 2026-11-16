@@ -62,6 +62,7 @@ function makeStatus(projection: MonthProjection | null): BudgetStatusResponse {
     investSpendCents: 0,
     investPlanCents: 0,
     unbudgetedSpendCents: 0,
+    unbudgetedCategories: [],
     overPlanCents: 0,
     projection,
   };
@@ -94,6 +95,28 @@ describe('BudgetPresenter', () => {
 
   it('keeps a null projection null', () => {
     expect(BudgetPresenter.toStatus(makeStatus(null)).projection).toBeNull();
+  });
+
+  it('carries the unbudgeted categories next to the unbudgeted spend', () => {
+    const base = makeStatus(null);
+    if (!base.exists) {
+      throw new Error('expected an active budget status');
+    }
+    const unbudgetedCategories = [
+      {
+        categoryId: 'cat-compras',
+        categoryName: 'Compras',
+        spendCents: 70_033,
+      },
+    ];
+
+    expect(
+      BudgetPresenter.toStatus({
+        ...base,
+        unbudgetedSpendCents: 70_033,
+        unbudgetedCategories,
+      }),
+    ).toMatchObject({ unbudgetedCategories, unbudgetedSpendCents: 70_033 });
   });
 
   it('exposes the declared income and the plan as separate fields', () => {

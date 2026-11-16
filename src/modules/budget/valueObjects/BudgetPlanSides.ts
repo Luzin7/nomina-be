@@ -17,6 +17,7 @@ export type PlanSidesInput = {
   allocations: ReadonlyArray<{ categoryId: string; targetCents: number }>;
   spentByAllocation: Record<string, number>;
   unallocatedSpendByCategory: Record<string, number>;
+  unbudgetedSpendCents: number;
   parentByCategory: Record<string, string | null>;
   investRootCategoryId: string | null;
 };
@@ -45,7 +46,7 @@ export const resolveInvestmentsRootId = (
       entry.parentId === null,
   )?.[0] ?? null;
 
-const totalsByRoot = (
+export const totalsByRoot = (
   amounts: ReadonlyArray<CategoryAmount>,
   parentByCategory: Record<string, string | null>,
 ): Record<string, number> => {
@@ -80,6 +81,7 @@ export function splitBudgetPlanSides({
   allocations,
   spentByAllocation,
   unallocatedSpendByCategory,
+  unbudgetedSpendCents,
   parentByCategory,
   investRootCategoryId,
 }: PlanSidesInput): BudgetPlanSides {
@@ -116,7 +118,7 @@ export function splitBudgetPlanSides({
       totalByRoot(spendByRoot, isInvest) +
       totalByRoot(unallocatedByRoot, isInvest),
     investPlanCents: totalByRoot(planByRoot, isInvest),
-    unbudgetedSpendCents: totalByRoot(unallocatedByRoot, isControlled),
+    unbudgetedSpendCents,
     overPlanCents: Math.max(0, controlledSpendCents - controlledPlanCents),
   };
 }
