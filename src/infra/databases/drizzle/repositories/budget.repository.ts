@@ -16,7 +16,9 @@ import {
   BudgetCategoryRef,
   BudgetRepository,
   BudgetSnapshot,
+  CategoryMapEntry,
   CompletedExpenseByLocalDayQuery,
+  CompletedExpenseOfCategoryDay,
   CompletedExpenseOfDay,
   InferenceMonthTotals,
   InferenceTotalsQuery,
@@ -227,12 +229,14 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
     return rows;
   }
 
-  async findCategoryParentMap(
+  async findCategoryMap(
     workspaceId: string,
-  ): Promise<Record<string, string | null>> {
+  ): Promise<Record<string, CategoryMapEntry>> {
     const rows = await this.drizzle.db
       .select({
         id: schema.categories.id,
+        name: schema.categories.name,
+        type: schema.categories.type,
         parentId: schema.categories.parentId,
       })
       .from(schema.categories)
@@ -243,7 +247,42 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         ),
       );
 
-    return Object.fromEntries(rows.map((row) => [row.id, row.parentId]));
+    return Object.fromEntries(
+      rows.map((row) => [
+        row.id,
+        {
+          name: row.name,
+          type: row.type as TransactionType,
+          parentId: row.parentId,
+        },
+      ]),
+    );
+  }
+
+  async findCompletedExpenseByCategoryDay({
+    workspaceId,
+    start,
+    end,
+    timezone,
+  }: CompletedExpenseByLocalDayQuery): Promise<
+    CompletedExpenseOfCategoryDay[]
+  > {
+    const localDay = localDayIn(
+      instantOf(schema.transactions.date),
+      sql`${timezone}`,
+    );
+    const dayOfMonth = sql<number>`EXTRACT(DAY FROM ${localDay})::int`;
+
+    return this.drizzle.db
+      .select({
+        day: dayOfMonth,
+        categoryId: schema.transactions.categoryId,
+        totalCents: sum(schema.transactions.amount).mapWith(Number),
+      })
+      .from(schema.transactions)
+      .where(this.completedExpenseInRange(workspaceId, start, end))
+      .groupBy(sql`1`, schema.transactions.categoryId)
+      .orderBy(sql`1`);
   }
 
   async saveSnapshot(

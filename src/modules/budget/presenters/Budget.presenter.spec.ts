@@ -55,6 +55,13 @@ function makeStatus(projection: MonthProjection | null): BudgetStatusResponse {
     unallocatedIncomeCents: 0,
     allocationState: 'balanced',
     totalSpent: 200_000,
+    investRootCategoryId: null,
+    controlledSpendCents: 200_000,
+    controlledPlanCents: 500_000,
+    investSpendCents: 0,
+    investPlanCents: 0,
+    unbudgetedSpendCents: 0,
+    overPlanCents: 0,
     projection,
   };
 }

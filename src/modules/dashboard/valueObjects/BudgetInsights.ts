@@ -17,14 +17,14 @@ const byLargestOverageThenName = (
   a.categoryName.localeCompare(b.categoryName, PT_BR);
 
 export function overBudgetInsight(
-  spendableCents: number | null,
+  overPlanCents: number | null,
 ): AvailableToSpendInsight | null {
-  if (spendableCents === null || spendableCents >= 0) return null;
+  if (overPlanCents === null || overPlanCents <= 0) return null;
 
   return {
     code: 'OVER_BUDGET',
     severity: 'high',
-    args: { amount: Math.abs(spendableCents) },
+    args: { amount: overPlanCents },
     href: '/budget',
   };
 }
@@ -35,7 +35,11 @@ export function categoryBreachInsight(
   if (!budget.exists) return null;
 
   const [worst] = budget.allocations
-    .filter((allocation) => allocation.percentageUsed > 100)
+    .filter(
+      (allocation) =>
+        allocation.percentageUsed > 100 &&
+        allocation.categoryId !== budget.investRootCategoryId,
+    )
     .sort(byLargestOverageThenName);
   if (!worst) return null;
 

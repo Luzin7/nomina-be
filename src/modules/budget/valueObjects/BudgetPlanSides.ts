@@ -1,34 +1,55 @@
-import { INVESTMENTS_ROOT_CATEGORY_ID } from '@constants/budgetCategory';
+import { INVESTMENTS_CATEGORY_NAME } from '@constants/incomeCategories';
+import { TransactionType } from '@constants/enums';
+import type { CategoryMapEntry } from '@modules/budget/repositories/contracts/BudgetRepository';
 
-export type BudgetPlanSides = {
-  controlledSpendCents: number;
-  controlledPlanCents: number;
-  investSpendCents: number;
-  investPlanCents: number;
-  unbudgetedSpendCents: number;
-  overPlanCents: number;
+export const PLAN_SIDE_KEYS = [
+  'controlledSpendCents',
+  'controlledPlanCents',
+  'investSpendCents',
+  'investPlanCents',
+  'unbudgetedSpendCents',
+  'overPlanCents',
+] as const;
+
+export type BudgetPlanSides = Record<(typeof PLAN_SIDE_KEYS)[number], number>;
+
+export type PlanSidesInput = {
+  allocations: ReadonlyArray<{ categoryId: string; targetCents: number }>;
+  spentByAllocation: Record<string, number>;
+  unallocatedSpent: number;
+  parentByCategory: Record<string, string | null>;
+  investRootCategoryId: string | null;
 };
 
-type CategoryAmount = {
-  categoryId: string;
-  cents: number;
-};
+type CategoryAmount = { categoryId: string; cents: number };
 
-type RootTotals = Record<string, number>;
-
-const rootOf = (
+export const rootOf = (
   categoryId: string,
   parentByCategory: Record<string, string | null>,
 ): string => parentByCategory[categoryId] ?? categoryId;
 
-const isInvestments = (rootId: string): boolean =>
-  rootId === INVESTMENTS_ROOT_CATEGORY_ID;
+export const parentMapOf = (
+  categoryMap: Record<string, CategoryMapEntry>,
+): Record<string, string | null> =>
+  Object.fromEntries(
+    Object.entries(categoryMap).map(([id, entry]) => [id, entry.parentId]),
+  );
 
-const sumByRoot = (
+export const resolveInvestmentsRootId = (
+  categoryMap: Record<string, CategoryMapEntry>,
+): string | null =>
+  Object.entries(categoryMap).find(
+    ([, entry]) =>
+      entry.name === INVESTMENTS_CATEGORY_NAME &&
+      entry.type === TransactionType.EXPENSE &&
+      entry.parentId === null,
+  )?.[0] ?? null;
+
+const totalsByRoot = (
   amounts: ReadonlyArray<CategoryAmount>,
   parentByCategory: Record<string, string | null>,
-): RootTotals => {
-  const totals: RootTotals = {};
+): Record<string, number> => {
+  const totals: Record<string, number> = {};
 
   for (const { categoryId, cents } of amounts) {
     const rootId = rootOf(categoryId, parentByCategory);
@@ -39,7 +60,7 @@ const sumByRoot = (
 };
 
 const totalByRoot = (
-  totals: RootTotals,
+  totals: Record<string, number>,
   keep: (rootId: string) => boolean,
 ): number =>
   Object.entries(totals).reduce(
@@ -47,57 +68,71 @@ const totalByRoot = (
     0,
   );
 
-export function zeroPlanSides(): BudgetPlanSides {
-  return {
-    controlledSpendCents: 0,
-    controlledPlanCents: 0,
-    investSpendCents: 0,
-    investPlanCents: 0,
-    unbudgetedSpendCents: 0,
-    overPlanCents: 0,
-  };
-}
+export const zeroPlanSides = (): BudgetPlanSides =>
+  Object.fromEntries(PLAN_SIDE_KEYS.map((key) => [key, 0])) as BudgetPlanSides;
 
-export function splitBudgetPlanSides(
-  allocations: ReadonlyArray<{ categoryId: string; targetCents: number }>,
-  expensesByCategory: Record<string, number>,
-  parentByCategory: Record<string, string | null>,
-): BudgetPlanSides {
-  const allocatedRoots = new Set(
-    allocations.map(({ categoryId }) => rootOf(categoryId, parentByCategory)),
-  );
-  const planByRoot = sumByRoot(
+export const pickPlanSides = (source: BudgetPlanSides): BudgetPlanSides =>
+  Object.fromEntries(
+    PLAN_SIDE_KEYS.map((key) => [key, source[key]]),
+  ) as BudgetPlanSides;
+
+export function splitBudgetPlanSides({
+  allocations,
+  spentByAllocation,
+  unallocatedSpent,
+  parentByCategory,
+  investRootCategoryId,
+}: PlanSidesInput): BudgetPlanSides {
+  const isInvest = (rootId: string): boolean => rootId === investRootCategoryId;
+  const isControlled = (rootId: string): boolean => !isInvest(rootId);
+  const planByRoot = totalsByRoot(
     allocations.map(({ categoryId, targetCents }) => ({
       categoryId,
       cents: targetCents,
     })),
     parentByCategory,
   );
-  const spendByRoot = sumByRoot(
-    Object.entries(expensesByCategory).map(([categoryId, cents]) => ({
+  const spendByRoot = totalsByRoot(
+    Object.entries(spentByAllocation).map(([categoryId, cents]) => ({
       categoryId,
       cents,
     })),
     parentByCategory,
   );
-  const controlledSpendCents = totalByRoot(
-    spendByRoot,
-    (rootId) => allocatedRoots.has(rootId) && !isInvestments(rootId),
-  );
-  const controlledPlanCents = totalByRoot(
-    planByRoot,
-    (rootId) => allocatedRoots.has(rootId) && !isInvestments(rootId),
-  );
+  const controlledSpendCents = totalByRoot(spendByRoot, isControlled);
+  const controlledPlanCents = totalByRoot(planByRoot, isControlled);
 
   return {
     controlledSpendCents,
     controlledPlanCents,
-    investSpendCents: totalByRoot(spendByRoot, isInvestments),
-    investPlanCents: totalByRoot(planByRoot, isInvestments),
-    unbudgetedSpendCents: totalByRoot(
-      spendByRoot,
-      (rootId) => !allocatedRoots.has(rootId) && !isInvestments(rootId),
-    ),
+    investSpendCents: totalByRoot(spendByRoot, isInvest),
+    investPlanCents: totalByRoot(planByRoot, isInvest),
+    unbudgetedSpendCents: unallocatedSpent,
     overPlanCents: Math.max(0, controlledSpendCents - controlledPlanCents),
   };
 }
+
+export const controlledCategoryIdsOf = (
+  allocations: ReadonlyArray<{ categoryId: string }>,
+  parentByCategory: Record<string, string | null>,
+  investRootCategoryId: string | null,
+): Set<string> =>
+  new Set(
+    allocations
+      .filter(
+        ({ categoryId }) =>
+          rootOf(categoryId, parentByCategory) !== investRootCategoryId,
+      )
+      .map(({ categoryId }) => categoryId),
+  );
+
+export const controlledRootIdsOf = (
+  allocations: ReadonlyArray<{ categoryId: string }>,
+  parentByCategory: Record<string, string | null>,
+  investRootCategoryId: string | null,
+): Set<string> =>
+  new Set(
+    allocations
+      .map(({ categoryId }) => rootOf(categoryId, parentByCategory))
+      .filter((rootId) => rootId !== investRootCategoryId),
+  );

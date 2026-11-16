@@ -206,13 +206,14 @@ export class GetAvailableToSpendService implements Service<
     workspaceId,
     sub,
     budget,
-    figure,
     today,
   }: InsightContext): InsightSource[] {
     return [
       {
         code: 'OVER_BUDGET',
-        resolve: sync(() => overBudgetInsight(figure.spendableCents)),
+        resolve: sync(() =>
+          overBudgetInsight(budget.exists ? budget.overPlanCents : null),
+        ),
       },
       {
         code: 'CARD_BILL_DUE',

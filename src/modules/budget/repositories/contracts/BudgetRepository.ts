@@ -1,4 +1,4 @@
-import { type BudgetMode } from '@constants/enums';
+import { type BudgetMode, type TransactionType } from '@constants/enums';
 import type { SuggestionCategory } from '@modules/budget/valueObjects/SplitSuggestion';
 import type {
   GroupKey,
@@ -77,6 +77,18 @@ export type CompletedExpenseByLocalDayQuery = {
 
 export type CompletedExpenseOfDay = { day: number; totalCents: number };
 
+export type CategoryMapEntry = {
+  name: string;
+  type: TransactionType;
+  parentId: string | null;
+};
+
+export type CompletedExpenseOfCategoryDay = {
+  day: number;
+  categoryId: string;
+  totalCents: number;
+};
+
 export type InferenceTotalsQuery = {
   workspaceId: string;
   start: Date;
@@ -146,9 +158,13 @@ export abstract class BudgetRepository {
     query: CompletedExpenseByLocalDayQuery,
   ): Promise<CompletedExpenseOfDay[]>;
 
-  abstract findCategoryParentMap(
+  abstract findCategoryMap(
     workspaceId: string,
-  ): Promise<Record<string, string | null>>;
+  ): Promise<Record<string, CategoryMapEntry>>;
+
+  abstract findCompletedExpenseByCategoryDay(
+    query: CompletedExpenseByLocalDayQuery,
+  ): Promise<CompletedExpenseOfCategoryDay[]>;
 
   abstract saveSnapshot(
     input: SaveBudgetSnapshotInput,

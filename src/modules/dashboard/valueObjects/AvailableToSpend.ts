@@ -1,5 +1,6 @@
 import type { BudgetStatusResponse } from '@modules/budget/features/get-status/get-status.handler';
 import {
+  pickPlanSides,
   zeroPlanSides,
   type BudgetPlanSides,
 } from '@modules/budget/valueObjects/BudgetPlanSides';
@@ -90,18 +91,8 @@ export type SpendableFigure = Pick<
 const stateOf = (spendableCents: number): AvailableToSpendState =>
   spendableCents < 0 ? 'over-budget' : 'within-budget';
 
-export const planSidesOf = (budget: BudgetStatusResponse): BudgetPlanSides => {
-  if (!budget.exists) return zeroPlanSides();
-
-  return {
-    controlledSpendCents: budget.controlledSpendCents,
-    controlledPlanCents: budget.controlledPlanCents,
-    investSpendCents: budget.investSpendCents,
-    investPlanCents: budget.investPlanCents,
-    unbudgetedSpendCents: budget.unbudgetedSpendCents,
-    overPlanCents: budget.overPlanCents,
-  };
-};
+export const planSidesOf = (budget: BudgetStatusResponse): BudgetPlanSides =>
+  budget.exists ? pickPlanSides(budget) : zeroPlanSides();
 
 const perDayOf = (spendableCents: number, daysRemaining: number): number =>
   Math.floor(spendableCents / Math.max(daysRemaining, 1));

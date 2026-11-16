@@ -1,4 +1,5 @@
-import { RecurrenceFrequency } from '@constants/enums';
+import { RecurrenceFrequency, TransactionType } from '@constants/enums';
+import { INVESTMENTS_CATEGORY_NAME } from '@constants/incomeCategories';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
   ResolveBudgetSuggestionService,
@@ -30,11 +31,36 @@ function makeSnapshot(totalTargetCents: number) {
     monthlyIncome: 1_000_000,
     mode: 'fixed',
     allocations: [
-      { targetCents: totalTargetCents - 100 },
-      { targetCents: 100 },
+      {
+        id: 'allocation-1',
+        categoryId: 'cat-1',
+        categoryName: 'Moradia',
+        targetCents: totalTargetCents - 100,
+      },
+      {
+        id: 'allocation-2',
+        categoryId: 'cat-2',
+        categoryName: 'Lazer',
+        targetCents: 100,
+      },
     ],
   };
 }
+
+const allocationOf = (
+  categoryId: string,
+  categoryName: string,
+  targetCents: number,
+) => ({
+  id: `allocation-${categoryId}`,
+  categoryId,
+  categoryName,
+  groupName: 'Plano',
+  groupOrder: 0,
+  categoryOrder: 0,
+  percentageOfIncome: 0,
+  targetCents,
+});
 
 const NO_SUGGESTION: BudgetSuggestion = {
   month: '2026-11',
@@ -74,6 +100,8 @@ describe('GetMonthPaceService', () => {
     budgetRepository = {
       resolveSnapshot: jest.fn().mockResolvedValue(makeSnapshot(876_000)),
       findCompletedExpenseByLocalDay: jest.fn().mockResolvedValue([]),
+      findCategoryMap: jest.fn().mockResolvedValue({}),
+      findCompletedExpenseByCategoryDay: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<BudgetRepository>;
     monthProjectionRepository = {
       findActiveRecurringRules: jest.fn().mockResolvedValue([]),
@@ -282,7 +310,9 @@ describe('GetMonthPaceService', () => {
     await run();
     await run();
 
-    expect(budgetRepository.resolveSnapshot).toHaveBeenCalledTimes(1);
+    expect(
+      budgetRepository.findCompletedExpenseByCategoryDay,
+    ).toHaveBeenCalledTimes(1);
     expect([...cache.ttls.values()]).toEqual([LEDGER_LIVE_CACHE_TTL_SECONDS]);
   });
 
@@ -291,7 +321,7 @@ describe('GetMonthPaceService', () => {
 
     expect([...cache.values.keys()]).toEqual([
       expect.stringMatching(
-        /^report:month-pace:v5:ws-1:g\d+:c\d+:2026-11:2026-11-15$/,
+        /^report:month-pace:v6:ws-1:g\d+:c\d+:2026-11:2026-11-15$/,
       ),
     ]);
   });
@@ -312,7 +342,9 @@ describe('GetMonthPaceService', () => {
     await cache.incrementCounter('cache-gen:category:ws-1', Date.now());
     await run();
 
-    expect(budgetRepository.resolveSnapshot).toHaveBeenCalledTimes(2);
+    expect(
+      budgetRepository.findCompletedExpenseByCategoryDay,
+    ).toHaveBeenCalledTimes(2);
   });
 
   it('recomputes after the ledger generation moves', async () => {
@@ -320,6 +352,71 @@ describe('GetMonthPaceService', () => {
     await cache.incrementCounter('cache-gen:report:ws-1', Date.now());
     await run();
 
-    expect(budgetRepository.resolveSnapshot).toHaveBeenCalledTimes(2);
+    expect(
+      budgetRepository.findCompletedExpenseByCategoryDay,
+    ).toHaveBeenCalledTimes(2);
+  });
+
+  it('carries the controlled curve without the Investimentos spend', async () => {
+    const investRoot = 'invest-root';
+    budgetRepository.resolveSnapshot.mockResolvedValue({
+      id: 'snapshot-1',
+      workspaceId: WORKSPACE_ID,
+      effectiveFrom: new Date('2026-11-01T03:00:00.000Z'),
+      monthlyIncome: 1_000_000,
+      mode: 'fixed',
+      allocations: [
+        allocationOf('cat-1', 'Moradia', 60_000),
+        allocationOf('cat-2', 'Lazer', 40_000),
+        allocationOf(investRoot, 'Investimentos', 10_000),
+      ],
+    });
+    budgetRepository.findCategoryMap.mockResolvedValue({
+      'cat-1': {
+        name: 'Moradia',
+        type: TransactionType.EXPENSE,
+        parentId: null,
+      },
+      'cat-2': { name: 'Lazer', type: TransactionType.EXPENSE, parentId: null },
+      'cat-aporte': {
+        name: 'Aporte',
+        type: TransactionType.EXPENSE,
+        parentId: investRoot,
+      },
+      [investRoot]: {
+        name: INVESTMENTS_CATEGORY_NAME,
+        type: TransactionType.EXPENSE,
+        parentId: null,
+      },
+    });
+    budgetRepository.findCompletedExpenseByCategoryDay.mockResolvedValue([
+      { day: 3, categoryId: 'cat-1', totalCents: 2_000 },
+      { day: 3, categoryId: 'cat-aporte', totalCents: 5_000 },
+    ]);
+    budgetRepository.findCompletedExpenseByLocalDay.mockResolvedValue([
+      { day: 3, totalCents: 7_000 },
+    ]);
+
+    const pace = await run();
+
+    expect(pace.controlledPlanTotalCents).toBe(100_000);
+    expect(pace.days[2].controlledSpentCents).toBe(2_000);
+    expect(pace.days[2].spentCents).toBe(7_000);
+    expect(pace.days[29].controlledPlanCents).toBe(100_000);
+    expect(pace.days[29].planCents).toBe(110_000);
+  });
+
+  it('nulls the controlled curve when the plan is not declared', async () => {
+    budgetRepository.resolveSnapshot.mockResolvedValue(null);
+
+    const pace = await run();
+
+    expect(pace.controlledPlanTotalCents).toBeNull();
+    expect(pace.days.every((day) => day.controlledSpentCents === null)).toBe(
+      true,
+    );
+    expect(pace.days.every((day) => day.controlledPlanCents === null)).toBe(
+      true,
+    );
   });
 });

@@ -135,6 +135,7 @@ const makeBudget = (
   unallocatedIncomeCents: 0,
   allocationState: 'balanced',
   totalSpent: 500,
+  investRootCategoryId: null,
   controlledSpendCents: 500,
   controlledPlanCents: 1_500,
   investSpendCents: 0,
@@ -523,7 +524,7 @@ describe('GetAvailableToSpendService', () => {
               : null,
           ),
           findCompletedExpenseByCategory: jest.fn().mockResolvedValue({}),
-          findCategoryParentMap: jest.fn().mockResolvedValue({}),
+          findCategoryMap: jest.fn().mockResolvedValue({}),
         } as unknown as BudgetRepository;
         const dateProvider = new DayJsDateProvider();
         jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
@@ -645,7 +646,7 @@ describe('GetAvailableToSpendService', () => {
         perDayCents: null,
         state: 'over-budget',
       });
-      expect(response.insight?.code).toBe('OVER_BUDGET');
+      expect(response.insight).toBeNull();
     });
 
     it('caches a fallback built on a failed suggestion for 60 seconds', async () => {
@@ -727,8 +728,8 @@ describe('GetAvailableToSpendService', () => {
         spendableCents: -2_000,
         perDayCents: null,
         state: 'over-budget',
-        insight: { code: 'OVER_BUDGET' },
       });
+      expect(response.insight).toBeNull();
     });
 
     it('keeps no-budget with the recurring due and spent when nothing was observed', async () => {
@@ -883,6 +884,7 @@ describe('GetAvailableToSpendService', () => {
         makeBudget({
           totalTargetCents: 1_000,
           totalSpent: 700,
+          overPlanCents: 213,
           allocations: [],
         }),
       );
@@ -897,6 +899,24 @@ describe('GetAvailableToSpendService', () => {
         args: { amount: 213 },
         href: '/budget',
       });
+    });
+
+    it('stays silent while spendable is negative but no controlled plan is over', async () => {
+      givenBudget(
+        makeBudget({
+          totalTargetCents: 1_000,
+          totalSpent: 700,
+          overPlanCents: 0,
+          allocations: [],
+        }),
+      );
+      givenProjection(313);
+      goalRepository.sumMonthlyAporteCents.mockResolvedValue(200);
+
+      const response = await run();
+
+      expect(response.spendableCents).toBe(-213);
+      expect(response.insight).toBeNull();
     });
 
     it('CARD_BILL_DUE', async () => {
@@ -986,6 +1006,38 @@ describe('GetAvailableToSpendService', () => {
         args: { categoryId: 'cat-9', categoryName: 'Lazer', amount: 300 },
         href: '/budget?category=cat-9',
       });
+    });
+
+    it('never names Investimentos in CATEGORY_BREACH', async () => {
+      givenBudget(
+        makeBudget({
+          investRootCategoryId: 'cat-invest',
+          allocations: [
+            makeBreach('cat-invest', 'Investimentos', 900),
+            makeBreach('cat-7', 'Mercado', 200),
+          ],
+        }),
+      );
+
+      const response = await run();
+
+      expect(response.insight).toMatchObject({
+        code: 'CATEGORY_BREACH',
+        args: { categoryId: 'cat-7' },
+      });
+    });
+
+    it('stays silent when only Investimentos breaches', async () => {
+      givenBudget(
+        makeBudget({
+          investRootCategoryId: 'cat-invest',
+          allocations: [makeBreach('cat-invest', 'Investimentos', 900)],
+        }),
+      );
+
+      const response = await run();
+
+      expect(response.insight).toBeNull();
     });
 
     it('CATEGORY_BREACH breaks ties with pt-BR collation', async () => {
@@ -1143,6 +1195,7 @@ describe('GetAvailableToSpendService', () => {
         makeBudget({
           totalTargetCents: 1_000,
           totalSpent: 1_200,
+          overPlanCents: 200,
           unallocatedIncomeCents: 800,
           allocations: [makeBreach('cat-9', 'Lazer', 300)],
         }),

@@ -7,6 +7,8 @@ import {
 } from '@modules/budget/valueObjects/BudgetAllocationState';
 import { attributeSpendToAllocations } from '@modules/budget/valueObjects/BudgetSpendAttribution';
 import {
+  parentMapOf,
+  resolveInvestmentsRootId,
   splitBudgetPlanSides,
   type BudgetPlanSides,
 } from '@modules/budget/valueObjects/BudgetPlanSides';
@@ -62,6 +64,7 @@ export type BudgetStatusResponse =
       unallocatedIncomeCents: number;
       allocationState: BudgetAllocationState;
       totalSpent: number;
+      investRootCategoryId: string | null;
       projection: MonthProjection | null;
     } & BudgetPlanSides);
 
@@ -133,13 +136,13 @@ export class GetBudgetStatusService implements Service<
     );
     if (!snapshot) return right({ exists: false });
 
-    const [expensesByCategory, categoryParentMap, summary] = await Promise.all([
+    const [expensesByCategory, categoryMap, summary] = await Promise.all([
       this.budgetRepository.findCompletedExpenseByCategory(
         workspaceId,
         monthStart,
         monthEnd,
       ),
-      this.budgetRepository.findCategoryParentMap(workspaceId),
+      this.budgetRepository.findCategoryMap(workspaceId),
       isCurrentMonth
         ? this.findMonthSummary.execute({ workspaceId, sub: request.sub })
         : Promise.resolve(null),
@@ -147,6 +150,8 @@ export class GetBudgetStatusService implements Service<
 
     if (summary?.isLeft()) return left(summary.value);
 
+    const parentByCategory = parentMapOf(categoryMap);
+    const investRootCategoryId = resolveInvestmentsRootId(categoryMap);
     const visibleAllocations = snapshot.allocations.filter(
       (allocation) => allocation.categoryName !== null,
     );
@@ -156,7 +161,7 @@ export class GetBudgetStatusService implements Service<
     );
     const { spentByAllocation, unallocatedSpent } = attributeSpendToAllocations(
       expensesByCategory,
-      categoryParentMap,
+      parentByCategory,
       new Set(visibleAllocations.map((allocation) => allocation.categoryId)),
     );
     const pillars = new Map<string, BudgetStatusPillar>();
@@ -196,11 +201,13 @@ export class GetBudgetStatusService implements Service<
       (total, value) => total + value,
       0,
     );
-    const planSides = splitBudgetPlanSides(
-      snapshot.allocations,
-      expensesByCategory,
-      categoryParentMap,
-    );
+    const planSides = splitBudgetPlanSides({
+      allocations: visibleAllocations,
+      spentByAllocation,
+      unallocatedSpent,
+      parentByCategory,
+      investRootCategoryId,
+    });
 
     return right({
       exists: true,
@@ -211,6 +218,7 @@ export class GetBudgetStatusService implements Service<
       pillars: [...pillars.values()],
       unallocatedSpent,
       totalTargetCents,
+      investRootCategoryId,
       ...planSides,
       unallocatedIncomeCents:
         snapshot.monthlyIncome === null

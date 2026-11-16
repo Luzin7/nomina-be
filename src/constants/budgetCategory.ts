@@ -1,2 +1,0 @@
-export const INVESTMENTS_ROOT_CATEGORY_ID =
-  '20dad8a4-4f14-473e-ae46-6886206e1c50';

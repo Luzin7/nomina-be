@@ -1,5 +1,6 @@
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { AccountType, RecurrenceFrequency } from '@constants/enums';
+import { INVESTMENTS_CATEGORY_NAME } from '@constants/incomeCategories';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { GetBudgetStatusService } from '@modules/budget/features/get-status/get-status.handler';
@@ -173,6 +174,7 @@ const BUDGET_STATUS_GOLDEN = {
   unallocatedIncomeCents: 0,
   allocationState: 'balanced',
   totalSpent: 80000,
+  investRootCategoryId: 'cat-invest',
   controlledSpendCents: 80000,
   controlledPlanCents: 300000,
   investSpendCents: 0,
@@ -346,7 +348,15 @@ describe('report regression goldens', () => {
           'cat-1': 50000,
           'cat-2': 30000,
         }),
-        findCategoryParentMap: jest.fn().mockResolvedValue({}),
+        findCategoryMap: jest.fn().mockResolvedValue({
+          'cat-1': { name: 'Moradia', type: 'EXPENSE', parentId: null },
+          'cat-2': { name: 'Lazer', type: 'EXPENSE', parentId: null },
+          'cat-invest': {
+            name: INVESTMENTS_CATEGORY_NAME,
+            type: 'EXPENSE',
+            parentId: null,
+          },
+        }),
       } as never,
       {
         execute: jest.fn().mockResolvedValue(
