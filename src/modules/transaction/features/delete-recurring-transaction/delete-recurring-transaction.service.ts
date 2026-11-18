@@ -1,8 +1,11 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { AccountNotFoundError } from '@modules/account/errors';
+import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { RecurringTransactionNotFoundError } from '@modules/transaction/errors';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -20,6 +23,8 @@ export class DeleteRecurringTransactionService implements Service<
 > {
   constructor(
     private readonly recurringRepository: RecurringTransactionRepository,
+    private readonly accountRepository: AccountRepository,
+    private readonly dateProvider: DateProvider,
     private readonly redisService: CacheProvider,
   ) {}
 
@@ -39,7 +44,23 @@ export class DeleteRecurringTransactionService implements Service<
       return left(new UnauthorizedError());
     }
 
-    await this.recurringRepository.delete(recurringTransactionId);
+    const account = await this.accountRepository.findById(recurring.accountId);
+
+    if (!account) {
+      return left(new AccountNotFoundError());
+    }
+
+    await this.recurringRepository.deleteWithFuturePendingOccurrences(
+      recurringTransactionId,
+      {
+        workspaceId,
+        timezone: account.timezone,
+        todayStart: this.dateProvider.startOfDay(
+          this.dateProvider.now(),
+          account.timezone,
+        ),
+      },
+    );
 
     await invalidateLedgerReads(
       this.redisService,

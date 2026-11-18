@@ -70,7 +70,10 @@ describe('GenerateRecurringTransactionsJobService against a real unavailable red
   beforeEach(() => {
     recurringRepository = {
       listNeedingGeneration: jest.fn().mockResolvedValue([]),
-      createGeneratedTransactions: jest.fn().mockResolvedValue(0),
+      createGeneratedTransactions: jest.fn().mockResolvedValue({
+        outcome: 'written',
+        createdCount: 0,
+      }),
     } as unknown as jest.Mocked<RecurringTransactionRepository>;
 
     nextGenerationDateCalculator = {

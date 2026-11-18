@@ -30,6 +30,16 @@ export type FindSummaryRulesQuery = {
   timezone: string;
 };
 
+export type DeleteRecurringTransactionQuery = {
+  workspaceId: string;
+  timezone: string;
+  todayStart: Date;
+};
+
+export type CreateGeneratedTransactionsResult =
+  | { outcome: 'written'; createdCount: number }
+  | { outcome: 'skipped-rule-locked' };
+
 export abstract class RecurringTransactionRepository {
   abstract create(
     recurringTransaction: RecurringTransaction,
@@ -39,7 +49,10 @@ export abstract class RecurringTransactionRepository {
     recurringTransaction: RecurringTransaction,
   ): Promise<RecurringTransaction>;
 
-  abstract delete(id: string): Promise<void>;
+  abstract deleteWithFuturePendingOccurrences(
+    id: string,
+    query: DeleteRecurringTransactionQuery,
+  ): Promise<void>;
 
   abstract findById(id: string): Promise<RecurringTransaction | null>;
 
@@ -61,7 +74,7 @@ export abstract class RecurringTransactionRepository {
   abstract createGeneratedTransactions(
     transactions: Transaction[],
     updatedRecurring: RecurringTransaction,
-  ): Promise<number>;
+  ): Promise<CreateGeneratedTransactionsResult>;
 
   abstract findSummaryRules(
     query: FindSummaryRulesQuery,

@@ -1,9 +1,11 @@
-import { RecurringKind } from '@constants/enums';
+import { RecurringKind, TransactionStatus } from '@constants/enums';
 import { MIN_INSTALLMENTS_FOR_PLAN } from '@constants/recurring';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import {
+  CreateGeneratedTransactionsResult,
+  DeleteRecurringTransactionQuery,
   FindManyRecurringByWorkspaceQuery,
   FindSummaryRulesQuery,
   RecurringSummaryRule,
@@ -29,6 +31,8 @@ import {
 import { RecurringTransactionMapper } from '../mappers/recurring-transaction.mapper';
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
+import { lockRecurringRule, tryLockRecurringRule } from '../advisory-locks';
+import { localDayIn } from '../sql-helpers';
 import { installmentPlanExhaustedAt } from './installment-position';
 
 const RECURRING_TYPES = ['INCOME', 'EXPENSE'];
@@ -64,10 +68,54 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
     return RecurringTransactionMapper.toDomain(updated);
   }
 
-  async delete(id: string): Promise<void> {
-    await this.drizzle.db
-      .delete(schema.recurringTransactions)
-      .where(eq(schema.recurringTransactions.id, id));
+  async deleteWithFuturePendingOccurrences(
+    id: string,
+    { workspaceId, timezone, todayStart }: DeleteRecurringTransactionQuery,
+  ): Promise<void> {
+    await this.drizzle.db.transaction(async (tx) => {
+      await tx.execute(sql`set local lock_timeout = '3s'`);
+      await tx.execute(sql`set local statement_timeout = '15s'`);
+      await lockRecurringRule(tx, id);
+
+      await tx
+        .delete(schema.transactions)
+        .where(
+          this.futurePendingOccurrenceCondition(
+            id,
+            workspaceId,
+            timezone,
+            todayStart,
+          ),
+        );
+
+      await tx
+        .delete(schema.recurringTransactions)
+        .where(eq(schema.recurringTransactions.id, id));
+    });
+  }
+
+  private futurePendingOccurrenceCondition(
+    recurringId: string,
+    workspaceId: string,
+    timezone: string,
+    todayStart: Date,
+  ): SQL | undefined {
+    const accountTimezone = sql`${timezone}::text`;
+    const occurrenceDay = localDayIn(
+      sql`${schema.transactions.date}`,
+      accountTimezone,
+    );
+    const today = localDayIn(
+      sql`${todayStart.toISOString()}::timestamptz`,
+      accountTimezone,
+    );
+
+    return and(
+      eq(schema.transactions.workspaceId, workspaceId),
+      eq(schema.transactions.recurringId, recurringId),
+      eq(schema.transactions.status, TransactionStatus.PENDING),
+      gt(occurrenceDay, today),
+    );
   }
 
   async findById(id: string): Promise<RecurringTransaction | null> {
@@ -191,8 +239,12 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
   async createGeneratedTransactions(
     transactions: Transaction[],
     updatedRecurring: RecurringTransaction,
-  ): Promise<number> {
+  ): Promise<CreateGeneratedTransactionsResult> {
     return this.drizzle.db.transaction(async (tx) => {
+      if (!(await tryLockRecurringRule(tx, updatedRecurring.id))) {
+        return { outcome: 'skipped-rule-locked' };
+      }
+
       let insertedCount = 0;
 
       if (transactions.length > 0) {
@@ -223,7 +275,7 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
         })
         .where(eq(schema.recurringTransactions.id, updatedRecurring.id));
 
-      return insertedCount;
+      return { outcome: 'written', createdCount: insertedCount };
     });
   }
 

@@ -68,16 +68,17 @@ describe('GenerateRecurringTransactionsJobService', () => {
     recurringRepository = {
       create: jest.fn(),
       update: jest.fn(),
-      delete: jest.fn(),
+      deleteWithFuturePendingOccurrences: jest.fn(),
       findById: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       findNeedingGenerationByWorkspaceId: jest.fn(),
       listNeedingGeneration: jest.fn().mockResolvedValue([]),
       createGeneratedTransactions: jest
         .fn()
-        .mockImplementation(
-          async (transactions: Transaction[]) => transactions.length,
-        ),
+        .mockImplementation(async (transactions: Transaction[]) => ({
+          outcome: 'written',
+          createdCount: transactions.length,
+        })),
       findSummaryRules: jest.fn(),
       findCompletedRecurringExpense: jest.fn(),
     } as jest.Mocked<RecurringTransactionRepository>;
@@ -139,6 +140,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       expect(result.value).toEqual({
         outcome: 'skipped-already-processed',
         generatedCount: 0,
+        skippedCount: 0,
         failedCount: 0,
         processedCount: 0,
       });
@@ -157,6 +159,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       expect(result.value).toEqual({
         outcome: 'skipped-lock-held',
         generatedCount: 0,
+        skippedCount: 0,
         failedCount: 0,
         processedCount: 0,
       });
@@ -367,7 +370,10 @@ describe('GenerateRecurringTransactionsJobService', () => {
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-01-11'),
     );
-    recurringRepository.createGeneratedTransactions.mockResolvedValue(5);
+    recurringRepository.createGeneratedTransactions.mockResolvedValue({
+      outcome: 'written',
+      createdCount: 5,
+    });
 
     const result = await service.execute();
 
@@ -408,6 +414,136 @@ describe('GenerateRecurringTransactionsJobService', () => {
     expect(transactions[0].recurringId).toBe('r-good');
     expect(updatedRecurring.id).toBe('r-good');
     if (result.isRight()) expect(result.value.generatedCount).toBe(1);
+  });
+
+  it('skips a rule whose generated write lost the delete lock and keeps the run going', async () => {
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      makeRecurring({ id: 'r-locked', startDate: new Date('2024-01-10') }),
+      makeRecurring({ id: 'r-free', startDate: new Date('2024-01-10') }),
+    ]);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-02-10'),
+    );
+    recurringRepository.createGeneratedTransactions
+      .mockResolvedValueOnce({ outcome: 'skipped-rule-locked' })
+      .mockResolvedValueOnce({ outcome: 'written', createdCount: 1 });
+
+    const result = await service.execute();
+
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining('r-locked'),
+    );
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining('skipped-rule-locked'),
+    );
+    expect(
+      recurringRepository.createGeneratedTransactions,
+    ).toHaveBeenCalledTimes(2);
+    if (result.isRight())
+      expect(result.value).toEqual({
+        outcome: 'success',
+        generatedCount: 1,
+        skippedCount: 1,
+        failedCount: 0,
+        processedCount: 2,
+      });
+  });
+
+  it('counts an all-skipped batch as skipped instead of indistinguishable from nothing to write', async () => {
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      makeRecurring({ id: 'r-locked-a', startDate: new Date('2024-01-10') }),
+      makeRecurring({ id: 'r-locked-b', startDate: new Date('2024-01-10') }),
+    ]);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-02-10'),
+    );
+    recurringRepository.createGeneratedTransactions
+      .mockResolvedValueOnce({ outcome: 'skipped-rule-locked' })
+      .mockResolvedValueOnce({ outcome: 'skipped-rule-locked' });
+
+    const result = await service.execute();
+
+    if (result.isRight())
+      expect(result.value).toEqual({
+        outcome: 'success',
+        generatedCount: 0,
+        skippedCount: 2,
+        failedCount: 0,
+        processedCount: 2,
+      });
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it('skips a rule deleted between the lock attempt and the insert without a failure', async () => {
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      makeRecurring({ id: 'r-gone', startDate: new Date('2024-01-10') }),
+      makeRecurring({ id: 'r-alive', startDate: new Date('2024-01-10') }),
+    ]);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-02-10'),
+    );
+    recurringRepository.createGeneratedTransactions
+      .mockRejectedValueOnce(
+        new DrizzleQueryError(
+          'insert into "transactions" ...',
+          [],
+          Object.assign(
+            new Error(
+              'insert or update on table "transactions" violates foreign key constraint "transactions_recurring_transaction_id_recurring_transactions_id"',
+            ),
+            { code: '23503' },
+          ),
+        ),
+      )
+      .mockResolvedValueOnce({ outcome: 'written', createdCount: 1 });
+
+    const result = await service.execute();
+
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining('skipped-rule-gone'),
+    );
+    expect(mockCaptureException).not.toHaveBeenCalled();
+    if (result.isRight())
+      expect(result.value).toEqual({
+        outcome: 'success',
+        generatedCount: 1,
+        skippedCount: 1,
+        failedCount: 0,
+        processedCount: 2,
+      });
+  });
+
+  it('reports a foreign key violation from another constraint as a failure', async () => {
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      makeRecurring({ id: 'r-other-fk', startDate: new Date('2024-01-10') }),
+    ]);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-02-10'),
+    );
+    recurringRepository.createGeneratedTransactions.mockRejectedValue(
+      new DrizzleQueryError(
+        'insert into "transactions" ...',
+        [],
+        Object.assign(
+          new Error(
+            'insert or update on table "transactions" violates foreign key constraint "transactions_account_id_accounts_id_fkey"',
+          ),
+          { code: '23503' },
+        ),
+      ),
+    );
+
+    const result = await service.execute();
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    if (result.isRight())
+      expect(result.value).toEqual({
+        outcome: 'total-failure',
+        generatedCount: 0,
+        skippedCount: 0,
+        failedCount: 1,
+        processedCount: 1,
+      });
   });
 
   it('reports invalid data without persisting and keeps the recurring active', async () => {
@@ -506,6 +642,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       expect(result.value).toEqual({
         outcome: 'nothing-due',
         generatedCount: 0,
+        skippedCount: 0,
         failedCount: 0,
         processedCount: 0,
       });
@@ -538,6 +675,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       expect(result.value).toEqual({
         outcome: 'total-failure',
         generatedCount: 0,
+        skippedCount: 0,
         failedCount: 3,
         processedCount: 3,
       });
@@ -555,7 +693,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       new Date('2024-02-10'),
     );
     recurringRepository.createGeneratedTransactions
-      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce({ outcome: 'written', createdCount: 1 })
       .mockRejectedValueOnce(new Error('db down'));
 
     const result = await service.execute();
@@ -564,6 +702,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
       expect(result.value).toEqual({
         outcome: 'partial-failure',
         generatedCount: 1,
+        skippedCount: 0,
         failedCount: 1,
         processedCount: 2,
       });
