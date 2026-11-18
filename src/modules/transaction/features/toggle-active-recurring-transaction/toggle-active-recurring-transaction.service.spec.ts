@@ -14,7 +14,7 @@ describe('ToggleActiveRecurringTransactionService', () => {
     recurringRepository = {
       create: jest.fn(),
       update: jest.fn().mockImplementation(async (recurring) => recurring),
-      delete: jest.fn(),
+      deleteWithFuturePendingOccurrences: jest.fn(),
       findById: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       findNeedingGenerationByWorkspaceId: jest.fn(),

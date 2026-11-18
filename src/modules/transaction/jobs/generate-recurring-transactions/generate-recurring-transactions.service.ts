@@ -10,7 +10,10 @@ import {
   RecurringGenerationFailedError,
   UnknownRecurrenceFrequencyError,
 } from '@modules/transaction/errors';
-import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
+import {
+  CreateGeneratedTransactionsResult,
+  RecurringTransactionRepository,
+} from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -23,6 +26,17 @@ const BATCH_SIZE = 50;
 const LOCK_TTL_SECONDS = 300;
 const CACHE_TTL_SECONDS = 86400;
 const LOOK_AHEAD_DAYS = 7;
+const FOREIGN_KEY_VIOLATION = '23503';
+const RECURRING_RULE_FK =
+  /transactions_recurring_transaction_id_(recurring_transactions_id|fkey)/;
+
+function isMissingRecurringRuleViolation(error: unknown): boolean {
+  const { sqlState, messageChain } = getErrorDetails(error);
+
+  return (
+    sqlState === FOREIGN_KEY_VIOLATION && RECURRING_RULE_FK.test(messageChain)
+  );
+}
 
 function getMaxGenerations(frequency: RecurrenceFrequency): number {
   switch (frequency) {
@@ -48,21 +62,28 @@ export type RecurringGenerationOutcome =
 export interface GenerateRecurringTransactionsSummary {
   outcome: RecurringGenerationOutcome;
   generatedCount: number;
+  skippedCount: number;
   failedCount: number;
   processedCount: number;
 }
 
 interface GenerationCounters {
   generatedCount: number;
+  skippedCount: number;
   failedCount: number;
   processedCount: number;
 }
 
 interface RecurrenceOutcome {
   generatedCount: number;
+  skipped: boolean;
   failed: boolean;
   persisted: boolean;
 }
+
+type GeneratedWriteResult =
+  | CreateGeneratedTransactionsResult
+  | { outcome: 'skipped-rule-gone' };
 
 function skippedSummary(
   outcome: Extract<
@@ -70,7 +91,13 @@ function skippedSummary(
     'skipped-already-processed' | 'skipped-lock-held'
   >,
 ): GenerateRecurringTransactionsSummary {
-  return { outcome, generatedCount: 0, failedCount: 0, processedCount: 0 };
+  return {
+    outcome,
+    generatedCount: 0,
+    skippedCount: 0,
+    failedCount: 0,
+    processedCount: 0,
+  };
 }
 
 function classifyOutcome(
@@ -164,6 +191,7 @@ export class GenerateRecurringTransactionsJobService {
   private async generateAll(lookAheadDate: Date): Promise<GenerationCounters> {
     const counters: GenerationCounters = {
       generatedCount: 0,
+      skippedCount: 0,
       failedCount: 0,
       processedCount: 0,
     };
@@ -188,6 +216,7 @@ export class GenerateRecurringTransactionsJobService {
           );
           counters.generatedCount += outcome.generatedCount;
 
+          if (outcome.skipped) counters.skippedCount++;
           if (outcome.failed) counters.failedCount++;
           if (outcome.persisted) {
             persistedWorkspaceIds.add(recurring.workspaceId);
@@ -224,7 +253,12 @@ export class GenerateRecurringTransactionsJobService {
       );
     } catch (error: unknown) {
       this.reportRecurringFailure(recurring.id, error);
-      return { generatedCount: 0, failed: true, persisted: false };
+      return {
+        generatedCount: 0,
+        skipped: false,
+        failed: true,
+        persisted: false,
+      };
     }
   }
 
@@ -307,15 +341,54 @@ export class GenerateRecurringTransactionsJobService {
     const shouldPersist = transactionsToCreate.length > 0 || !recurring.active;
 
     if (!shouldPersist) {
-      return { generatedCount: 0, failed, persisted: false };
+      return { generatedCount: 0, skipped: false, failed, persisted: false };
     }
 
-    const generatedCount =
-      await this.recurringRepository.createGeneratedTransactions(
-        transactionsToCreate,
+    const write = await this.writeGeneratedTransactions(
+      recurring,
+      transactionsToCreate,
+    );
+
+    if (write.outcome === 'skipped-rule-locked') {
+      this.logger.warn(
+        `Job: recorrência ${recurring.id} em exclusão (skipped-rule-locked); geração ignorada.`,
+      );
+      return { generatedCount: 0, skipped: true, failed, persisted: false };
+    }
+
+    if (write.outcome === 'skipped-rule-gone') {
+      this.logger.warn(
+        `Job: recorrência ${recurring.id} foi excluída (skipped-rule-gone); geração ignorada.`,
+      );
+      return {
+        generatedCount: 0,
+        skipped: true,
+        failed: false,
+        persisted: false,
+      };
+    }
+
+    return {
+      generatedCount: write.createdCount,
+      skipped: false,
+      failed,
+      persisted: true,
+    };
+  }
+
+  private async writeGeneratedTransactions(
+    recurring: RecurringTransaction,
+    transactions: Transaction[],
+  ): Promise<GeneratedWriteResult> {
+    try {
+      return await this.recurringRepository.createGeneratedTransactions(
+        transactions,
         recurring,
       );
+    } catch (error: unknown) {
+      if (!isMissingRecurringRuleViolation(error)) throw error;
 
-    return { generatedCount, failed, persisted: true };
+      return { outcome: 'skipped-rule-gone' };
+    }
   }
 }

@@ -72,12 +72,15 @@ describe('CreateRecurringTransactionService', () => {
     recurringRepository = {
       create: jest.fn(),
       update: jest.fn(),
-      delete: jest.fn(),
+      deleteWithFuturePendingOccurrences: jest.fn(),
       findById: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       findNeedingGenerationByWorkspaceId: jest.fn(),
       listNeedingGeneration: jest.fn(),
-      createGeneratedTransactions: jest.fn().mockResolvedValue(0),
+      createGeneratedTransactions: jest.fn().mockResolvedValue({
+        outcome: 'written',
+        createdCount: 0,
+      }),
       findSummaryRules: jest.fn(),
       findCompletedRecurringExpense: jest.fn(),
     } as jest.Mocked<RecurringTransactionRepository>;
