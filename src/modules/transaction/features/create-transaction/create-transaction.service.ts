@@ -25,6 +25,7 @@ import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { CreateTransactionRequest } from './create-transaction.dto';
 import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
 
 type Request = CreateTransactionRequest & TokenPayloadBase;
 
@@ -40,6 +41,7 @@ export class CreateTransactionService implements Service<
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
     private readonly redisService: CacheProvider,
+    private readonly detectionDispatcher: RecurringSuggestionDetectionDispatcher,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Transaction>> {
@@ -85,6 +87,8 @@ export class CreateTransactionService implements Service<
       request.workspaceId,
       'create-transaction',
     );
+
+    this.detectionDispatcher.notify(request.workspaceId);
 
     return right(transaction);
   }

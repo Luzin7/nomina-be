@@ -11,6 +11,7 @@ import { makeRecurring } from '@modules/transaction/test-helpers/mock-factories'
 import {
   billDetectionWindow,
   detectBillSuggestions,
+  isBillDetectionDue,
 } from '@modules/transaction/valueObjects/BillSuggestionDetection';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
@@ -126,6 +127,61 @@ describe('RecurringSuggestionRepositoryImplementation against a real postgres', 
       })),
     );
   }
+
+  async function seedDueBatch() {
+    const inMonth = new Date('2026-11-05T15:00:00.000Z');
+    const boundary = new Date('2026-11-01T02:00:00.000Z');
+    const previousMonth = new Date('2026-10-20T15:00:00.000Z');
+    const gates = [null, inMonth, boundary, previousMonth];
+    const zones = ['America/Sao_Paulo', 'Pacific/Kiritimati', 'Pacific/Midway'];
+
+    await db.insert(schema.workspaces).values(
+      zones.flatMap((timezone) =>
+        Array.from({ length: 35 }, (_, index) => ({
+          id: randomUUID(),
+          name: 'Workspace',
+          timezone,
+          lastBillDetectionAt: gates[index % gates.length],
+        })),
+      ),
+    );
+  }
+
+  it('pages the due set exactly like isBillDetectionDue decides', async () => {
+    await seedDueBatch();
+
+    const rows = await db
+      .select({
+        id: schema.workspaces.id,
+        timezone: schema.workspaces.timezone,
+        lastBillDetectionAt: schema.workspaces.lastBillDetectionAt,
+      })
+      .from(schema.workspaces);
+
+    const expected = new Set(
+      rows
+        .filter((row) =>
+          isBillDetectionDue(row.lastBillDetectionAt, NOW, row.timezone),
+        )
+        .map((row) => row.id),
+    );
+
+    const collected: string[] = [];
+    const pages: string[][] = [];
+    let cursor: string | null = null;
+    let page = await repository.findDueWorkspaceBatch(cursor, 10, NOW);
+
+    while (page.length > 0) {
+      pages.push(page);
+      collected.push(...page);
+      cursor = page[page.length - 1];
+      page = await repository.findDueWorkspaceBatch(cursor, 10, NOW);
+    }
+
+    expect(pages.length).toBeGreaterThan(1);
+    expect(collected).toHaveLength(expected.size);
+    expect(new Set(collected)).toEqual(expected);
+  });
 
   async function runDetection(workspaceId: string) {
     const window = billDetectionWindow(NOW, TIMEZONE, dateProvider);

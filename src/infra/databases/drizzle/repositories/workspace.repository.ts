@@ -5,12 +5,14 @@ import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceUser } from '@modules/workspace/entities/WorkspaceUser';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, desc, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 import { CategoryMapper } from '../mappers/category.mapper';
 import { WorkspaceMapper } from '../mappers/workspace.mapper';
 import * as schema from '../schema';
 import { insertEmergencyGoal } from './emergency-goal';
 import { insertOpeningMovement } from './opening-movement';
+
+const READ_STATEMENT_TIMEOUT_MS = 1_000;
 
 @Injectable()
 export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
@@ -121,13 +123,19 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
   }
 
   async findTimezoneById(id: string): Promise<string | null> {
-    const [workspace] = await this.drizzle.db
-      .select({ timezone: schema.workspaces.timezone })
-      .from(schema.workspaces)
-      .where(eq(schema.workspaces.id, id))
-      .limit(1);
+    return this.drizzle.db.transaction(async (tx) => {
+      await tx.execute(
+        sql.raw(`SET LOCAL statement_timeout = ${READ_STATEMENT_TIMEOUT_MS}`),
+      );
 
-    return workspace?.timezone ?? null;
+      const [workspace] = await tx
+        .select({ timezone: schema.workspaces.timezone })
+        .from(schema.workspaces)
+        .where(eq(schema.workspaces.id, id))
+        .limit(1);
+
+      return workspace?.timezone ?? null;
+    });
   }
 
   async findByMemberUserId(

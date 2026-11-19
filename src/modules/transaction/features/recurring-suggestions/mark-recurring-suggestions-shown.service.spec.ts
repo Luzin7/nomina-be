@@ -4,6 +4,7 @@ import { MarkRecurringSuggestionsShownService } from './mark-recurring-suggestio
 
 const makeRepository = (): jest.Mocked<RecurringSuggestionRepository> => ({
   findDetectionState: jest.fn(),
+  findDueWorkspaceBatch: jest.fn(),
   findBillCandidates: jest.fn(),
   findActiveExpenseRules: jest.fn(),
   persistDetection: jest.fn(),
