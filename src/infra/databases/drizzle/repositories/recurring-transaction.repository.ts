@@ -89,8 +89,23 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
         );
 
       await tx
+        .update(schema.transactions)
+        .set({ recurringId: null, recurringDetachedAt: sql`now()` })
+        .where(
+          and(
+            eq(schema.transactions.workspaceId, workspaceId),
+            eq(schema.transactions.recurringId, id),
+          ),
+        );
+
+      await tx
         .delete(schema.recurringTransactions)
-        .where(eq(schema.recurringTransactions.id, id));
+        .where(
+          and(
+            eq(schema.recurringTransactions.workspaceId, workspaceId),
+            eq(schema.recurringTransactions.id, id),
+          ),
+        );
     });
   }
 

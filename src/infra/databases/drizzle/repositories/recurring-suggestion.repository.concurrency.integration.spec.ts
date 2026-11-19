@@ -17,7 +17,7 @@ import {
   PostgreSqlContainer,
   StartedPostgreSqlContainer,
 } from '@testcontainers/postgresql';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { randomUUID } from 'node:crypto';
@@ -312,6 +312,38 @@ describe('RecurringSuggestionRepositoryImplementation against a real postgres', 
     expect(secondView.suggestion.accountId).toBe(otherAccountId);
     expect(secondView.suggestion.suggestedTitle).toBe('Aluguel');
     expect(secondView.accountName).toBe('Conta nova');
+  });
+
+  it('ignores transactions detached from a deleted rule and keeps the identical plain bill', async () => {
+    const { workspaceId, accountId, categoryId } = await seedWorkspace();
+    const plainCategoryId = randomUUID();
+    await db.insert(schema.categories).values({
+      id: plainCategoryId,
+      workspaceId,
+      name: 'Internet',
+      type: TransactionType.EXPENSE,
+    });
+    await seedBillTransactions(workspaceId, accountId, categoryId);
+    await seedBillTransactions(workspaceId, accountId, plainCategoryId);
+    await db
+      .update(schema.transactions)
+      .set({ recurringDetachedAt: new Date('2026-11-01T15:00:00.000Z') })
+      .where(
+        and(
+          eq(schema.transactions.workspaceId, workspaceId),
+          eq(schema.transactions.categoryId, categoryId),
+        ),
+      );
+
+    const patterns = await runDetection(workspaceId);
+    const views = await repository.findPendingByWorkspace(workspaceId);
+
+    expect(patterns.map((pattern) => pattern.categoryId)).toEqual([
+      plainCategoryId,
+    ]);
+    expect(views.map((view) => view.suggestion.categoryId)).toEqual([
+      plainCategoryId,
+    ]);
   });
 
   it('lists only active monthly expense rules for the workspace', async () => {

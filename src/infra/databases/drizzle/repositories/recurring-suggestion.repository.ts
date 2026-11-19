@@ -129,6 +129,7 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
           eq(schema.transactions.status, 'COMPLETED'),
           isNull(schema.transactions.installmentGroupId),
           isNull(schema.transactions.recurringId),
+          isNull(schema.transactions.recurringDetachedAt),
           notInArray(schema.transactions.categoryId, SYSTEM_CATEGORY_IDS),
           gte(schema.transactions.date, from),
           lt(schema.transactions.date, to),

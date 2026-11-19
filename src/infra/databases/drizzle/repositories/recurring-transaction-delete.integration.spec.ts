@@ -299,6 +299,78 @@ describe('recurring transaction delete', () => {
       ).toBeNull();
     });
 
+    it('should mark the surviving occurrences as detached from the deleted rule', async () => {
+      const owner = await seedWorkspace(db);
+      const recurringId = await seedRule(db, owner);
+      const pastPendingId = await seedOccurrence(db, {
+        owner,
+        recurringId,
+        date: LAST_MONTH,
+        status: 'PENDING',
+      });
+      const pastCompletedId = await seedOccurrence(db, {
+        owner,
+        recurringId,
+        date: new Date('2026-01-15T03:00:00.000Z'),
+        status: 'COMPLETED',
+      });
+      const futurePendingId = await seedOccurrence(db, {
+        owner,
+        recurringId,
+        date: NEXT_MONTH,
+        status: 'PENDING',
+      });
+
+      await repository.deleteWithFuturePendingOccurrences(recurringId, {
+        workspaceId: owner.workspaceId,
+        timezone: TIMEZONE,
+        todayStart: TODAY_START,
+      });
+
+      const survivors = [
+        await findOccurrence(db, pastPendingId),
+        await findOccurrence(db, pastCompletedId),
+      ];
+
+      expect(await findOccurrence(db, futurePendingId)).toBeUndefined();
+      expect(survivors.map((row) => row.recurringId)).toEqual([null, null]);
+      expect(
+        survivors.map((row) => row.recurringDetachedAt instanceof Date),
+      ).toEqual([true, true]);
+    });
+
+    it('should leave the rule and its occurrences untouched when the workspace does not match', async () => {
+      const owner = await seedWorkspace(db);
+      const otherOwner = await seedWorkspace(db);
+      const recurringId = await seedRule(db, owner);
+      const pastCompletedId = await seedOccurrence(db, {
+        owner,
+        recurringId,
+        date: LAST_MONTH,
+        status: 'COMPLETED',
+      });
+      const futurePendingId = await seedOccurrence(db, {
+        owner,
+        recurringId,
+        date: NEXT_MONTH,
+        status: 'PENDING',
+      });
+
+      await repository.deleteWithFuturePendingOccurrences(recurringId, {
+        workspaceId: otherOwner.workspaceId,
+        timezone: TIMEZONE,
+        todayStart: TODAY_START,
+      });
+
+      const pastCompleted = await findOccurrence(db, pastCompletedId);
+      const futurePending = await findOccurrence(db, futurePendingId);
+
+      expect(await findRule(db, recurringId)).toBeDefined();
+      expect(pastCompleted.recurringId).toBe(recurringId);
+      expect(pastCompleted.recurringDetachedAt).toBeNull();
+      expect(futurePending.recurringId).toBe(recurringId);
+    });
+
     it('should keep future occurrences of another rule', async () => {
       const owner = await seedWorkspace(db);
       const recurringId = await seedRule(db, owner);

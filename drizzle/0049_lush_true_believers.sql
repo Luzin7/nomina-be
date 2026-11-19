@@ -1,0 +1,1 @@
+ALTER TABLE "transactions" ADD COLUMN "recurring_detached_at" timestamp with time zone;

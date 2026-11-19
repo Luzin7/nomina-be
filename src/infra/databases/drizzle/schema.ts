@@ -361,6 +361,10 @@ export const transactions = pgTable(
       () => recurringTransactions.id,
       { onDelete: 'set null' },
     ),
+    recurringDetachedAt: timestamp('recurring_detached_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
     destinationAccountId: text('destination_account_id').references(
       () => accounts.id,
       { onDelete: 'set null' },
