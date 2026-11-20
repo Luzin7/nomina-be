@@ -37,6 +37,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { CreateTransactionService } from './create-transaction.service';
+import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
 
 type CreateRequest = Parameters<
   typeof CreateTransactionService.prototype.execute
@@ -99,6 +100,10 @@ describe('balance rules under concurrent creations on a real postgres', () => {
         { provide: CacheProvider, useClass: RedisService },
         { provide: ConfigService, useValue: {} },
         { provide: DateProvider, useClass: DayJsDateProvider },
+        {
+          provide: RecurringSuggestionDetectionDispatcher,
+          useValue: { notify: () => undefined },
+        },
         CreateTransactionService,
       ],
     }).compile();

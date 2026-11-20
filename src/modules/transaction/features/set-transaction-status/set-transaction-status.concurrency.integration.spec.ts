@@ -39,6 +39,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { CreateTransactionService } from '../create-transaction/create-transaction.service';
+import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
 import { SetTransactionStatusService } from './set-transaction-status.service';
 
 type CreateRequest = Parameters<
@@ -107,6 +108,10 @@ describe('transaction status changes against a real postgres', () => {
         { provide: CacheProvider, useClass: RedisService },
         { provide: ConfigService, useValue: {} },
         { provide: DateProvider, useClass: DayJsDateProvider },
+        {
+          provide: RecurringSuggestionDetectionDispatcher,
+          useValue: { notify: () => undefined },
+        },
         CreateTransactionService,
         SetTransactionStatusService,
       ],
