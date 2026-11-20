@@ -16,6 +16,7 @@ import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { randomUUID } from 'crypto';
+import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
 import { CreateTransactionService } from './create-transaction.service';
 
 function makeRequest(
@@ -57,6 +58,8 @@ describe('CreateTransactionService', () => {
   let categoryRepository: jest.Mocked<CategoryRepository>;
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let cacheProvider: jest.Mocked<CacheProvider>;
+  let detectionDispatcher: jest.Mocked<RecurringSuggestionDetectionDispatcher>;
 
   beforeEach(() => {
     accountRepository = {
@@ -122,25 +125,31 @@ describe('CreateTransactionService', () => {
       endOfMonth: jest.fn(),
     } as jest.Mocked<DateProvider>;
 
+    cacheProvider = {
+      onModuleDestroy: jest.fn(),
+      ping: jest.fn().mockResolvedValue(false),
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+      del: jest.fn().mockResolvedValue(true),
+      exists: jest.fn().mockResolvedValue(false),
+      acquireLock: jest.fn().mockResolvedValue(true),
+      releaseLock: jest.fn().mockResolvedValue(true),
+      delByPattern: jest.fn().mockResolvedValue(0),
+      incrementCounter: jest.fn().mockResolvedValue(1),
+      getClient: jest.fn().mockReturnValue(null),
+      isAvailable: jest.fn().mockReturnValue(false),
+    } as unknown as jest.Mocked<CacheProvider>;
+    detectionDispatcher = {
+      notify: jest.fn(),
+    } as unknown as jest.Mocked<RecurringSuggestionDetectionDispatcher>;
+
     service = new CreateTransactionService(
       accountRepository,
       categoryRepository,
       transactionRepository,
       dateProvider,
-      {
-        onModuleDestroy: jest.fn(),
-        ping: jest.fn().mockResolvedValue(false),
-        get: jest.fn().mockResolvedValue(null),
-        set: jest.fn().mockResolvedValue(true),
-        del: jest.fn().mockResolvedValue(true),
-        exists: jest.fn().mockResolvedValue(false),
-        acquireLock: jest.fn().mockResolvedValue(true),
-        releaseLock: jest.fn().mockResolvedValue(true),
-        delByPattern: jest.fn().mockResolvedValue(0),
-        incrementCounter: jest.fn().mockResolvedValue(1),
-        getClient: jest.fn().mockReturnValue(null),
-        isAvailable: jest.fn().mockReturnValue(false),
-      } as unknown as jest.Mocked<CacheProvider>,
+      cacheProvider,
+      detectionDispatcher,
     );
   });
 
@@ -224,6 +233,38 @@ describe('CreateTransactionService', () => {
       expect.any(Function),
       { actorId: 'user-1' },
     );
+  });
+
+  it('notifies detection once after the ledger bump without awaiting it', async () => {
+    arrangeSuccessMocks();
+    const pendingDetection = new Promise<void>(() => undefined);
+    (detectionDispatcher.notify as jest.Mock).mockReturnValue(pendingDetection);
+
+    const result = await service.execute(makeRequest({ date: '2023-12-15' }));
+
+    expect(result.isRight()).toBe(true);
+    expect(detectionDispatcher.notify).toHaveBeenCalledTimes(1);
+    expect(detectionDispatcher.notify).toHaveBeenCalledWith('ws-1');
+    expect(
+      cacheProvider.incrementCounter.mock.invocationCallOrder[0],
+    ).toBeLessThan(detectionDispatcher.notify.mock.invocationCallOrder[0]);
+  });
+
+  it('does not reach detection from inside the repository transaction', async () => {
+    arrangeSuccessMocks();
+    let notifyCallsInsideTransaction = -1;
+    transactionRepository.createWithBalanceUpdate.mockImplementation(() => {
+      notifyCallsInsideTransaction =
+        detectionDispatcher.notify.mock.calls.length;
+      return Promise.resolve(right(undefined));
+    });
+
+    await service.execute(makeRequest({ date: '2023-12-15' }));
+
+    expect(notifyCallsInsideTransaction).toBe(0);
+    expect(
+      transactionRepository.createWithBalanceUpdate.mock.invocationCallOrder[0],
+    ).toBeLessThan(detectionDispatcher.notify.mock.invocationCallOrder[0]);
   });
 
   it('should return left(AccountNotFoundError) when TRANSFER destination is not found', async () => {

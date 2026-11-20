@@ -39,6 +39,7 @@ import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { DeleteTransactionService } from '../delete-transaction/delete-transaction.service';
 import { PayCreditCardInvoiceService } from '../pay-credit-card-invoice/pay-credit-card-invoice.service';
+import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
 import { SetTransactionStatusService } from '../set-transaction-status/set-transaction-status.service';
 import { UpdateTransactionService } from '../update-transaction/update-transaction.service';
 import { CreateTransactionService } from './create-transaction.service';
@@ -116,6 +117,10 @@ describe('balance movements written with the balance update', () => {
         { provide: CacheProvider, useClass: RedisService },
         { provide: ConfigService, useValue: {} },
         { provide: DateProvider, useClass: DayJsDateProvider },
+        {
+          provide: RecurringSuggestionDetectionDispatcher,
+          useValue: { notify: () => undefined },
+        },
         CreateTransactionService,
         DeleteTransactionService,
         SetTransactionStatusService,

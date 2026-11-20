@@ -6,9 +6,14 @@ on:
     - cron: "0 5 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: daily-job
+  cancel-in-progress: false
+
 jobs:
   daily:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Generate recurring transactions
@@ -16,6 +21,14 @@ jobs:
           curl -fsS --max-time 40 -X POST \
             -H "x-api-key: ${{ secrets.CRON_API_KEY }}" \
             https://nomina-be-qico.onrender.com/api/v1/internal/generate-recurring-transactions
+
+      - name: Detect recurring suggestions
+        id: detect
+        continue-on-error: true
+        run: |
+          curl -fsS --max-time 40 -X POST \
+            -H "x-api-key: ${{ secrets.CRON_API_KEY }}" \
+            https://nomina-be-qico.onrender.com/api/v1/internal/recurring-suggestions-detect
 
       - name: Settle card installments
         run: |
@@ -35,3 +48,11 @@ jobs:
           curl -fsS --max-time 40 -X POST \
             -H "x-api-key: ${{ secrets.CRON_API_KEY }}" \
             https://nomina-be-qico.onrender.com/api/v1/internal/reconcile-balances
+
+      - name: Fail when recurring suggestion detection failed
+        if: always()
+        run: |
+          if [ "${{ steps.detect.outcome }}" = "failure" ]; then
+            echo "Detect recurring suggestions failed: see the step log above"
+            exit 1
+          fi

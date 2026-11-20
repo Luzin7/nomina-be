@@ -23,6 +23,7 @@ import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
+import { RecurringSuggestionDetectionDispatcher } from './recurring-suggestion-detection.dispatcher';
 
 type Request = Pick<TokenPayloadBase, 'workspaceId'> & {
   suggestionId: string;
@@ -53,6 +54,7 @@ export class AcceptRecurringSuggestionService implements Service<
     private readonly timezoneService: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
     private readonly cacheProvider: CacheProvider,
+    private readonly detectionDispatcher: RecurringSuggestionDetectionDispatcher,
   ) {}
 
   async execute({
@@ -128,6 +130,8 @@ export class AcceptRecurringSuggestionService implements Service<
         workspaceId,
         'accept-recurring-suggestion',
       );
+
+      this.detectionDispatcher.notify(workspaceId);
 
       return right({ recurringId: outcome.recurringId });
     }

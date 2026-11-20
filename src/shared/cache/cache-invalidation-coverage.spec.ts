@@ -113,6 +113,8 @@ const WRITES: Record<string, Kind[]> = {
     ['ledger'],
   'transaction/features/recurring-suggestions/mark-recurring-suggestions-shown.service.ts':
     ['ledger'],
+  'transaction/features/recurring-suggestions/detect-recurring-suggestions.service.ts':
+    ['ledger'],
   'transaction/jobs/generate-recurring-transactions/generate-recurring-transactions.service.ts':
     ['ledger'],
   'transaction/jobs/settle-card-installments/settle-card-installments.service.ts':

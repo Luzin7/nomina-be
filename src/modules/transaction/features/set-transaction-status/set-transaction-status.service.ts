@@ -7,6 +7,7 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { SetTransactionStatusRequest } from './set-transaction-status.dto';
 import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
 
 type Request = SetTransactionStatusRequest &
   Pick<TokenPayloadBase, 'workspaceId' | 'sub'> & {
@@ -22,6 +23,7 @@ export class SetTransactionStatusService implements Service<
   constructor(
     private readonly transactionRepository: TransactionRepository,
     private readonly redisService: CacheProvider,
+    private readonly detectionDispatcher: RecurringSuggestionDetectionDispatcher,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Transaction>> {
@@ -41,6 +43,8 @@ export class SetTransactionStatusService implements Service<
       request.workspaceId,
       'set-transaction-status',
     );
+
+    this.detectionDispatcher.notify(request.workspaceId);
 
     return right(updated.value);
   }

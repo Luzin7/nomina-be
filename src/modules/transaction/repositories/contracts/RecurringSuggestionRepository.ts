@@ -23,6 +23,8 @@ export type BillCandidateQuery = {
   to: Date;
 };
 
+export type PersistDetectionOutcome = 'persisted' | 'unchanged' | 'not-due';
+
 export type PersistDetectionInput = {
   workspaceId: string;
   timezone: string;
@@ -61,6 +63,12 @@ export type FindSuggestionById = {
 export abstract class RecurringSuggestionRepository {
   abstract findDetectionState(workspaceId: string): Promise<BillDetectionState>;
 
+  abstract findDueWorkspaceBatch(
+    cursorId: string | null,
+    limit: number,
+    now: Date,
+  ): Promise<string[]>;
+
   abstract findBillCandidates(
     query: BillCandidateQuery,
   ): Promise<BillDetectionTransaction[]>;
@@ -69,7 +77,9 @@ export abstract class RecurringSuggestionRepository {
     workspaceId: string,
   ): Promise<ActiveBillRule[]>;
 
-  abstract persistDetection(input: PersistDetectionInput): Promise<void>;
+  abstract persistDetection(
+    input: PersistDetectionInput,
+  ): Promise<PersistDetectionOutcome>;
 
   abstract findPendingByWorkspace(
     workspaceId: string,

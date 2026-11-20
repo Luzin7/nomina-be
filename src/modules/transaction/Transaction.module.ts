@@ -31,11 +31,13 @@ import { SetTransactionStatusService } from './features/set-transaction-status/s
 import { AcceptRecurringSuggestionController } from './features/recurring-suggestions/accept-recurring-suggestion.controller';
 import { AcceptRecurringSuggestionService } from './features/recurring-suggestions/accept-recurring-suggestion.service';
 import { DismissRecurringSuggestionController } from './features/recurring-suggestions/dismiss-recurring-suggestion.controller';
+import { DetectRecurringSuggestionsService } from './features/recurring-suggestions/detect-recurring-suggestions.service';
 import { DismissRecurringSuggestionService } from './features/recurring-suggestions/dismiss-recurring-suggestion.service';
 import { ListRecurringSuggestionsController } from './features/recurring-suggestions/list-recurring-suggestions.controller';
 import { ListRecurringSuggestionsService } from './features/recurring-suggestions/list-recurring-suggestions.service';
 import { MarkRecurringSuggestionsShownController } from './features/recurring-suggestions/mark-recurring-suggestions-shown.controller';
 import { MarkRecurringSuggestionsShownService } from './features/recurring-suggestions/mark-recurring-suggestions-shown.service';
+import { RecurringSuggestionDetectionDispatcher } from './features/recurring-suggestions/recurring-suggestion-detection.dispatcher';
 import { ToggleActiveRecurringTransactionController } from './features/toggle-active-recurring-transaction/toggle-active-recurring-transaction.controller';
 import { ToggleActiveRecurringTransactionService } from './features/toggle-active-recurring-transaction/toggle-active-recurring-transaction.service';
 import { UpdateRecurringTransactionController } from './features/update-recurring-transaction/update-recurring-transaction.controller';
@@ -44,6 +46,8 @@ import { UpdateTransactionController } from './features/update-transaction/updat
 import { UpdateTransactionService } from './features/update-transaction/update-transaction.service';
 import { AutoPayCardInvoicesJobController } from './jobs/auto-pay-card-invoices/auto-pay-card-invoices.controller';
 import { AutoPayCardInvoicesJobService } from './jobs/auto-pay-card-invoices/auto-pay-card-invoices.service';
+import { DetectRecurringSuggestionsJobController } from './jobs/detect-recurring-suggestions/detect-recurring-suggestions.controller';
+import { DetectRecurringSuggestionsJobService } from './jobs/detect-recurring-suggestions/detect-recurring-suggestions.service';
 import { GenerateRecurringTransactionsJobController } from './jobs/generate-recurring-transactions/generate-recurring-transactions.controller';
 import { GenerateRecurringTransactionsJobService } from './jobs/generate-recurring-transactions/generate-recurring-transactions.service';
 import { ReconcileBalancesJobController } from './jobs/reconcile-balances/reconcile-balances.controller';
@@ -69,6 +73,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     ReconcileBalancesJobController,
     SettleCardInstallmentsJobController,
     AutoPayCardInvoicesJobController,
+    DetectRecurringSuggestionsJobController,
     UpdateRecurringTransactionController,
     DeleteRecurringTransactionController,
     RecurringSummaryController,
@@ -106,6 +111,8 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     AcceptRecurringSuggestionService,
     DismissRecurringSuggestionService,
     MarkRecurringSuggestionsShownService,
+    DetectRecurringSuggestionsService,
+    RecurringSuggestionDetectionDispatcher,
     {
       provide: NextGenerationDateCalculator,
       useClass: CalculateNextGenerationDateService,
@@ -114,6 +121,7 @@ import { NextGenerationDateCalculator } from './services/contracts/NextGeneratio
     ReconcileBalancesJobService,
     SettleCardInstallmentsJobService,
     AutoPayCardInvoicesJobService,
+    DetectRecurringSuggestionsJobService,
   ],
 })
 export class TransactionModule {}

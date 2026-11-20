@@ -8,6 +8,7 @@ import {
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { makeTransactionWithStatus } from '@modules/transaction/test-helpers/mock-factories';
 import { left, right } from '@shared/core/errors/Either';
+import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
 import { SetTransactionStatusService } from './set-transaction-status.service';
 
 type ServiceRequest = Parameters<
@@ -28,6 +29,7 @@ describe('SetTransactionStatusService', () => {
   let service: SetTransactionStatusService;
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let cacheProvider: jest.Mocked<CacheProvider>;
+  let detectionDispatcher: jest.Mocked<RecurringSuggestionDetectionDispatcher>;
 
   beforeEach(() => {
     transactionRepository = {
@@ -59,9 +61,14 @@ describe('SetTransactionStatusService', () => {
       isAvailable: jest.fn().mockReturnValue(false),
     } as unknown as jest.Mocked<CacheProvider>;
 
+    detectionDispatcher = {
+      notify: jest.fn(),
+    } as unknown as jest.Mocked<RecurringSuggestionDetectionDispatcher>;
+
     service = new SetTransactionStatusService(
       transactionRepository,
       cacheProvider,
+      detectionDispatcher,
     );
   });
 
@@ -149,6 +156,33 @@ describe('SetTransactionStatusService', () => {
       expect.any(Number),
     );
     expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
+  });
+
+  it('notifies detection once after the ledger bump without awaiting it', async () => {
+    transactionRepository.updateStatusWithBalanceEffect.mockResolvedValue(
+      right(makeTransactionWithStatus(TransactionStatus.COMPLETED)),
+    );
+    const pendingDetection = new Promise<void>(() => undefined);
+    (detectionDispatcher.notify as jest.Mock).mockReturnValue(pendingDetection);
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isRight()).toBe(true);
+    expect(detectionDispatcher.notify).toHaveBeenCalledTimes(1);
+    expect(detectionDispatcher.notify).toHaveBeenCalledWith('ws-1');
+    expect(
+      cacheProvider.incrementCounter.mock.invocationCallOrder[0],
+    ).toBeLessThan(detectionDispatcher.notify.mock.invocationCallOrder[0]);
+  });
+
+  it('does not notify detection when the change is rejected', async () => {
+    transactionRepository.updateStatusWithBalanceEffect.mockResolvedValue(
+      left(new TransactionNotFoundError()),
+    );
+
+    await service.execute(makeRequest());
+
+    expect(detectionDispatcher.notify).not.toHaveBeenCalled();
   });
 
   it('should not touch the cache when the change is rejected', async () => {

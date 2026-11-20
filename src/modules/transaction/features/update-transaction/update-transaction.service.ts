@@ -20,6 +20,7 @@ import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { UpdateTransactionRequest } from './update-transaction.dto';
 import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
 
 type Request = UpdateTransactionRequest & {
   transactionId: string;
@@ -43,6 +44,7 @@ export class UpdateTransactionService implements Service<
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
     private readonly redisService: CacheProvider,
+    private readonly detectionDispatcher: RecurringSuggestionDetectionDispatcher,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, Transaction>> {
@@ -79,6 +81,8 @@ export class UpdateTransactionService implements Service<
       request.workspaceId,
       'update-transaction',
     );
+
+    this.detectionDispatcher.notify(request.workspaceId);
 
     return right(updateResult.value);
   }

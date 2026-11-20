@@ -202,4 +202,16 @@ describe('isBillDetectionDue', () => {
       ),
     ).toBe(true);
   });
+
+  it('decides from the workspace timezone at a single instant', () => {
+    const now = new Date('2026-07-01T02:00:00.000Z');
+    const lastDetection = new Date('2026-06-15T12:00:00.000Z');
+
+    expect(isBillDetectionDue(lastDetection, now, 'Pacific/Kiritimati')).toBe(
+      true,
+    );
+    expect(isBillDetectionDue(lastDetection, now, 'Pacific/Midway')).toBe(
+      false,
+    );
+  });
 });

@@ -21,6 +21,7 @@ import {
 import { Category } from '../src/modules/category/entities/Category';
 import { CategoryRepository } from '../src/modules/category/repositories/contracts/CategoryRepository';
 import { CreateTransactionService } from '../src/modules/transaction/features/create-transaction/create-transaction.service';
+import { RecurringSuggestionDetectionDispatcher } from '../src/modules/transaction/features/recurring-suggestions/recurring-suggestion-detection.dispatcher';
 import { SetTransactionStatusService } from '../src/modules/transaction/features/set-transaction-status/set-transaction-status.service';
 import { ReconcileBalancesJobService } from '../src/modules/transaction/jobs/reconcile-balances/reconcile-balances.service';
 import { TransactionRepository } from '../src/modules/transaction/repositories/contracts/TransactionRepository';
@@ -116,6 +117,10 @@ describe('backfill and reconcile after balance writes', () => {
         { provide: ConfigService, useValue: {} },
         { provide: DateProvider, useClass: DayJsDateProvider },
         UserRepositoryImplementation,
+        {
+          provide: RecurringSuggestionDetectionDispatcher,
+          useValue: { notify: () => undefined },
+        },
         CreateTransactionService,
         SetTransactionStatusService,
         ReconcileBalancesJobService,
