@@ -58,7 +58,8 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   const NOW = new Date('2024-01-15T00:00:00.000Z');
   const LOOK_AHEAD = new Date('2024-01-22');
-  const DAY = '2024-01-15';
+  const DAY = '2024-01-14';
+  const calendar = new DayJsDateProvider();
   const LOCK: LockHandle = {
     key: `lock:recurring:${DAY}`,
     token: 'token-1',
@@ -106,7 +107,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
     dateProvider = {
       now: jest.fn().mockReturnValue(NOW),
       add: jest.fn().mockReturnValue(LOOK_AHEAD),
-      format: jest.fn().mockReturnValue(DAY),
+      format: jest.fn((date: Date, formatString: string, timezone: string) =>
+        calendar.format(date, formatString, timezone),
+      ),
       toTimezone: jest.fn(),
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
@@ -128,13 +131,6 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   function setRedisEnabled(value: boolean): void {
     (redis as unknown as { isEnabled: boolean }).isEnabled = value;
-  }
-
-  function useRealCalendarFormat(): void {
-    const calendar = new DayJsDateProvider();
-    dateProvider.format.mockImplementation((date, formatString, timezone) =>
-      calendar.format(date, formatString, timezone),
-    );
   }
 
   it('skips when the day is already cached', async () => {
@@ -586,7 +582,6 @@ describe('GenerateRecurringTransactionsJobService', () => {
   });
 
   it('deactivates the recurring once generation passes its endDate', async () => {
-    useRealCalendarFormat();
     const recurring = makeRecurring({
       startDate: new Date('2023-11-10'),
       endDate: new Date('2024-01-10'),
@@ -605,7 +600,6 @@ describe('GenerateRecurringTransactionsJobService', () => {
   });
 
   it('persists the deactivation even with zero generated transactions', async () => {
-    useRealCalendarFormat();
     const recurring = makeRecurring({
       lastGenerated: new Date('2024-01-01'),
       endDate: new Date('2024-01-10'),
