@@ -56,6 +56,18 @@ ele tem prioridade sobre `REDIS_HOST` / `REDIS_PORT`.
 API disponível em `http://localhost:8080`
 Swagger em `http://localhost:8080/api/docs` (apenas `NODE_ENV=dev`)
 
+### Prod-like API (opt-in)
+
+Runs the compiled production image (`Dockerfile`, Node 22, `node dist/src/infra/http/main.js`) with the same capacity as the Render service: 0.1 CPU, 512 MB RAM, `NODE_ENV=production`, Postgres pool of 10. Postgres and Redis stay uncapped.
+
+```bash
+docker compose -f docker-compose.dev.yml --profile prod-like up -d --build
+curl -sf http://localhost:8080/api/v1/health
+docker compose -f docker-compose.dev.yml --profile prod-like down
+```
+
+It reads `.env` for secrets and overrides `DATABASE_URL` and `REDIS_URL` to point at the compose services. Run `npm run db:migrate` first on a fresh database. Set `API_HOST_PORT` to change the host port (default 8080). Without `--profile prod-like` the API is not started and the dev flow is unchanged.
+
 ---
 
 ## Scripts
