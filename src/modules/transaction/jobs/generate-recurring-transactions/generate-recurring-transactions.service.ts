@@ -319,6 +319,9 @@ export class GenerateRecurringTransactionsJobService {
       }
 
       if (this.planIsExhaustedBefore(recurring, targetDate)) {
+        this.logger.warn(
+          `Job: plano esgotado ${recurring.endDate ? 'pela data final' : 'pela contagem de parcelas'}; recorrência ${recurring.id} (workspace ${recurring.workspaceId}) na última geração ${this.dateProvider.format(recurring.lastGenerated ?? recurring.startDate, 'YYYY-MM-DD', RECURRING_GENERATION_TIMEZONE)}, data alvo ${this.dateProvider.format(targetDate, 'YYYY-MM-DD', RECURRING_GENERATION_TIMEZONE)}.`,
+        );
         recurring.deactivate();
         break;
       }
