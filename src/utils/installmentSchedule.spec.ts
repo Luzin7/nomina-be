@@ -6,6 +6,7 @@ import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
   calculateInstallmentEndDate,
   inferInstallmentCount,
+  isPlanExhaustedBefore,
   nextOccurrence,
   nextOccurrenceAfter,
 } from './installmentSchedule';
@@ -306,5 +307,94 @@ describe('nextOccurrence parity with CalculateNextGenerationDateService', () => 
     expect(nextByHelper(startDate, overrides)).toEqual(
       nextByCalculator(startDate, overrides),
     );
+  });
+});
+
+describe('isPlanExhaustedBefore', () => {
+  const realDateProvider = new DayJsDateProvider();
+  const startDate = realDateProvider.startOfDay(
+    '2026-01-10',
+    RECURRING_GENERATION_TIMEZONE,
+  );
+
+  function plan(overrides: Record<string, unknown> = {}) {
+    return {
+      startDate,
+      frequency: RecurrenceFrequency.MONTHLY,
+      interval: 1,
+      timezone: RECURRING_GENERATION_TIMEZONE,
+      installmentCount: null,
+      endDate: null,
+      ...overrides,
+    };
+  }
+
+  it('should keep the last parcel day inside the plan', () => {
+    const installmentPlan = plan({ installmentCount: 3 });
+
+    expect(
+      isPlanExhaustedBefore(
+        installmentPlan,
+        realDateProvider.startOfDay(
+          '2026-03-10',
+          RECURRING_GENERATION_TIMEZONE,
+        ),
+        realDateProvider,
+      ),
+    ).toBe(false);
+    expect(
+      isPlanExhaustedBefore(
+        installmentPlan,
+        realDateProvider.startOfDay(
+          '2026-03-11',
+          RECURRING_GENERATION_TIMEZONE,
+        ),
+        realDateProvider,
+      ),
+    ).toBe(true);
+  });
+
+  it('should treat the endDate day as the last day of the plan', () => {
+    const endDatePlan = plan({
+      installmentCount: null,
+      endDate: realDateProvider.startOfDay(
+        '2026-03-10',
+        RECURRING_GENERATION_TIMEZONE,
+      ),
+    });
+
+    expect(
+      isPlanExhaustedBefore(
+        endDatePlan,
+        realDateProvider.startOfDay(
+          '2026-03-10',
+          RECURRING_GENERATION_TIMEZONE,
+        ),
+        realDateProvider,
+      ),
+    ).toBe(false);
+    expect(
+      isPlanExhaustedBefore(
+        endDatePlan,
+        realDateProvider.startOfDay(
+          '2026-03-11',
+          RECURRING_GENERATION_TIMEZONE,
+        ),
+        realDateProvider,
+      ),
+    ).toBe(true);
+  });
+
+  it('should never exhaust a plan without endDate or installment count', () => {
+    expect(
+      isPlanExhaustedBefore(
+        plan(),
+        realDateProvider.startOfDay(
+          '2099-12-31',
+          RECURRING_GENERATION_TIMEZONE,
+        ),
+        realDateProvider,
+      ),
+    ).toBe(false);
   });
 });

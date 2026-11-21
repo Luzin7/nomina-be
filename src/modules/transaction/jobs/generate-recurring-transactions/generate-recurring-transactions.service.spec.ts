@@ -58,7 +58,8 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   const NOW = new Date('2024-01-15T00:00:00.000Z');
   const LOOK_AHEAD = new Date('2024-01-22');
-  const DAY = '2024-01-15';
+  const DAY = '2024-01-14';
+  const calendar = new DayJsDateProvider();
   const LOCK: LockHandle = {
     key: `lock:recurring:${DAY}`,
     token: 'token-1',
@@ -106,7 +107,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
     dateProvider = {
       now: jest.fn().mockReturnValue(NOW),
       add: jest.fn().mockReturnValue(LOOK_AHEAD),
-      format: jest.fn().mockReturnValue(DAY),
+      format: jest.fn((date: Date, formatString: string, timezone: string) =>
+        calendar.format(date, formatString, timezone),
+      ),
       toTimezone: jest.fn(),
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
@@ -594,6 +597,37 @@ describe('GenerateRecurringTransactionsJobService', () => {
       recurringRepository.createGeneratedTransactions.mock.calls[0];
     expect(transactions).toHaveLength(2);
     expect(updatedRecurring.active).toBe(false);
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `plano esgotado pela data final; recorrência ${recurring.id} (workspace ${recurring.workspaceId}) na última geração 2024-01-09, data alvo 2024-01-14`,
+      ),
+    );
+  });
+
+  it('logs the installment count when it exhausts the plan', async () => {
+    dateProvider.add
+      .mockReturnValueOnce(new Date('2024-04-20'))
+      .mockReturnValue(new Date('2024-03-10'));
+    const recurring = makeRecurring({
+      startDate: new Date('2024-01-10'),
+      installmentCount: 3,
+    });
+    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    nextGenerationDateCalculator.execute.mockReturnValue(
+      new Date('2024-04-01'),
+    );
+
+    await service.execute();
+
+    const [transactions, updatedRecurring] =
+      recurringRepository.createGeneratedTransactions.mock.calls[0];
+    expect(transactions).toHaveLength(1);
+    expect(updatedRecurring.active).toBe(false);
+    expect(loggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `plano esgotado pela contagem de parcelas; recorrência ${recurring.id} (workspace ${recurring.workspaceId}) na última geração 2024-01-09, data alvo 2024-03-31`,
+      ),
+    );
   });
 
   it('persists the deactivation even with zero generated transactions', async () => {
