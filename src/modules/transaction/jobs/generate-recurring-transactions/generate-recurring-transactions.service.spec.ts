@@ -130,6 +130,13 @@ describe('GenerateRecurringTransactionsJobService', () => {
     (redis as unknown as { isEnabled: boolean }).isEnabled = value;
   }
 
+  function useRealCalendarFormat(): void {
+    const calendar = new DayJsDateProvider();
+    dateProvider.format.mockImplementation((date, formatString, timezone) =>
+      calendar.format(date, formatString, timezone),
+    );
+  }
+
   it('skips when the day is already cached', async () => {
     redis.exists.mockResolvedValue(true);
 
@@ -579,6 +586,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
   });
 
   it('deactivates the recurring once generation passes its endDate', async () => {
+    useRealCalendarFormat();
     const recurring = makeRecurring({
       startDate: new Date('2023-11-10'),
       endDate: new Date('2024-01-10'),
@@ -597,6 +605,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
   });
 
   it('persists the deactivation even with zero generated transactions', async () => {
+    useRealCalendarFormat();
     const recurring = makeRecurring({
       lastGenerated: new Date('2024-01-01'),
       endDate: new Date('2024-01-10'),

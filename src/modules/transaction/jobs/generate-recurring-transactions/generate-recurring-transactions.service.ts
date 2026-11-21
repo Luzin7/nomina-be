@@ -21,6 +21,7 @@ import { captureException } from '@sentry/nestjs';
 import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { getErrorDetails } from '@shared/utils/error-details';
+import { isPlanExhaustedBefore } from '@utils/installmentSchedule';
 
 const BATCH_SIZE = 50;
 const LOCK_TTL_SECONDS = 300;
@@ -272,6 +273,24 @@ export class GenerateRecurringTransactionsJobService {
     );
   }
 
+  private planIsExhaustedBefore(
+    recurring: RecurringTransaction,
+    targetDate: Date,
+  ): boolean {
+    return isPlanExhaustedBefore(
+      {
+        startDate: recurring.startDate,
+        frequency: recurring.frequency,
+        interval: recurring.interval,
+        installmentCount: recurring.installmentCount,
+        endDate: recurring.endDate,
+        timezone: RECURRING_GENERATION_TIMEZONE,
+      },
+      targetDate,
+      this.dateProvider,
+    );
+  }
+
   private async generateTransactionsForRecurring(
     recurring: RecurringTransaction,
     thresholdDate: Date,
@@ -299,7 +318,7 @@ export class GenerateRecurringTransactionsJobService {
         break;
       }
 
-      if (recurring.endDate && targetDate > recurring.endDate) {
+      if (this.planIsExhaustedBefore(recurring, targetDate)) {
         recurring.deactivate();
         break;
       }
