@@ -102,13 +102,17 @@ export class TransactionRepositoryImplementation implements TransactionRepositor
       this.drizzle.db
         .select({
           transaction: schema.transactions,
-          installmentNumber: installmentNumberSql(),
-          installmentCount: installmentCountSql(),
+          installmentNumber: installmentNumberSql(schema.accounts.timezone),
+          installmentCount: installmentCountSql(schema.accounts.timezone),
         })
         .from(schema.transactions)
         .leftJoin(
           schema.recurringTransactions,
           eq(schema.recurringTransactions.id, schema.transactions.recurringId),
+        )
+        .leftJoin(
+          schema.accounts,
+          eq(schema.accounts.id, schema.recurringTransactions.accountId),
         )
         .where(whereConditions)
         .limit(params.pageSize)

@@ -13,7 +13,6 @@ import { MonthSummaryPresenter } from '@modules/report/presenters/MonthlySummary
 import { projectMonthEnd } from '@modules/report/valueObjects/MonthProjection';
 import { LedgerMonth } from '@modules/report/valueObjects/ProjectionRules';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { right } from '@shared/core/errors/Either';
 import { nextOccurrence } from '@utils/installmentSchedule';
@@ -311,6 +310,7 @@ describe('report regression goldens', () => {
           endDate: null,
           lastGenerated: new Date('2026-09-05T12:00:00.000Z'),
           materializedDates: [new Date('2026-09-05T12:00:00.000Z')],
+          timezone: TIMEZONE,
         },
       ],
       nextOccurrence: (date, rule) =>
@@ -319,7 +319,7 @@ describe('report regression goldens', () => {
             startDate: date,
             frequency: rule.frequency,
             interval: rule.interval,
-            timezone: RECURRING_GENERATION_TIMEZONE,
+            timezone: TIMEZONE,
           },
           new DayJsDateProvider(),
         ),

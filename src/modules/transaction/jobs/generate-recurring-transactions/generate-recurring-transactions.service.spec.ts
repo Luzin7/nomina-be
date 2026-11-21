@@ -5,8 +5,12 @@ import {
 } from '@infra/cache/contracts/CacheProvider';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { captureException } from '@sentry/nestjs';
+import { RecurringTransaction } from '@modules/transaction/entities/RecurringTransaction';
 import { Transaction } from '@modules/transaction/entities/Transaction';
-import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
+import {
+  RecurringRuleSchedule,
+  RecurringTransactionRepository,
+} from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { makeRecurring } from '@modules/transaction/test-helpers/mock-factories';
 import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
@@ -58,12 +62,23 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   const NOW = new Date('2024-01-15T00:00:00.000Z');
   const LOOK_AHEAD = new Date('2024-01-22');
-  const DAY = '2024-01-14';
+  const DAY = '2024-01-15';
+  const RULE_TIMEZONE = 'America/Sao_Paulo';
   const calendar = new DayJsDateProvider();
   const LOCK: LockHandle = {
     key: `lock:recurring:${DAY}`,
     token: 'token-1',
   };
+
+  const scheduleOf = (
+    recurring: RecurringTransaction,
+    timezone: string = RULE_TIMEZONE,
+  ): RecurringRuleSchedule => ({ recurring, timezone });
+
+  const schedule = (
+    overrides: Parameters<typeof makeRecurring>[0] = {},
+    timezone: string = RULE_TIMEZONE,
+  ): RecurringRuleSchedule => scheduleOf(makeRecurring(overrides), timezone);
 
   beforeEach(() => {
     recurringRepository = {
@@ -192,20 +207,11 @@ describe('GenerateRecurringTransactionsJobService', () => {
     expect(loggedRedisDegradation()).toBe(true);
   });
 
-  it('derives the day and cache key from the DateProvider timezone', async () => {
+  it('derives the day and cache key from the run clock timezone in UTC', async () => {
     await service.execute();
 
-    expect(dateProvider.format).toHaveBeenCalledWith(
-      NOW,
-      'YYYY-MM-DD',
-      'America/Sao_Paulo',
-    );
-    expect(dateProvider.add).toHaveBeenCalledWith(
-      NOW,
-      7,
-      'day',
-      'America/Sao_Paulo',
-    );
+    expect(dateProvider.format).toHaveBeenCalledWith(NOW, 'YYYY-MM-DD', 'UTC');
+    expect(dateProvider.add).toHaveBeenCalledWith(NOW, 7, 'day', 'UTC');
     expect(redis.exists).toHaveBeenCalledWith(`processed:recurring:${DAY}`);
   });
 
@@ -255,7 +261,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('advances the keyset cursor across full batches', async () => {
     const fullBatch = Array.from({ length: 50 }, (_, i) =>
-      makeRecurring({
+      schedule({
         id: `r-${String(i).padStart(3, '0')}`,
         startDate: new Date('2024-01-10'),
       }),
@@ -281,7 +287,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('generates due transactions and marks the recurring as generated', async () => {
     const recurring = makeRecurring({ startDate: new Date('2024-01-10') });
-    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      scheduleOf(recurring),
+    ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-02-10'),
     );
@@ -300,17 +308,17 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('invalidates the report cache once per workspace that persisted', async () => {
     recurringRepository.listNeedingGeneration.mockResolvedValue([
-      makeRecurring({
+      schedule({
         id: 'r-a1',
         workspaceId: 'ws-a',
         startDate: new Date('2024-01-10'),
       }),
-      makeRecurring({
+      schedule({
         id: 'r-a2',
         workspaceId: 'ws-a',
         startDate: new Date('2024-01-10'),
       }),
-      makeRecurring({
+      schedule({
         id: 'r-b1',
         workspaceId: 'ws-b',
         startDate: new Date('2024-01-10'),
@@ -341,7 +349,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('invalidates already persisted workspaces and propagates the error when a later batch fails', async () => {
     const fullBatch = Array.from({ length: 50 }, (_, i) =>
-      makeRecurring({
+      schedule({
         id: `r-${String(i).padStart(3, '0')}`,
         workspaceId: 'ws-a',
         startDate: new Date('2024-01-10'),
@@ -369,7 +377,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('reports the count the repository inserted, not the batch size', async () => {
     const recurring = makeRecurring({ startDate: new Date('2024-01-10') });
-    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      scheduleOf(recurring),
+    ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-01-11'),
     );
@@ -397,8 +407,8 @@ describe('GenerateRecurringTransactionsJobService', () => {
       startDate: new Date('2024-01-10'),
     });
     recurringRepository.listNeedingGeneration.mockResolvedValue([
-      forged,
-      valid,
+      scheduleOf(forged),
+      scheduleOf(valid),
     ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-02-10'),
@@ -421,8 +431,8 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('skips a rule whose generated write lost the delete lock and keeps the run going', async () => {
     recurringRepository.listNeedingGeneration.mockResolvedValue([
-      makeRecurring({ id: 'r-locked', startDate: new Date('2024-01-10') }),
-      makeRecurring({ id: 'r-free', startDate: new Date('2024-01-10') }),
+      schedule({ id: 'r-locked', startDate: new Date('2024-01-10') }),
+      schedule({ id: 'r-free', startDate: new Date('2024-01-10') }),
     ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-02-10'),
@@ -454,8 +464,8 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('counts an all-skipped batch as skipped instead of indistinguishable from nothing to write', async () => {
     recurringRepository.listNeedingGeneration.mockResolvedValue([
-      makeRecurring({ id: 'r-locked-a', startDate: new Date('2024-01-10') }),
-      makeRecurring({ id: 'r-locked-b', startDate: new Date('2024-01-10') }),
+      schedule({ id: 'r-locked-a', startDate: new Date('2024-01-10') }),
+      schedule({ id: 'r-locked-b', startDate: new Date('2024-01-10') }),
     ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-02-10'),
@@ -479,8 +489,8 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('skips a rule deleted between the lock attempt and the insert without a failure', async () => {
     recurringRepository.listNeedingGeneration.mockResolvedValue([
-      makeRecurring({ id: 'r-gone', startDate: new Date('2024-01-10') }),
-      makeRecurring({ id: 'r-alive', startDate: new Date('2024-01-10') }),
+      schedule({ id: 'r-gone', startDate: new Date('2024-01-10') }),
+      schedule({ id: 'r-alive', startDate: new Date('2024-01-10') }),
     ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-02-10'),
@@ -518,7 +528,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('reports a foreign key violation from another constraint as a failure', async () => {
     recurringRepository.listNeedingGeneration.mockResolvedValue([
-      makeRecurring({ id: 'r-other-fk', startDate: new Date('2024-01-10') }),
+      schedule({ id: 'r-other-fk', startDate: new Date('2024-01-10') }),
     ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-02-10'),
@@ -552,7 +562,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
   it('reports invalid data without persisting and keeps the recurring active', async () => {
     const recurring = makeRecurring({ startDate: new Date('2024-01-10') });
     Object.defineProperty(recurring, 'amount', { get: () => 0n });
-    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      scheduleOf(recurring),
+    ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-01-11'),
     );
@@ -568,7 +580,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('stops at the monthly safety cap', async () => {
     const recurring = makeRecurring({ startDate: new Date('2024-01-10') });
-    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      scheduleOf(recurring),
+    ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-01-11'),
     );
@@ -586,7 +600,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
       startDate: new Date('2023-11-10'),
       endDate: new Date('2024-01-10'),
     });
-    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      scheduleOf(recurring),
+    ]);
     nextGenerationDateCalculator.execute
       .mockReturnValueOnce(new Date('2024-01-10'))
       .mockReturnValueOnce(new Date('2024-01-15'));
@@ -612,7 +628,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
       startDate: new Date('2024-01-10'),
       installmentCount: 3,
     });
-    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      scheduleOf(recurring),
+    ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-04-01'),
     );
@@ -635,7 +653,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
       lastGenerated: new Date('2024-01-01'),
       endDate: new Date('2024-01-10'),
     });
-    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      scheduleOf(recurring),
+    ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-01-15'),
     );
@@ -654,7 +674,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('keeps the recurring active when there is no endDate', async () => {
     const recurring = makeRecurring({ startDate: new Date('2024-01-10') });
-    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      scheduleOf(recurring),
+    ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-02-10'),
     );
@@ -686,7 +708,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('reports total failure when every recurrence throws', async () => {
     const recurrings = ['r-1', 'r-2', 'r-3'].map((id) =>
-      makeRecurring({ id, startDate: new Date('2024-01-10') }),
+      schedule({ id, startDate: new Date('2024-01-10') }),
     );
     recurringRepository.listNeedingGeneration.mockResolvedValue(recurrings);
     nextGenerationDateCalculator.execute.mockReturnValue(
@@ -720,8 +742,8 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('reports partial failure when only some recurrences throw', async () => {
     recurringRepository.listNeedingGeneration.mockResolvedValue([
-      makeRecurring({ id: 'r-good', startDate: new Date('2024-01-10') }),
-      makeRecurring({ id: 'r-bad', startDate: new Date('2024-01-10') }),
+      schedule({ id: 'r-good', startDate: new Date('2024-01-10') }),
+      schedule({ id: 'r-bad', startDate: new Date('2024-01-10') }),
     ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-02-10'),
@@ -746,7 +768,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
   it('passes the rule start date as the anchor of the next date', async () => {
     const recurring = makeRecurring({ startDate: new Date('2024-01-10') });
-    recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      scheduleOf(recurring),
+    ]);
     nextGenerationDateCalculator.execute.mockReturnValue(
       new Date('2024-02-10'),
     );
@@ -786,7 +810,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
           lastGenerated: new Date(`${last}T12:00:00.000Z`),
         });
         recurringRepository.listNeedingGeneration.mockResolvedValue([
-          recurring,
+          scheduleOf(recurring),
         ]);
         dateProvider.add.mockReturnValue(new Date(`${expected}T13:00:00.000Z`));
 
@@ -804,7 +828,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
       const recurring = makeRecurring({
         startDate: new Date('2024-01-10T12:00:00.000Z'),
       });
-      recurringRepository.listNeedingGeneration.mockResolvedValue([recurring]);
+      recurringRepository.listNeedingGeneration.mockResolvedValue([
+        scheduleOf(recurring),
+      ]);
 
       await service.execute();
       await service.execute();

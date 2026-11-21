@@ -1,5 +1,5 @@
 import { RecurrenceFrequency } from '@constants/enums';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
+import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { nextOccurrenceAfter } from '@utils/installmentSchedule';
 import {
@@ -16,7 +16,7 @@ const stepOf = (date: Date, rule: RecurrenceRule): Date =>
       startDate: rule.startDate,
       frequency: rule.frequency,
       interval: rule.interval,
-      timezone: RECURRING_GENERATION_TIMEZONE,
+      timezone: DEFAULT_TIMEZONE,
     },
     date,
     dateProvider,

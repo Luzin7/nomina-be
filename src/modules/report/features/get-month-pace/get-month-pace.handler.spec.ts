@@ -84,6 +84,7 @@ function makeRentRule(): RecurringRuleSnapshot {
     endDate: null,
     lastGenerated: null,
     materializedDates: [],
+    timezone: SAO_PAULO,
   };
 }
 
@@ -255,6 +256,52 @@ describe('GetMonthPaceService', () => {
     expect(pace.days[5].planCents! - pace.days[4].planCents!).toBeLessThan(
       30_000,
     );
+  });
+
+  it('buckets a UTC+14 rule on its own timezone inside a Sao Paulo workspace', async () => {
+    const KIRITIMATI = 'Pacific/Kiritimati';
+    monthProjectionRepository.findActiveRecurringRules.mockResolvedValue([
+      {
+        ...makeRentRule(),
+        id: 'kiritimati',
+        timezone: KIRITIMATI,
+        startDate: new Date('2026-10-31T10:00:00.000Z'),
+      },
+    ]);
+
+    const pace = await run();
+
+    expect(pace.days[0].planCents).toBe(319_200);
+    expect(pace.days[29].planCents).toBe(876_000);
+    expect(
+      monthProjectionRepository.findActiveRecurringRules,
+    ).toHaveBeenCalledWith(WORKSPACE_ID, {
+      start: new Date('2026-10-30T03:00:00.000Z'),
+      end: new Date('2026-12-03T02:59:59.999Z'),
+    });
+  });
+
+  it('keeps a UTC+14 rule that ends on its first day in a UTC-11 workspace', async () => {
+    workspaceTimezone.execute.mockResolvedValue('Pacific/Midway');
+    monthProjectionRepository.findActiveRecurringRules.mockResolvedValue([
+      {
+        ...makeRentRule(),
+        id: 'kiritimati-ended',
+        timezone: 'Pacific/Kiritimati',
+        startDate: new Date('2026-09-30T10:00:00.000Z'),
+        endDate: new Date('2026-10-31T10:00:00.000Z'),
+      },
+    ]);
+
+    const pace = await run();
+
+    expect(pace.days[0].planCents).toBe(319_200);
+    expect(
+      monthProjectionRepository.findActiveRecurringRules,
+    ).toHaveBeenCalledWith(WORKSPACE_ID, {
+      start: new Date('2026-10-30T11:00:00.000Z'),
+      end: new Date('2026-12-03T10:59:59.999Z'),
+    });
   });
 
   it('sets today to the last day in a past month', async () => {

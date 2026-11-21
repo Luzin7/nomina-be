@@ -169,8 +169,7 @@ describe('recurring exhaustion parity against a real postgres', () => {
     const todayStart = localDayStart(localDate);
     const [rule] = await repository.findSummaryRules({
       workspaceId: workspaceIds.get(planCase.key) as string,
-      todayStart,
-      timezone: DEFAULT_TIMEZONE,
+      now: todayStart,
     });
 
     return {

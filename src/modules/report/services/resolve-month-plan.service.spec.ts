@@ -81,6 +81,7 @@ const makeRentRule = (): RecurringRuleSnapshot => ({
   endDate: null,
   lastGenerated: null,
   materializedDates: [],
+  timezone: SAO_PAULO,
 });
 
 describe('ResolveMonthPlanService', () => {

@@ -1,5 +1,4 @@
 import { RecurrenceFrequency, TransactionStatus } from '@constants/enums';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import {
   CacheProvider,
   LockHandle,
@@ -12,6 +11,7 @@ import {
 } from '@modules/transaction/errors';
 import {
   CreateGeneratedTransactionsResult,
+  RecurringRuleSchedule,
   RecurringTransactionRepository,
 } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
@@ -27,6 +27,7 @@ const BATCH_SIZE = 50;
 const LOCK_TTL_SECONDS = 300;
 const CACHE_TTL_SECONDS = 86400;
 const LOOK_AHEAD_DAYS = 7;
+const RUN_CLOCK_TIMEZONE = 'UTC';
 const FOREIGN_KEY_VIOLATION = '23503';
 const RECURRING_RULE_FK =
   /transactions_recurring_transaction_id_(recurring_transactions_id|fkey)/;
@@ -134,7 +135,7 @@ export class GenerateRecurringTransactionsJobService {
       const day = this.dateProvider.format(
         now,
         'YYYY-MM-DD',
-        RECURRING_GENERATION_TIMEZONE,
+        RUN_CLOCK_TIMEZONE,
       );
 
       const cacheKey = `processed:recurring:${day}`;
@@ -165,7 +166,7 @@ export class GenerateRecurringTransactionsJobService {
         now,
         LOOK_AHEAD_DAYS,
         'day',
-        RECURRING_GENERATION_TIMEZONE,
+        RUN_CLOCK_TIMEZONE,
       );
 
       const counters = await this.generateAll(lookAheadDate);
@@ -198,7 +199,7 @@ export class GenerateRecurringTransactionsJobService {
     };
     const persistedWorkspaceIds = new Set<string>();
     let afterId: string | null = null;
-    let batch: RecurringTransaction[];
+    let batch: RecurringRuleSchedule[];
 
     try {
       do {
@@ -208,11 +209,11 @@ export class GenerateRecurringTransactionsJobService {
           afterId,
         );
 
-        for (const recurring of batch) {
+        for (const schedule of batch) {
           counters.processedCount++;
 
           const outcome = await this.generateForRecurring(
-            recurring,
+            schedule,
             lookAheadDate,
           );
           counters.generatedCount += outcome.generatedCount;
@@ -220,11 +221,11 @@ export class GenerateRecurringTransactionsJobService {
           if (outcome.skipped) counters.skippedCount++;
           if (outcome.failed) counters.failedCount++;
           if (outcome.persisted) {
-            persistedWorkspaceIds.add(recurring.workspaceId);
+            persistedWorkspaceIds.add(schedule.recurring.workspaceId);
           }
         }
 
-        afterId = batch.at(-1)?.id ?? null;
+        afterId = batch.at(-1)?.recurring.id ?? null;
       } while (batch.length === BATCH_SIZE);
     } finally {
       await this.invalidateReports(persistedWorkspaceIds);
@@ -244,16 +245,16 @@ export class GenerateRecurringTransactionsJobService {
   }
 
   private async generateForRecurring(
-    recurring: RecurringTransaction,
+    schedule: RecurringRuleSchedule,
     thresholdDate: Date,
   ): Promise<RecurrenceOutcome> {
     try {
       return await this.generateTransactionsForRecurring(
-        recurring,
+        schedule,
         thresholdDate,
       );
     } catch (error: unknown) {
-      this.reportRecurringFailure(recurring.id, error);
+      this.reportRecurringFailure(schedule.recurring.id, error);
       return {
         generatedCount: 0,
         skipped: false,
@@ -274,9 +275,11 @@ export class GenerateRecurringTransactionsJobService {
   }
 
   private planIsExhaustedBefore(
-    recurring: RecurringTransaction,
+    schedule: RecurringRuleSchedule,
     targetDate: Date,
   ): boolean {
+    const { recurring, timezone } = schedule;
+
     return isPlanExhaustedBefore(
       {
         startDate: recurring.startDate,
@@ -284,7 +287,7 @@ export class GenerateRecurringTransactionsJobService {
         interval: recurring.interval,
         installmentCount: recurring.installmentCount,
         endDate: recurring.endDate,
-        timezone: RECURRING_GENERATION_TIMEZONE,
+        timezone,
       },
       targetDate,
       this.dateProvider,
@@ -292,9 +295,10 @@ export class GenerateRecurringTransactionsJobService {
   }
 
   private async generateTransactionsForRecurring(
-    recurring: RecurringTransaction,
+    schedule: RecurringRuleSchedule,
     thresholdDate: Date,
   ): Promise<RecurrenceOutcome> {
+    const { recurring, timezone } = schedule;
     const transactionsToCreate: Array<Transaction> = [];
     let failed = false;
 
@@ -304,7 +308,7 @@ export class GenerateRecurringTransactionsJobService {
           baseDate: recurring.lastGenerated,
           frequency: recurring.frequency,
           interval: recurring.interval,
-          timezone: RECURRING_GENERATION_TIMEZONE,
+          timezone,
         })
       : recurring.startDate;
 
@@ -318,9 +322,9 @@ export class GenerateRecurringTransactionsJobService {
         break;
       }
 
-      if (this.planIsExhaustedBefore(recurring, targetDate)) {
+      if (this.planIsExhaustedBefore(schedule, targetDate)) {
         this.logger.warn(
-          `Job: plano esgotado ${recurring.endDate ? 'pela data final' : 'pela contagem de parcelas'}; recorrência ${recurring.id} (workspace ${recurring.workspaceId}) na última geração ${this.dateProvider.format(recurring.lastGenerated ?? recurring.startDate, 'YYYY-MM-DD', RECURRING_GENERATION_TIMEZONE)}, data alvo ${this.dateProvider.format(targetDate, 'YYYY-MM-DD', RECURRING_GENERATION_TIMEZONE)}.`,
+          `Job: plano esgotado ${recurring.endDate ? 'pela data final' : 'pela contagem de parcelas'}; recorrência ${recurring.id} (workspace ${recurring.workspaceId}) na última geração ${this.dateProvider.format(recurring.lastGenerated ?? recurring.startDate, 'YYYY-MM-DD', timezone)}, data alvo ${this.dateProvider.format(targetDate, 'YYYY-MM-DD', timezone)}.`,
         );
         recurring.deactivate();
         break;
@@ -355,7 +359,7 @@ export class GenerateRecurringTransactionsJobService {
         baseDate: targetDate,
         frequency: recurring.frequency,
         interval: recurring.interval,
-        timezone: RECURRING_GENERATION_TIMEZONE,
+        timezone,
       });
       generationCount++;
     }

@@ -17,7 +17,6 @@ import {
   InvoiceCalendar,
   InvoiceKey,
 } from '@modules/account/valueObjects/InvoiceCalendar';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -214,7 +213,7 @@ export class GetUpcomingInvoicesService implements Service<
               startDate: rule.startDate,
               frequency: rule.frequency,
               interval: rule.interval,
-              timezone: RECURRING_GENERATION_TIMEZONE,
+              timezone: account.timezone,
             },
             date,
             this.dateProvider,

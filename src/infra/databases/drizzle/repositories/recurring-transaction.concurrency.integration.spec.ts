@@ -104,8 +104,7 @@ describe('recurring summary exhaustion against a real postgres', () => {
   ) {
     const [row] = await repository.findSummaryRules({
       workspaceId,
-      todayStart: localMidnight(localDate, timezone),
-      timezone,
+      now: localMidnight(localDate, timezone),
     });
 
     return row.exhausted;
