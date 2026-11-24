@@ -71,7 +71,10 @@ describe('recurring summary exhaustion against a real postgres', () => {
     };
   }
 
-  async function seedRules(rows: Partial<RecurringRow>[]) {
+  async function seedRules(
+    rows: Partial<RecurringRow>[],
+    { timezone = DEFAULT_TIMEZONE }: { timezone?: string } = {},
+  ) {
     const workspaceId = randomUUID();
     const accountId = randomUUID();
     const categoryId = randomUUID();
@@ -81,6 +84,7 @@ describe('recurring summary exhaustion against a real postgres', () => {
       workspaceId,
       name: 'Account',
       type: AccountType.CHECKING,
+      timezone,
     });
     await db.insert(schema.categories).values({
       id: categoryId,
@@ -154,14 +158,17 @@ describe('recurring summary exhaustion against a real postgres', () => {
     );
   });
 
-  it('should read the last parcel day in the workspace timezone', async () => {
-    const { workspaceId } = await seedRules([
-      {
-        installmentCount: 3,
-        endDate: null,
-        startDate: localMidnight('2026-03-01', LISBON),
-      },
-    ]);
+  it('should schedule the last parcel day in the account timezone', async () => {
+    const { workspaceId } = await seedRules(
+      [
+        {
+          installmentCount: 3,
+          endDate: null,
+          startDate: localMidnight('2026-03-01', LISBON),
+        },
+      ],
+      { timezone: LISBON },
+    );
 
     expect(await isExhausted(workspaceId, '2026-04-28', LISBON)).toBe(false);
     expect(await isExhausted(workspaceId, '2026-04-29', LISBON)).toBe(false);
