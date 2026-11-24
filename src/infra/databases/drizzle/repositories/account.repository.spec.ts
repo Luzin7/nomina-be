@@ -142,19 +142,32 @@ describe('AccountRepositoryImplementation.findAllByWorkspaceId', () => {
       makeRow({ id: 'acc-1' }),
       makeRow({ id: 'acc-2', type: AccountType.CREDIT_CARD, dueDay: null }),
     ];
-    const drizzle = {
-      db: {
-        select: jest.fn().mockReturnValue({
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue(rows),
+    const execute = jest.fn().mockResolvedValue([{ statementTimeout: '15s' }]);
+    const transaction = jest.fn(
+      async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          execute,
+          select: jest.fn().mockReturnValue({
+            from: jest.fn().mockReturnValue({
+              where: jest.fn().mockResolvedValue(rows),
+            }),
           }),
         }),
-      },
-    } as unknown as DrizzleService;
+    );
+    const drizzle = new DrizzleService({ transaction } as never);
     const repository = new AccountRepositoryImplementation(drizzle);
 
     const accounts = await repository.findAllByWorkspaceId('ws-1');
 
     expect(accounts.map((account) => account.id)).toEqual(['acc-1', 'acc-2']);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(
+      execute.mock.calls.map(([statement]) => JSON.stringify(statement)),
+    ).toEqual([
+      expect.stringContaining('current_setting'),
+      expect.stringContaining('SET LOCAL statement_timeout = 1000'),
+      expect.stringContaining('set_config'),
+    ]);
+    expect(JSON.stringify(execute.mock.calls[2][0])).toContain('15s');
   });
 });

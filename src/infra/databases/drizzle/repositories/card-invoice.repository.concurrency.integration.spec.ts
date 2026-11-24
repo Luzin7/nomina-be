@@ -65,9 +65,9 @@ describe('CardInvoiceRepositoryImplementation against a real postgres', () => {
 
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 
-    repository = new CardInvoiceRepositoryImplementation({
-      db,
-    } as unknown as DrizzleService);
+    repository = new CardInvoiceRepositoryImplementation(
+      new DrizzleService(db),
+    );
   });
 
   afterAll(async () => {

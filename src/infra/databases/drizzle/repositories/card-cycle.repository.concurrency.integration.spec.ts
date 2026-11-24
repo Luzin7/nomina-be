@@ -59,9 +59,7 @@ describe('CardCycleRepositoryImplementation against a real postgres', () => {
 
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 
-    repository = new CardCycleRepositoryImplementation({
-      db,
-    } as unknown as DrizzleService);
+    repository = new CardCycleRepositoryImplementation(new DrizzleService(db));
   });
 
   afterAll(async () => {

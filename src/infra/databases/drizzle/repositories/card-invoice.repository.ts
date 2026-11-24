@@ -59,7 +59,8 @@ export class CardInvoiceRepositoryImplementation implements CardInvoiceRepositor
       sql`, `,
     );
 
-    const rows = await this.drizzle.db.execute<TotalsRow>(sql`
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      const rows = await tx.execute<TotalsRow>(sql`
       SELECT
         w.idx AS "idx",
         ${sumWhere(sql`${isCompleted} AND NOT ${isPaymentToCard} AND ${localDay} < w.period_start AND ${isPosted}`)} AS "chargesBeforePeriod",
@@ -76,7 +77,8 @@ export class CardInvoiceRepositoryImplementation implements CardInvoiceRepositor
       ORDER BY w.idx
     `);
 
-    return Array.from(rows, totalsOf);
+      return Array.from(rows, totalsOf);
+    });
   }
 
   async findPeriodTransactions(

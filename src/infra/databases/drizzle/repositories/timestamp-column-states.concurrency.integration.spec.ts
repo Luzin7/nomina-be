@@ -69,7 +69,7 @@ describe('timestamp column states against a real postgres', () => {
           connection: { TimeZone: sessionTimeZone },
         });
         db = drizzle(queryClient, { schema });
-        drizzleService = { db } as unknown as DrizzleService;
+        drizzleService = new DrizzleService(db);
       });
 
       afterAll(async () => {
