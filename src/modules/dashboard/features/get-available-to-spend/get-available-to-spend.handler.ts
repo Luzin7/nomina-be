@@ -15,6 +15,7 @@ import type { SpendablePayload } from '@modules/spendable/presenters/Spendable.p
 import { SpendableRepository } from '@modules/spendable/repositories/contracts/SpendableRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable, Logger } from '@nestjs/common';
+import { captureException } from '@sentry/nestjs';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { buildCacheKey } from '@shared/cache/cache-key';
@@ -203,6 +204,7 @@ export class GetAvailableToSpendService implements Service<
       this.logger.warn(
         `spendable failed workspaceId=${workspaceId} error=${describeError(error)}`,
       );
+      captureException(error, { extra: { workspaceId } });
       return { spendable: null, failed: true };
     }
   }

@@ -9,7 +9,11 @@ import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import type { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { CardInvoiceRepository } from '@modules/account/repositories/contracts/CardInvoiceRepository';
-import { cardInvoiceWindowOf } from '@modules/account/valueObjects/CardInvoiceWindow';
+import {
+  cardInvoiceWindowOf,
+  type CardInvoiceTotals,
+  type CardInvoiceWindow,
+} from '@modules/account/valueObjects/CardInvoiceWindow';
 import {
   InvoiceCalendar,
   type InvoiceBounds,
@@ -67,6 +71,29 @@ type CardResolution = {
   invoiceCents: number;
 };
 
+type InvoicePlan = {
+  card: CreditCard;
+  window: CardInvoiceWindow;
+};
+
+type CardPlan = {
+  card: CreditCard;
+  headroom: CardHeadroom | null;
+  undated: CardWithoutDueDate | null;
+  invoice: InvoicePlan | null;
+};
+
+type CardContext = {
+  workspaceId: string;
+  accounts: AnyAccount[];
+  today: PlainDate;
+  window: CycleWindow;
+};
+
+type CardPlansInput = CardContext & { cards: CreditCard[] };
+
+type CardPlanInput = CardContext & { card: CreditCard };
+
 type ScheduledTotals = {
   expensesCents: number;
   incomeCents: number;
@@ -78,21 +105,12 @@ type ScheduledTotalsInput = {
   timezone: string;
 };
 
-type InvoiceObligationInput = {
-  workspaceId: string;
+type InvoicePlanInput = {
   card: CreditCard;
   accounts: AnyAccount[];
   calendar: InvoiceCalendar;
   current: InvoiceBounds;
   window: CycleWindow;
-  today: PlainDate;
-};
-
-type InvoiceRemainingInput = {
-  workspaceId: string;
-  card: CreditCard;
-  calendar: InvoiceCalendar;
-  bounds: InvoiceBounds;
   today: PlainDate;
 };
 
@@ -179,11 +197,7 @@ export class GetSpendableService implements Service<
         timezone,
       }),
       this.spendableRepository.listActiveRecurrences(workspaceId),
-      Promise.all(
-        cards.map((card) =>
-          this.resolveCard(workspaceId, card, accounts, today, window),
-        ),
-      ),
+      this.cardResolutionsOf({ workspaceId, cards, accounts, today, window }),
     ]);
 
     const scheduled = this.scheduledTotalsOf({ recurrences, window, timezone });
@@ -278,15 +292,63 @@ export class GetSpendableService implements Service<
     return occurrences.length * rule.amount;
   }
 
-  private async resolveCard(
+  private async cardResolutionsOf({
+    workspaceId,
+    cards,
+    accounts,
+    today,
+    window,
+  }: CardPlansInput): Promise<CardResolution[]> {
+    const plans = await Promise.all(
+      cards.map((card) =>
+        this.planCard({ workspaceId, card, accounts, today, window }),
+      ),
+    );
+    const invoices = plans.flatMap((plan) =>
+      plan.invoice === null ? [] : [plan.invoice],
+    );
+    const totals = await this.invoiceTotalsOf(workspaceId, invoices);
+    const remainingByCard = new Map(
+      invoices.map((invoice, index) => [
+        invoice.card.id,
+        Number(buildInvoiceStatementFromTotals(totals[index]).remaining),
+      ]),
+    );
+
+    return plans.map((plan) => ({
+      card: plan.headroom,
+      undated: plan.undated,
+      invoiceCents: remainingByCard.get(plan.card.id) ?? 0,
+    }));
+  }
+
+  private invoiceTotalsOf(
     workspaceId: string,
-    card: CreditCard,
-    accounts: AnyAccount[],
-    today: PlainDate,
-    window: CycleWindow,
-  ): Promise<CardResolution> {
+    invoices: InvoicePlan[],
+  ): Promise<CardInvoiceTotals[]> {
+    if (invoices.length === 0) return Promise.resolve([]);
+
+    return this.cardInvoiceRepository.findTotals(
+      workspaceId,
+      invoices.map((invoice) => invoice.window),
+    );
+  }
+
+  private async planCard({
+    workspaceId,
+    card,
+    accounts,
+    today,
+    window,
+  }: CardPlanInput): Promise<CardPlan> {
     const dueDay = card.dueDay;
-    if (dueDay === null) return this.undatedCardOf(card);
+    if (dueDay === null)
+      return {
+        card,
+        headroom: null,
+        undated: this.undatedCardOf(card),
+        invoice: null,
+      };
 
     const calendar = new InvoiceCalendar({
       dueDay,
@@ -302,61 +364,54 @@ export class GetSpendableService implements Service<
       this.spendOn(workspaceId, card, current),
     ]);
 
-    const headroom =
-      budget === null
-        ? null
-        : CardHeadroom.of({
-            accountId: card.id,
-            name: card.name,
-            dueDate: current.dueDate,
-            limitCents: budget.limitCents,
-            spendCents: currentSpendCents,
-          });
-    const invoiceCents = await this.invoiceObligationOf({
-      workspaceId,
-      card,
-      accounts,
-      calendar,
-      current,
-      window,
-      today,
-    });
-
-    return { card: headroom, undated: null, invoiceCents };
-  }
-
-  private undatedCardOf(card: CreditCard): CardResolution {
     return {
-      card: null,
-      undated: CardWithoutDueDate.of({
-        accountId: card.id,
-        name: card.name,
-        limitCents: card.creditLimit === null ? null : Number(card.creditLimit),
+      card,
+      headroom:
+        budget === null
+          ? null
+          : CardHeadroom.of({
+              accountId: card.id,
+              name: card.name,
+              dueDate: current.dueDate,
+              limitCents: budget.limitCents,
+              spendCents: currentSpendCents,
+            }),
+      undated: null,
+      invoice: this.invoicePlanOf({
+        card,
+        accounts,
+        calendar,
+        current,
+        window,
+        today,
       }),
-      invoiceCents: 0,
     };
   }
 
-  private async invoiceObligationOf({
-    workspaceId,
+  private undatedCardOf(card: CreditCard): CardWithoutDueDate {
+    return CardWithoutDueDate.of({
+      accountId: card.id,
+      name: card.name,
+      limitCents: card.creditLimit === null ? null : Number(card.creditLimit),
+    });
+  }
+
+  private invoicePlanOf({
     card,
     accounts,
     calendar,
     current,
     window,
     today,
-  }: InvoiceObligationInput): Promise<number> {
+  }: InvoicePlanInput): InvoicePlan | null {
     const bounds = this.billInWindowOf(calendar, current, window);
-    if (bounds === null) return 0;
-    if (!this.fundsFromCash(card, accounts)) return 0;
+    if (bounds === null) return null;
+    if (!this.fundsFromCash(card, accounts)) return null;
 
-    return this.invoiceRemainingOf({
-      workspaceId,
+    return {
       card,
-      calendar,
-      bounds,
-      today,
-    });
+      window: cardInvoiceWindowOf(card, calendar, bounds.key, today),
+    };
   }
 
   private billInWindowOf(
@@ -379,20 +434,6 @@ export class GetSpendableService implements Service<
     );
 
     return source === undefined || isCashAccount(source);
-  }
-
-  private async invoiceRemainingOf({
-    workspaceId,
-    card,
-    calendar,
-    bounds,
-    today,
-  }: InvoiceRemainingInput): Promise<number> {
-    const [totals] = await this.cardInvoiceRepository.findTotals(workspaceId, [
-      cardInvoiceWindowOf(card, calendar, bounds.key, today),
-    ]);
-
-    return Number(buildInvoiceStatementFromTotals(totals).remaining);
   }
 
   private spendOn(

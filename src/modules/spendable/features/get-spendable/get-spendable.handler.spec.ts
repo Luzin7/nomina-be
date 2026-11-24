@@ -526,6 +526,19 @@ describe('GetSpendableService', () => {
     expect(result.obligationsCents).toBe(100000);
   });
 
+  it('edge: every card invoice is read in a single call', async () => {
+    given.accounts = [
+      checking(200000n),
+      makeCreditCard({ id: 'card-1', name: 'One', dueDay: 20 }),
+      makeCreditCard({ id: 'card-2', name: 'Two', dueDay: 25 }),
+    ];
+
+    await run();
+
+    expect(cardInvoiceRepository.findTotals).toHaveBeenCalledTimes(1);
+    expect(cardInvoiceRepository.findTotals.mock.calls[0][1]).toHaveLength(2);
+  });
+
   it('edge: a card with no due date is listed instead of dropped', async () => {
     given.accounts = [
       checking(200000n),

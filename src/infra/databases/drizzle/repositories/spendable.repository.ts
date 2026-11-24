@@ -13,7 +13,7 @@ import {
 import { Injectable } from '@nestjs/common';
 import { AnyColumn, SQL, and, eq, inArray, sql } from 'drizzle-orm';
 import * as schema from '../schema';
-import { instantOf, localDayIn } from '../sql-helpers';
+import { withinLocalDays } from '../sql-helpers';
 
 const CASH_ACCOUNT_TYPES = [AccountType.CHECKING, AccountType.CASH];
 const INCOME_OR_EXPENSE = [TransactionType.INCOME, TransactionType.EXPENSE];
@@ -154,7 +154,11 @@ export class SpendableRepositoryImplementation implements SpendableRepository {
             eq(schema.transactions.type, type),
             eq(schema.transactions.status, status),
             inArray(schema.accounts.type, CASH_ACCOUNT_TYPES),
-            sql`${localDayIn(instantOf(schema.transactions.date), sql`${input.timezone}`)} BETWEEN ${input.startDate}::date AND ${input.endDate}::date`,
+            withinLocalDays(schema.transactions.date, {
+              start: input.startDate,
+              end: input.endDate,
+              timezone: input.timezone,
+            }),
           ),
         );
 

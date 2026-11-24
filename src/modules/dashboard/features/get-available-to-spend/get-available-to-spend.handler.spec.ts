@@ -28,12 +28,15 @@ import type { SpendablePayload } from '@modules/spendable/presenters/Spendable.p
 import { SpendableRepository } from '@modules/spendable/repositories/contracts/SpendableRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Logger } from '@nestjs/common';
+import { captureException } from '@sentry/nestjs';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { left, right } from '@shared/core/errors/Either';
 import { CardBillDueInsightService } from '../../services/card-bill-due-insight.service';
 import { BudgetSuggestionInsightService } from '../../services/budget-suggestion-insight.service';
 import { ProjectionShortfallInsightService } from '../../services/projection-shortfall-insight.service';
 import { GetAvailableToSpendService } from './get-available-to-spend.handler';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 const TIMEZONE = 'America/Sao_Paulo';
 const NOW = new Date('2026-11-15T12:00:00.000Z');
@@ -1524,6 +1527,9 @@ describe('GetAvailableToSpendService', () => {
         expect(warn).toHaveBeenCalledWith(
           expect.stringContaining('spendable failed'),
         );
+        expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+          extra: { workspaceId: 'ws-1' },
+        });
       });
     });
   });
