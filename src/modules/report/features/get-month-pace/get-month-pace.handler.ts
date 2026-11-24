@@ -1,4 +1,3 @@
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import {
@@ -143,6 +142,10 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
       timezone,
     };
     const totalDays = daysInMonth(year, month);
+    const recurringWindow = {
+      start: this.dateProvider.add(window.start, -2, 'day', timezone),
+      end: this.dateProvider.add(window.end, 2, 'day', timezone),
+    };
 
     const [plan, spentRows, rules] = await Promise.all([
       this.resolveMonthPlan.execute({
@@ -152,10 +155,10 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
         today: this.dateProvider.format(now, 'YYYY-MM-DD', timezone),
       }),
       this.budgetRepository.findCompletedExpenseByLocalDay(window),
-      this.monthProjectionRepository.findActiveRecurringRules(workspaceId, {
-        start: window.start,
-        end: window.end,
-      }),
+      this.monthProjectionRepository.findActiveRecurringRules(
+        workspaceId,
+        recurringWindow,
+      ),
     ]);
 
     if (plan.isLeft()) return left(plan.value);
@@ -260,23 +263,48 @@ export class GetMonthPaceService implements Service<Request, Error, MonthPace> {
 
   private occurrencesByDay(
     rules: RecurringRuleSnapshot[],
-    { start, end, timezone }: PaceWindow,
+    { start, timezone }: PaceWindow,
+  ): Record<number, number> {
+    const referenceDate = `${this.dateProvider.format(
+      start,
+      'YYYY-MM',
+      timezone,
+    )}-01`;
+    const byDay: Record<number, number> = {};
+
+    for (const rule of rules) {
+      const occurrences = this.ruleOccurrences(rule, referenceDate);
+      for (const [day, amount] of Object.entries(occurrences)) {
+        byDay[Number(day)] = (byDay[Number(day)] ?? 0) + amount;
+      }
+    }
+
+    return byDay;
+  }
+
+  private ruleOccurrences(
+    rule: RecurringRuleSnapshot,
+    referenceDate: string,
   ): Record<number, number> {
     return expenseOccurrencesByDay({
-      rules,
-      month: { start, end },
-      nextOccurrence: (date, rule) =>
+      rules: [rule],
+      month: {
+        start: this.dateProvider.startOfMonth(referenceDate, rule.timezone),
+        end: this.dateProvider.endOfMonth(referenceDate, rule.timezone),
+      },
+      nextOccurrence: (date) =>
         nextOccurrenceAfter(
           {
             startDate: rule.startDate,
             frequency: rule.frequency,
             interval: rule.interval,
-            timezone: RECURRING_GENERATION_TIMEZONE,
+            timezone: rule.timezone,
           },
           date,
           this.dateProvider,
         ),
-      dayOf: (date) => Number(this.dateProvider.format(date, 'D', timezone)),
+      dayOf: (date) =>
+        Number(this.dateProvider.format(date, 'D', rule.timezone)),
     });
   }
 

@@ -586,6 +586,7 @@ describe('month projection repository against a real postgres', () => {
             startDate: rule.startDate,
             endDate: rule.endDate,
             lastGenerated,
+            timezone: DEFAULT_TIMEZONE,
             materializedDates: [],
           });
         });

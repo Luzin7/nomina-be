@@ -107,16 +107,25 @@ describe('recurring generation against a real postgres', () => {
     };
   }
 
-  async function seedRules(rows: Partial<RecurringRow>[]) {
+  async function seedRules(
+    rows: Partial<RecurringRow>[],
+    {
+      accountTimezone = DEFAULT_TIMEZONE,
+      workspaceTimezone = DEFAULT_TIMEZONE,
+    }: { accountTimezone?: string; workspaceTimezone?: string } = {},
+  ) {
     const workspaceId = randomUUID();
     const accountId = randomUUID();
     const categoryId = randomUUID();
-    await db.insert(schema.workspaces).values({ id: workspaceId, name: 'WS' });
+    await db
+      .insert(schema.workspaces)
+      .values({ id: workspaceId, name: 'WS', timezone: workspaceTimezone });
     await db.insert(schema.accounts).values({
       id: accountId,
       workspaceId,
       name: 'Account',
       type: AccountType.CHECKING,
+      timezone: accountTimezone,
     });
     await db.insert(schema.categories).values({
       id: categoryId,
@@ -133,7 +142,10 @@ describe('recurring generation against a real postgres', () => {
     return { ruleIds: rules.map((rule) => rule.id as string) };
   }
 
-  async function generatedDays(ruleId: string): Promise<string[]> {
+  async function generatedDays(
+    ruleId: string,
+    timezone: string = DEFAULT_TIMEZONE,
+  ): Promise<string[]> {
     const rows = await db
       .select({ date: schema.transactions.date })
       .from(schema.transactions)
@@ -141,7 +153,7 @@ describe('recurring generation against a real postgres', () => {
       .orderBy(asc(schema.transactions.date));
 
     return rows.map(({ date }) =>
-      dateProvider.format(date, 'YYYY-MM-DD', DEFAULT_TIMEZONE),
+      dateProvider.format(date, 'YYYY-MM-DD', timezone),
     );
   }
 
@@ -158,5 +170,73 @@ describe('recurring generation against a real postgres', () => {
     dateProvider.setNow('2026-11-20T12:00:00.000Z');
     await service.execute();
     expect(await generatedDays(ruleId)).toEqual(parcelDays);
+  });
+
+  it('generates six parcel days in the account timezone for an Auckland plan', async () => {
+    const AUCKLAND = 'Pacific/Auckland';
+    const parcelDays = [
+      '2026-01-15',
+      '2026-02-15',
+      '2026-03-15',
+      '2026-04-15',
+      '2026-05-15',
+      '2026-06-15',
+    ];
+    const {
+      ruleIds: [ruleId],
+    } = await seedRules(
+      [
+        {
+          installmentCount: 6,
+          endDate: null,
+          startDate: dateProvider.startOfDay('2026-01-15', AUCKLAND),
+        },
+      ],
+      { accountTimezone: AUCKLAND },
+    );
+
+    dateProvider.setNow('2026-08-20T12:00:00.000Z');
+    await service.execute();
+    expect(await generatedDays(ruleId, AUCKLAND)).toEqual(parcelDays);
+
+    dateProvider.setNow('2026-12-20T12:00:00.000Z');
+    await service.execute();
+    expect(await generatedDays(ruleId, AUCKLAND)).toEqual(parcelDays);
+  });
+
+  it('generates on the account timezone when the workspace timezone differs', async () => {
+    const AUCKLAND = 'Pacific/Auckland';
+    const {
+      ruleIds: [ruleId],
+    } = await seedRules(
+      [
+        {
+          installmentCount: 6,
+          endDate: null,
+          startDate: dateProvider.startOfDay('2026-01-15', AUCKLAND),
+        },
+      ],
+      { accountTimezone: AUCKLAND, workspaceTimezone: DEFAULT_TIMEZONE },
+    );
+
+    dateProvider.setNow('2026-08-20T12:00:00.000Z');
+    await service.execute();
+
+    expect(await generatedDays(ruleId, AUCKLAND)).toEqual([
+      '2026-01-15',
+      '2026-02-15',
+      '2026-03-15',
+      '2026-04-15',
+      '2026-05-15',
+      '2026-06-15',
+    ]);
+    expect(await generatedDays(ruleId, DEFAULT_TIMEZONE)).toEqual([
+      '2026-01-14',
+      '2026-02-14',
+      '2026-03-14',
+      '2026-04-14',
+      '2026-05-14',
+      '2026-06-14',
+    ]);
   });
 });

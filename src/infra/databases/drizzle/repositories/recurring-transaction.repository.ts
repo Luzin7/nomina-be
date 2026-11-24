@@ -8,6 +8,7 @@ import {
   DeleteRecurringTransactionQuery,
   FindManyRecurringByWorkspaceQuery,
   FindSummaryRulesQuery,
+  RecurringRuleSchedule,
   RecurringSummaryRule,
   RecurringTransactionRepository,
 } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
@@ -32,7 +33,7 @@ import { RecurringTransactionMapper } from '../mappers/recurring-transaction.map
 import { TransactionMapper } from '../mappers/transaction.mapper';
 import * as schema from '../schema';
 import { lockRecurringRule, tryLockRecurringRule } from '../advisory-locks';
-import { localDayIn } from '../sql-helpers';
+import { instantOf, localDayIn } from '../sql-helpers';
 import { installmentPlanExhaustedAt } from './installment-position';
 
 const RECURRING_TYPES = ['INCOME', 'EXPENSE'];
@@ -205,10 +206,17 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
   async findNeedingGenerationByWorkspaceId(
     workspaceId: string,
     referenceDate: Date,
-  ): Promise<RecurringTransaction[]> {
+  ): Promise<RecurringRuleSchedule[]> {
     const recurrings = await this.drizzle.db
-      .select()
+      .select({
+        recurring: schema.recurringTransactions,
+        timezone: schema.accounts.timezone,
+      })
       .from(schema.recurringTransactions)
+      .innerJoin(
+        schema.accounts,
+        eq(schema.accounts.id, schema.recurringTransactions.accountId),
+      )
       .where(
         and(
           eq(schema.recurringTransactions.workspaceId, workspaceId),
@@ -221,17 +229,27 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
         ),
       );
 
-    return recurrings.map(RecurringTransactionMapper.toDomain);
+    return recurrings.map(({ recurring, timezone }) => ({
+      recurring: RecurringTransactionMapper.toDomain(recurring),
+      timezone,
+    }));
   }
 
   async listNeedingGeneration(
     referenceDate: Date,
     limit: number,
     afterId: string | null,
-  ): Promise<RecurringTransaction[]> {
+  ): Promise<RecurringRuleSchedule[]> {
     const recurrings = await this.drizzle.db
-      .select()
+      .select({
+        recurring: schema.recurringTransactions,
+        timezone: schema.accounts.timezone,
+      })
       .from(schema.recurringTransactions)
+      .innerJoin(
+        schema.accounts,
+        eq(schema.accounts.id, schema.recurringTransactions.accountId),
+      )
       .where(
         and(
           eq(schema.recurringTransactions.active, true),
@@ -248,7 +266,10 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
       .orderBy(asc(schema.recurringTransactions.id))
       .limit(limit);
 
-    return recurrings.map(RecurringTransactionMapper.toDomain);
+    return recurrings.map(({ recurring, timezone }) => ({
+      recurring: RecurringTransactionMapper.toDomain(recurring),
+      timezone,
+    }));
   }
 
   async createGeneratedTransactions(
@@ -296,11 +317,12 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
 
   async findSummaryRules({
     workspaceId,
-    todayStart,
-    timezone,
+    now,
   }: FindSummaryRulesQuery): Promise<RecurringSummaryRule[]> {
     const rule = schema.recurringTransactions;
-    const today = sql`${todayStart.toISOString()}::timestamptz`;
+    const accountTimezone = schema.accounts.timezone;
+    const nowInstant = sql`${now.toISOString()}::timestamptz`;
+    const today = localDayIn(nowInstant, accountTimezone);
 
     const rows = await this.drizzle.db
       .select({
@@ -314,16 +336,18 @@ export class RecurringTransactionRepositoryImplementation implements RecurringTr
         startDate: rule.startDate,
         endDate: rule.endDate,
         active: rule.active,
+        timezone: accountTimezone,
         exhausted: sql<boolean>`(
-          (${rule.endDate} IS NOT NULL AND ${rule.endDate} < ${today})
+          (${rule.endDate} IS NOT NULL AND ${localDayIn(instantOf(rule.endDate), accountTimezone)} < ${today})
           OR (
             ${rule.endDate} IS NULL
             AND ${rule.installmentCount} IS NOT NULL
-            AND ${installmentPlanExhaustedAt(today, timezone)}
+            AND ${installmentPlanExhaustedAt(nowInstant, accountTimezone)}
           )
         )`,
       })
       .from(rule)
+      .innerJoin(schema.accounts, eq(schema.accounts.id, rule.accountId))
       .where(
         and(
           eq(rule.workspaceId, workspaceId),

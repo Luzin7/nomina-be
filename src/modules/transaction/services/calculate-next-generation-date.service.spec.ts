@@ -1,5 +1,5 @@
 import { RecurrenceFrequency } from '@constants/enums';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
+import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import { UnknownRecurrenceFrequencyError } from '@modules/transaction/errors';
 import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
@@ -11,7 +11,7 @@ const request = (overrides: Record<string, unknown> = {}) => ({
   baseDate: new Date('2026-02-28T12:00:00.000Z'),
   frequency: RecurrenceFrequency.MONTHLY,
   interval: 1,
-  timezone: RECURRING_GENERATION_TIMEZONE,
+  timezone: DEFAULT_TIMEZONE,
   ...overrides,
 });
 

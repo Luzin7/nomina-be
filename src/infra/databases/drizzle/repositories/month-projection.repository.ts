@@ -50,6 +50,7 @@ const epochMsToDate = (epochMs: string) => new Date(Number(epochMs));
 
 type RecurringRuleRow = {
   id: string;
+  timezone: string;
   type: string;
   categoryId: string | null;
   amount: number;
@@ -149,6 +150,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
     const rows: RecurringRuleRow[] = await this.drizzle.db
       .select({
         id: recurringTransactions.id,
+        timezone: schema.accounts.timezone,
         type: recurringTransactions.type,
         categoryId: recurringTransactions.categoryId,
         amount: recurringTransactions.amount,
@@ -169,6 +171,10 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
         ), '[]'::json)`,
       })
       .from(recurringTransactions)
+      .innerJoin(
+        schema.accounts,
+        eq(schema.accounts.id, recurringTransactions.accountId),
+      )
       .where(
         and(
           eq(recurringTransactions.workspaceId, workspaceId),
@@ -184,6 +190,7 @@ export class MonthProjectionRepositoryImplementation implements MonthProjectionR
 
     return rows.map((row) => ({
       id: row.id,
+      timezone: row.timezone,
       type: row.type as RecurringRuleSnapshot['type'],
       categoryId: row.categoryId,
       amount: row.amount,

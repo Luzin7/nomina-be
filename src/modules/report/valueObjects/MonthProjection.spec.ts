@@ -1,4 +1,4 @@
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
+import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import { RecurrenceFrequency } from '@constants/enums';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { nextOccurrence } from '@utils/installmentSchedule';
@@ -25,7 +25,7 @@ const stepRule = (date: Date, rule: RecurringRuleSnapshot) =>
       startDate: date,
       frequency: rule.frequency,
       interval: rule.interval,
-      timezone: RECURRING_GENERATION_TIMEZONE,
+      timezone: DEFAULT_TIMEZONE,
     },
     dateProvider,
   );
@@ -43,6 +43,7 @@ const makeRule = (
   endDate: null,
   lastGenerated: null,
   materializedDates: [],
+  timezone: DEFAULT_TIMEZONE,
   ...overrides,
 });
 

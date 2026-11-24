@@ -1,4 +1,5 @@
 import { RecurrenceFrequency } from '@constants/enums';
+import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import {
   buildMonthPace,
   expenseOccurrencesByDay,
@@ -34,6 +35,7 @@ function makeRule(
     endDate: null,
     lastGenerated: null,
     materializedDates: [],
+    timezone: DEFAULT_TIMEZONE,
     ...overrides,
   };
 }

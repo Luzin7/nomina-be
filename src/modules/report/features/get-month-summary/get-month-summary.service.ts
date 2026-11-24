@@ -1,5 +1,4 @@
 import { AccountType } from '@constants/enums';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { AnyAccount } from '@modules/account/entities/types';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -199,7 +198,7 @@ export class FindMonthSummaryService implements Service<
             startDate: rule.startDate,
             frequency: rule.frequency,
             interval: rule.interval,
-            timezone: RECURRING_GENERATION_TIMEZONE,
+            timezone: rule.timezone,
           },
           date,
           this.dateProvider,

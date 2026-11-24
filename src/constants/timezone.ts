@@ -1,2 +1,1 @@
 export const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
-export const RECURRING_GENERATION_TIMEZONE = DEFAULT_TIMEZONE;

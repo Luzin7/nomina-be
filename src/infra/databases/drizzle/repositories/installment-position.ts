@@ -1,14 +1,15 @@
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
-import { SQL, sql } from 'drizzle-orm';
+import { AnyColumn, SQL, sql } from 'drizzle-orm';
 import { instantOf } from '../sql-helpers';
 import * as schema from '../schema';
 
 const rule = schema.recurringTransactions;
 const row = schema.transactions;
 
+type Timezone = SQL | AnyColumn;
+
 const localDay = (
   instant: SQL | typeof row.date | typeof rule.startDate,
-  timezone: string,
+  timezone: Timezone,
 ) => sql`((${instantOf(instant)} AT TIME ZONE ${timezone}::text)::date)`;
 
 const nonZeroInterval = () => sql`nullif(${rule.interval}, 0)`;
@@ -23,7 +24,7 @@ const occurrenceIndex = (elapsed: SQL, step: SQL) =>
 
 const occurrencePositionAt = (
   instant: SQL | typeof row.date | typeof rule.startDate,
-  timezone: string,
+  timezone: Timezone,
 ): SQL => {
   const day = localDay(instant, timezone);
   const startDay = localDay(rule.startDate, timezone);
@@ -35,8 +36,8 @@ const occurrencePositionAt = (
   end)`;
 };
 
-const occurrencePosition = (): SQL =>
-  occurrencePositionAt(row.date, RECURRING_GENERATION_TIMEZONE);
+const occurrencePosition = (timezone: Timezone): SQL =>
+  occurrencePositionAt(row.date, timezone);
 
 const installmentStep = (): SQL => sql`(case ${rule.frequency}
   when 'MONTHLY' then make_interval(months => ${nonZeroInterval()})
@@ -44,29 +45,29 @@ const installmentStep = (): SQL => sql`(case ${rule.frequency}
   when 'YEARLY' then make_interval(years => ${nonZeroInterval()})
 end)`;
 
-const lastInstallmentDay = (timezone: string): SQL => sql`(
+const lastInstallmentDay = (timezone: Timezone): SQL => sql`(
   ${localDay(rule.startDate, timezone)}
   + ${installmentStep()} * (${rule.installmentCount} - 1)
 )::date`;
 
 export const installmentPlanExhaustedAt = (
   instant: SQL | typeof rule.startDate,
-  timezone: string,
+  timezone: Timezone,
 ): SQL => sql`(
   ${localDay(instant, timezone)} >= ${lastInstallmentDay(timezone)}
 )`;
 
-const isInsideInstallmentPlan = (): SQL =>
-  sql`${occurrencePosition()} between 1 and ${rule.installmentCount}`;
+const isInsideInstallmentPlan = (timezone: Timezone): SQL =>
+  sql`${occurrencePosition(timezone)} between 1 and ${rule.installmentCount}`;
 
-export const installmentNumberSql = (): SQL<number | null> =>
+export const installmentNumberSql = (timezone: Timezone): SQL<number | null> =>
   sql<number | null>`(case
     when ${rule.installmentCount} is null then ${row.installmentNumber}
-    when ${isInsideInstallmentPlan()} then ${occurrencePosition()}
+    when ${isInsideInstallmentPlan(timezone)} then ${occurrencePosition(timezone)}
   end)`;
 
-export const installmentCountSql = (): SQL<number | null> =>
+export const installmentCountSql = (timezone: Timezone): SQL<number | null> =>
   sql<number | null>`(case
     when ${rule.installmentCount} is null then ${row.installmentCount}
-    when ${isInsideInstallmentPlan()} then ${rule.installmentCount}
+    when ${isInsideInstallmentPlan(timezone)} then ${rule.installmentCount}
   end)`;

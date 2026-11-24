@@ -1,6 +1,6 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
+import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
@@ -252,7 +252,7 @@ describe('nextOccurrence parity with CalculateNextGenerationDateService', () => 
 
   function nextByCalculator(startDate: Date, overrides = {}) {
     const input = schedule({
-      timezone: RECURRING_GENERATION_TIMEZONE,
+      timezone: DEFAULT_TIMEZONE,
       ...overrides,
     });
     return calculator.execute({
@@ -266,7 +266,7 @@ describe('nextOccurrence parity with CalculateNextGenerationDateService', () => 
     return nextOccurrence(
       schedule({
         startDate,
-        timezone: RECURRING_GENERATION_TIMEZONE,
+        timezone: DEFAULT_TIMEZONE,
         ...overrides,
       }),
       realDateProvider,
@@ -287,7 +287,7 @@ describe('nextOccurrence parity with CalculateNextGenerationDateService', () => 
     const input = schedule({
       startDate: anchorDate,
       frequency: RecurrenceFrequency.MONTHLY,
-      timezone: RECURRING_GENERATION_TIMEZONE,
+      timezone: DEFAULT_TIMEZONE,
     });
     let baseDate = anchorDate;
 
@@ -312,17 +312,14 @@ describe('nextOccurrence parity with CalculateNextGenerationDateService', () => 
 
 describe('isPlanExhaustedBefore', () => {
   const realDateProvider = new DayJsDateProvider();
-  const startDate = realDateProvider.startOfDay(
-    '2026-01-10',
-    RECURRING_GENERATION_TIMEZONE,
-  );
+  const startDate = realDateProvider.startOfDay('2026-01-10', DEFAULT_TIMEZONE);
 
   function plan(overrides: Record<string, unknown> = {}) {
     return {
       startDate,
       frequency: RecurrenceFrequency.MONTHLY,
       interval: 1,
-      timezone: RECURRING_GENERATION_TIMEZONE,
+      timezone: DEFAULT_TIMEZONE,
       installmentCount: null,
       endDate: null,
       ...overrides,
@@ -335,20 +332,14 @@ describe('isPlanExhaustedBefore', () => {
     expect(
       isPlanExhaustedBefore(
         installmentPlan,
-        realDateProvider.startOfDay(
-          '2026-03-10',
-          RECURRING_GENERATION_TIMEZONE,
-        ),
+        realDateProvider.startOfDay('2026-03-10', DEFAULT_TIMEZONE),
         realDateProvider,
       ),
     ).toBe(false);
     expect(
       isPlanExhaustedBefore(
         installmentPlan,
-        realDateProvider.startOfDay(
-          '2026-03-11',
-          RECURRING_GENERATION_TIMEZONE,
-        ),
+        realDateProvider.startOfDay('2026-03-11', DEFAULT_TIMEZONE),
         realDateProvider,
       ),
     ).toBe(true);
@@ -357,29 +348,20 @@ describe('isPlanExhaustedBefore', () => {
   it('should treat the endDate day as the last day of the plan', () => {
     const endDatePlan = plan({
       installmentCount: null,
-      endDate: realDateProvider.startOfDay(
-        '2026-03-10',
-        RECURRING_GENERATION_TIMEZONE,
-      ),
+      endDate: realDateProvider.startOfDay('2026-03-10', DEFAULT_TIMEZONE),
     });
 
     expect(
       isPlanExhaustedBefore(
         endDatePlan,
-        realDateProvider.startOfDay(
-          '2026-03-10',
-          RECURRING_GENERATION_TIMEZONE,
-        ),
+        realDateProvider.startOfDay('2026-03-10', DEFAULT_TIMEZONE),
         realDateProvider,
       ),
     ).toBe(false);
     expect(
       isPlanExhaustedBefore(
         endDatePlan,
-        realDateProvider.startOfDay(
-          '2026-03-11',
-          RECURRING_GENERATION_TIMEZONE,
-        ),
+        realDateProvider.startOfDay('2026-03-11', DEFAULT_TIMEZONE),
         realDateProvider,
       ),
     ).toBe(true);
@@ -389,10 +371,7 @@ describe('isPlanExhaustedBefore', () => {
     expect(
       isPlanExhaustedBefore(
         plan(),
-        realDateProvider.startOfDay(
-          '2099-12-31',
-          RECURRING_GENERATION_TIMEZONE,
-        ),
+        realDateProvider.startOfDay('2099-12-31', DEFAULT_TIMEZONE),
         realDateProvider,
       ),
     ).toBe(false);
