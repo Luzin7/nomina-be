@@ -56,6 +56,10 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
   },
   'card-cycle/features/get-card-cycle-status/get-card-cycle-status.handler.ts':
     { route: 'account:cycle', kinds: ['ledger'] },
+  'spendable/features/get-spendable/get-spendable.handler.ts': {
+    route: 'spendable:get',
+    kinds: ['ledger'],
+  },
   'transaction/features/list-transaction/list-transaction.service.ts': {
     route: 'transaction:list',
     kinds: ['ledger', 'category'],
