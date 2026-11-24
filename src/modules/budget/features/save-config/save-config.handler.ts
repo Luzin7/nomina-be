@@ -3,7 +3,6 @@ import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import {
   BudgetRepository,
   SaveBudgetAllocationInput,
-  SavedBudgetSnapshot,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
   BudgetSnapshotConflictError,
@@ -15,8 +14,10 @@ import {
   type BudgetAllocationFields,
   ValidateBudgetAllocationsService,
 } from '@modules/budget/services/validate-budget-allocations.service';
-import { resolveAllocationState } from '@modules/budget/valueObjects/BudgetAllocationState';
-import type { BudgetAllocationState } from '@modules/budget/valueObjects/BudgetAllocationState';
+import {
+  buildBudgetConfigResponse,
+  type BudgetConfigResponse,
+} from '@modules/budget/valueObjects/BudgetConfigResponse';
 import { distributeTargets } from '@modules/budget/valueObjects/LargestRemainder';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
@@ -45,22 +46,7 @@ type BuildAllocationsInput = {
   fields: BudgetAllocationFields;
 };
 
-type BuildResponseInput = {
-  saved: SavedBudgetSnapshot;
-  mode: BudgetMode;
-  monthlyIncome: number;
-  allocations: SaveBudgetAllocationInput[];
-};
-
-export type SaveBudgetConfigResponse = {
-  id: string;
-  effectiveFrom: Date;
-  mode: BudgetMode;
-  monthlyIncomeCents: number;
-  totalTargetCents: number;
-  unallocatedIncomeCents: number;
-  allocationState: BudgetAllocationState;
-};
+export type SaveBudgetConfigResponse = BudgetConfigResponse;
 
 const DEFAULT_GROUP_NAME = 'Geral';
 
@@ -125,11 +111,11 @@ export class SaveBudgetConfigService implements Service<
       );
 
       return right(
-        this.buildResponse({
+        buildBudgetConfigResponse({
           saved,
           mode,
-          monthlyIncome,
-          allocations: savedAllocations,
+          monthlyIncomeCents: monthlyIncome,
+          targetCents: savedAllocations.map(({ targetCents }) => targetCents),
         }),
       );
     } catch (error) {
@@ -194,27 +180,5 @@ export class SaveBudgetConfigService implements Service<
           : Math.round((targets[index] / monthlyIncome) * 100),
       targetCents: targets[index],
     }));
-  }
-
-  private buildResponse({
-    saved,
-    mode,
-    monthlyIncome,
-    allocations,
-  }: BuildResponseInput): SaveBudgetConfigResponse {
-    const totalTargetCents = allocations.reduce(
-      (total, allocation) => total + allocation.targetCents,
-      0,
-    );
-
-    return {
-      id: saved.id,
-      effectiveFrom: saved.effectiveFrom,
-      mode,
-      monthlyIncomeCents: monthlyIncome,
-      totalTargetCents,
-      unallocatedIncomeCents: Math.max(0, monthlyIncome - totalTargetCents),
-      allocationState: resolveAllocationState(monthlyIncome, totalTargetCents),
-    };
   }
 }

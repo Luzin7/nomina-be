@@ -1,0 +1,2 @@
+ALTER TABLE "budget_suggestion_decisions" DROP CONSTRAINT "chk_budget_suggestion_decision_kind";--> statement-breakpoint
+ALTER TABLE "budget_suggestion_decisions" ADD CONSTRAINT "chk_budget_suggestion_decision_kind" CHECK ("budget_suggestion_decisions"."kind" IN ('income', 'split', 'reset'));

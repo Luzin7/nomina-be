@@ -11,13 +11,24 @@ import {
 } from '@modules/budget/repositories/contracts/BudgetRepository';
 import { SaveCardCycleBudgetService } from '@modules/card-cycle/features/save-card-cycle-budget/save-card-cycle-budget.handler';
 import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
+import {
+  type BudgetSuggestion,
+  ResolveBudgetSuggestionService,
+} from '@modules/budget/services/resolve-budget-suggestion.service';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { MonthSummary } from '@modules/report/valueObjects/MonthSummary';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
-import { right } from '@shared/core/errors/Either';
+import { captureException } from '@sentry/nestjs';
+import { left, right } from '@shared/core/errors/Either';
 import { GetBudgetStatusService } from './get-status.handler';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
+
+const captureExceptionMock = captureException as jest.MockedFunction<
+  typeof captureException
+>;
 
 const TIMEZONE = 'America/Sao_Paulo';
 const NOW = new Date('2026-11-15T12:00:00.000Z');
@@ -151,10 +162,26 @@ function makeSummary(): MonthSummary {
   });
 }
 
+function makeSuggestion(
+  overrides: Partial<BudgetSuggestion> = {},
+): BudgetSuggestion {
+  return {
+    month: '2026-11',
+    monthStart: NOVEMBER_START,
+    basisMonths: 3,
+    income: { status: 'set' },
+    split: { status: 'unavailable' },
+    plan: null,
+    planEligible: true,
+    ...overrides,
+  };
+}
+
 describe('GetBudgetStatusService', () => {
   let service: GetBudgetStatusService;
   let repository: jest.Mocked<BudgetRepository>;
   let findMonthSummary: jest.Mocked<FindMonthSummaryService>;
+  let resolveSuggestion: jest.Mocked<ResolveBudgetSuggestionService>;
   let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
   let dateProvider: DayJsDateProvider;
 
@@ -173,6 +200,10 @@ describe('GetBudgetStatusService', () => {
       execute: jest.fn().mockResolvedValue(right(makeSummary())),
     } as unknown as jest.Mocked<FindMonthSummaryService>;
 
+    resolveSuggestion = {
+      execute: jest.fn().mockResolvedValue(right(makeSuggestion())),
+    } as unknown as jest.Mocked<ResolveBudgetSuggestionService>;
+
     workspaceTimezone = {
       execute: jest.fn().mockResolvedValue(TIMEZONE),
     } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
@@ -183,6 +214,7 @@ describe('GetBudgetStatusService', () => {
     service = new GetBudgetStatusService(
       repository,
       findMonthSummary,
+      resolveSuggestion,
       workspaceTimezone,
       dateProvider,
       new InMemoryCacheProvider(),
@@ -297,6 +329,7 @@ describe('GetBudgetStatusService', () => {
       exists: true,
       mode: 'percentage',
       monthlyIncomeCents: null,
+      planEligible: true,
       effectiveFrom: NOVEMBER_START,
       allocations: [
         {
@@ -366,6 +399,74 @@ describe('GetBudgetStatusService', () => {
         hasHistory: true,
       },
     });
+  });
+
+  it('carries the plan eligibility of the current month', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+    resolveSuggestion.execute.mockResolvedValueOnce(
+      right(makeSuggestion({ planEligible: false })),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    if (!result.isRight()) throw result.value;
+    expect(BudgetPresenter.toStatus(result.value)).toMatchObject({
+      exists: true,
+      planEligible: false,
+    });
+    expect(resolveSuggestion.execute).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+    });
+  });
+
+  it('reports a failed suggestion resolution while keeping the plan ineligible', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+    resolveSuggestion.execute.mockResolvedValueOnce(
+      left(new Error('suggestion resolution failed')),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    if (!result.isRight()) throw result.value;
+    expect(BudgetPresenter.toStatus(result.value)).toMatchObject({
+      exists: true,
+      planEligible: false,
+    });
+    expect(captureExceptionMock).toHaveBeenCalledTimes(1);
+    expect(captureExceptionMock).toHaveBeenCalledWith(expect.any(Error), {
+      extra: { workspaceId: 'ws-1' },
+    });
+  });
+
+  it('reports no error when the workspace is simply ineligible', async () => {
+    repository.resolveSnapshot.mockResolvedValueOnce(makeSnapshot());
+    resolveSuggestion.execute.mockResolvedValueOnce(
+      right(makeSuggestion({ planEligible: false })),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    if (!result.isRight()) throw result.value;
+    expect(BudgetPresenter.toStatus(result.value)).toMatchObject({
+      exists: true,
+      planEligible: false,
+    });
+    expect(captureExceptionMock).not.toHaveBeenCalled();
   });
 
   it('passes the projection through unchanged', async () => {

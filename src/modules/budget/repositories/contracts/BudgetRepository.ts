@@ -134,6 +134,18 @@ export type SaveSnapshotWithDecisionInput = {
 
 export type SuggestionWriteOutcome = 'applied' | 'already-decided' | 'drifted';
 
+export type ResetSnapshotInput = {
+  workspaceId: string;
+  effectiveFrom: Date;
+  decision: SuggestionDecisionInput;
+  allocations: SuggestedAllocationInput[];
+  isStillCurrent: () => Promise<boolean>;
+};
+
+export type ResetSnapshotOutcome =
+  | { status: 'applied'; snapshot: SavedBudgetSnapshot; mode: BudgetMode }
+  | { status: 'drifted' };
+
 export abstract class BudgetRepository {
   abstract resolveSnapshot(
     workspaceId: string,
@@ -194,6 +206,10 @@ export abstract class BudgetRepository {
   abstract saveSnapshotWithDecision(
     input: SaveSnapshotWithDecisionInput,
   ): Promise<SuggestionWriteOutcome>;
+
+  abstract resetSnapshot(
+    input: ResetSnapshotInput,
+  ): Promise<ResetSnapshotOutcome>;
 
   abstract saveDecision(
     input: SuggestionDecisionInput,

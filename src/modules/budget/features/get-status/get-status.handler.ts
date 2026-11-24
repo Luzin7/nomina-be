@@ -2,6 +2,10 @@ import { type BudgetMode } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
+  type BudgetSuggestion,
+  ResolveBudgetSuggestionService,
+} from '@modules/budget/services/resolve-budget-suggestion.service';
+import {
   resolveAllocationState,
   type BudgetAllocationState,
 } from '@modules/budget/valueObjects/BudgetAllocationState';
@@ -21,7 +25,8 @@ import { readCategoryGeneration } from '@modules/category/services/category-list
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import type { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { captureException } from '@sentry/nestjs';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { buildCacheKey } from '@shared/cache/cache-key';
@@ -61,6 +66,7 @@ export type BudgetStatusResponse =
       exists: true;
       mode: BudgetMode;
       monthlyIncomeCents: number | null;
+      planEligible: boolean;
       effectiveFrom: Date;
       allocations: BudgetStatusAllocation[];
       pillars: BudgetStatusPillar[];
@@ -86,9 +92,12 @@ export class GetBudgetStatusService implements Service<
   Error,
   BudgetStatusResponse
 > {
+  private readonly logger = new Logger(GetBudgetStatusService.name);
+
   constructor(
     private readonly budgetRepository: BudgetRepository,
     private readonly findMonthSummary: FindMonthSummaryService,
+    private readonly resolveSuggestion: ResolveBudgetSuggestionService,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
     private readonly cache: CacheProvider,
@@ -143,17 +152,21 @@ export class GetBudgetStatusService implements Service<
     );
     if (!snapshot) return right({ exists: false });
 
-    const [expensesByCategory, categoryMap, summary] = await Promise.all([
-      this.budgetRepository.findCompletedExpenseByCategory(
-        workspaceId,
-        monthStart,
-        monthEnd,
-      ),
-      this.budgetRepository.findCategoryMap(workspaceId),
-      isCurrentMonth
-        ? this.findMonthSummary.execute({ workspaceId, sub: request.sub })
-        : Promise.resolve(null),
-    ]);
+    const [expensesByCategory, categoryMap, summary, suggestion] =
+      await Promise.all([
+        this.budgetRepository.findCompletedExpenseByCategory(
+          workspaceId,
+          monthStart,
+          monthEnd,
+        ),
+        this.budgetRepository.findCategoryMap(workspaceId),
+        isCurrentMonth
+          ? this.findMonthSummary.execute({ workspaceId, sub: request.sub })
+          : Promise.resolve(null),
+        isCurrentMonth
+          ? this.resolveSuggestion.execute({ workspaceId })
+          : Promise.resolve(null),
+      ]);
 
     if (summary?.isLeft()) return left(summary.value);
 
@@ -228,6 +241,7 @@ export class GetBudgetStatusService implements Service<
       exists: true,
       mode: snapshot.mode,
       monthlyIncomeCents: snapshot.monthlyIncome,
+      planEligible: this.planEligibleOf(workspaceId, suggestion),
       effectiveFrom: snapshot.effectiveFrom,
       allocations,
       pillars: [...pillars.values()],
@@ -254,5 +268,19 @@ export class GetBudgetStatusService implements Service<
       totalSpent,
       projection: summary?.isRight() ? summary.value.projection : null,
     });
+  }
+
+  private planEligibleOf(
+    workspaceId: string,
+    suggestion: Either<Error, BudgetSuggestion> | null,
+  ): boolean {
+    if (!suggestion) return false;
+    if (suggestion.isRight()) return suggestion.value.planEligible;
+
+    this.logger.error(
+      `budget-status.suggestion-unavailable workspaceId=${workspaceId}`,
+    );
+    captureException(suggestion.value, { extra: { workspaceId } });
+    return false;
   }
 }

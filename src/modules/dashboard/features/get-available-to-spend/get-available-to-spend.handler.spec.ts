@@ -127,6 +127,7 @@ const makeBudget = (
   exists: true,
   mode: 'percentage',
   monthlyIncomeCents: 1_500,
+  planEligible: true,
   effectiveFrom: new Date('2026-11-01T03:00:00.000Z'),
   allocations: [makeAllocation()],
   pillars: [],
@@ -589,6 +590,11 @@ describe('GetAvailableToSpendService', () => {
           new GetBudgetStatusService(
             budgetRepository,
             findMonthSummary,
+            {
+              execute: jest
+                .fn()
+                .mockResolvedValue(right({ planEligible: false })),
+            } as never,
             workspaceTimezone,
             dateProvider,
             new InMemoryCacheProvider(),

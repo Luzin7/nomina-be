@@ -100,10 +100,13 @@ type SplitSuggestionInput = {
   workspaceId: string;
   currentMonth: string;
   snapshot: BudgetSnapshot | null;
+  targets: Record<string, number>;
   basis: Record<string, number>[];
   parameters: SuggestionParameters;
   decisions: SuggestionDecisions;
 };
+
+type PlanBaseline = 'stored' | 'blank';
 
 const unavailableOf = ({
   status,
@@ -114,6 +117,20 @@ const unavailableOf = ({
 const monthIndex = (key: string): number => {
   const [year, month] = key.split('-').map(Number);
   return year * 12 + month - 1;
+};
+
+const targetsFor = (
+  snapshot: BudgetSnapshot | null,
+  baseline: PlanBaseline,
+): Record<string, number> => {
+  if (baseline === 'blank') return {};
+
+  return Object.fromEntries(
+    (snapshot?.allocations ?? []).map(({ categoryId, targetCents }) => [
+      categoryId,
+      targetCents,
+    ]),
+  );
 };
 
 @Injectable()
@@ -155,7 +172,7 @@ export class ResolveBudgetSuggestionService implements Service<
         cache: this.cache,
         key,
         ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
-        load: () => this.resolve(workspaceId, timezone, now),
+        load: () => this.resolve(workspaceId, timezone, now, 'stored'),
       }),
     );
   }
@@ -165,13 +182,32 @@ export class ResolveBudgetSuggestionService implements Service<
   }: Request): Promise<Either<Error, BudgetSuggestion>> {
     const timezone = await this.workspaceTimezone.execute(workspaceId);
 
-    return this.resolve(workspaceId, timezone, this.dateProvider.now());
+    return this.resolve(
+      workspaceId,
+      timezone,
+      this.dateProvider.now(),
+      'stored',
+    );
+  }
+
+  async resolveFromBlankBaseline({
+    workspaceId,
+  }: Request): Promise<Either<Error, BudgetSuggestion>> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+
+    return this.resolve(
+      workspaceId,
+      timezone,
+      this.dateProvider.now(),
+      'blank',
+    );
   }
 
   private async resolve(
     workspaceId: string,
     timezone: string,
     now: Date,
+    baseline: PlanBaseline,
   ): Promise<Either<Error, BudgetSuggestion>> {
     const key = this.dateProvider.format(now, 'YYYY-MM', timezone);
     const start = this.dateProvider.startOfMonth(`${key}-01`, timezone);
@@ -219,6 +255,7 @@ export class ResolveBudgetSuggestionService implements Service<
         workspaceId,
         currentMonth: key,
         snapshot,
+        targets: targetsFor(snapshot, baseline),
         basis,
         parameters,
         decisions,
@@ -312,12 +349,7 @@ export class ResolveBudgetSuggestionService implements Service<
       groupByCategoryName: parameters.groupByCategoryName,
       incomeBasisCents,
       bracket,
-      currentTargets: Object.fromEntries(
-        (snapshot?.allocations ?? []).map(({ categoryId, targetCents }) => [
-          categoryId,
-          targetCents,
-        ]),
-      ),
+      currentTargets: input.targets,
       step: progress.step,
       steps: SPLIT_STEPS,
     });

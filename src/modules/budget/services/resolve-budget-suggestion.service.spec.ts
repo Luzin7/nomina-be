@@ -95,6 +95,25 @@ const makeSnapshot = (monthlyIncome: number | null): BudgetSnapshot => ({
   allocations: [],
 });
 
+const makeSnapshotWithTargets = (
+  monthlyIncome: number,
+  targets: Record<string, number>,
+): BudgetSnapshot => ({
+  ...makeSnapshot(monthlyIncome),
+  allocations: Object.entries(targets).map(
+    ([categoryId, targetCents], categoryOrder) => ({
+      id: `allocation-${categoryId}`,
+      categoryId,
+      categoryName: null,
+      groupName: 'Essenciais',
+      groupOrder: 0,
+      categoryOrder,
+      percentageOfIncome: null,
+      targetCents,
+    }),
+  ),
+});
+
 const makeDecision = (
   overrides: Partial<SuggestionDecisionRecord> = {},
 ): SuggestionDecisionRecord => ({
@@ -163,6 +182,20 @@ describe('ResolveBudgetSuggestionService', () => {
 
   const resolve = async (): Promise<BudgetSuggestion> => {
     const result = await service.execute({ workspaceId: WORKSPACE_ID });
+    if (result.isLeft()) throw result.value;
+    return result.value;
+  };
+
+  const resolveFresh = async (): Promise<BudgetSuggestion> => {
+    const result = await service.resolveFresh({ workspaceId: WORKSPACE_ID });
+    if (result.isLeft()) throw result.value;
+    return result.value;
+  };
+
+  const resolveBlankBaseline = async (): Promise<BudgetSuggestion> => {
+    const result = await service.resolveFromBlankBaseline({
+      workspaceId: WORKSPACE_ID,
+    });
     if (result.isLeft()) throw result.value;
     return result.value;
   };
@@ -318,6 +351,20 @@ describe('ResolveBudgetSuggestionService', () => {
       monthProjectionRepository.findMonthLedger.mockResolvedValue([]);
 
       expect(await planFor()).toBeNull();
+    });
+
+    it('matches the plan of a month without targets when the baseline is blank', async () => {
+      budgetRepository.resolveSnapshot.mockResolvedValue(makeSnapshot(500_000));
+      const creation = (await resolveFresh()).plan;
+
+      budgetRepository.resolveSnapshot.mockResolvedValue(
+        makeSnapshotWithTargets(500_000, { [ESSENTIALS_ID]: 9_999_999 }),
+      );
+      const stored = (await resolveFresh()).plan;
+      const reset = (await resolveBlankBaseline()).plan;
+
+      expect(reset).toEqual(creation);
+      expect(stored).not.toEqual(creation);
     });
 
     it.each([

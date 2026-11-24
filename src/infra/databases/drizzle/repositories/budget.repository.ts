@@ -24,6 +24,8 @@ import {
   InferenceTotalsQuery,
   PresetCategory,
   ResolvedBudgetSnapshot,
+  ResetSnapshotInput,
+  ResetSnapshotOutcome,
   SavedBudgetSnapshot,
   SaveBudgetSnapshotInput,
   SaveSnapshotWithDecisionInput,
@@ -32,6 +34,9 @@ import {
   SuggestionWriteOutcome,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
 import {
+  BudgetResetConstraintError,
+  BudgetResetLockTimeoutError,
+  BudgetResetStatementTimeoutError,
   BudgetSnapshotConflictError,
   ForbiddenBudgetCategoryError,
 } from '@modules/budget/errors';
@@ -39,7 +44,10 @@ import { pickApplicableSnapshot } from '@modules/budget/valueObjects/BudgetSnaps
 import type { GroupKey } from '@modules/budget/valueObjects/IncomeBracket';
 import type { SuggestionCategory } from '@modules/budget/valueObjects/SplitSuggestion';
 import type { SuggestionDecisionRecord } from '@modules/budget/valueObjects/SuggestionDecisions';
-import { planSuggestionSnapshot } from '@modules/budget/valueObjects/SuggestionSnapshotPlan';
+import {
+  planResetSnapshot,
+  planSuggestionSnapshot,
+} from '@modules/budget/valueObjects/SuggestionSnapshotPlan';
 import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { Injectable } from '@nestjs/common';
 import {
@@ -90,6 +98,9 @@ const MINIMUM_WAGE_KEY = 'minimum_wage';
 const MONTH_KEY_LENGTH = 7;
 const UNIQUE_VIOLATION = '23505';
 const FOREIGN_KEY_VIOLATION = '23503';
+const CHECK_VIOLATION = '23514';
+const LOCK_TIMEOUT = '55P03';
+const STATEMENT_TIMEOUT = '57014';
 const BUDGET_CATEGORY_FK =
   /budget_allocations_category_id_(categories_id_fk|fkey)/;
 
@@ -483,6 +494,45 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
     }
   }
 
+  async resetSnapshot(
+    input: ResetSnapshotInput,
+  ): Promise<ResetSnapshotOutcome> {
+    const { workspaceId, effectiveFrom, decision } = input;
+
+    try {
+      return await this.drizzle.db.transaction(async (tx) => {
+        await lockWorkspaceBudget(tx, workspaceId);
+
+        const stillCurrent = await this.drizzle.runWithin(
+          tx,
+          input.isStillCurrent,
+        );
+        if (!stillCurrent) return { status: 'drifted' };
+
+        const current = await loadApplicableSnapshot(
+          tx,
+          workspaceId,
+          effectiveFrom,
+        );
+        const plan = planResetSnapshot(
+          current,
+          effectiveFrom,
+          input.allocations,
+        );
+        const snapshot = await writeSnapshot(tx, {
+          workspaceId,
+          effectiveFrom,
+          ...plan,
+        });
+        await insertDecision(tx, decision);
+
+        return { status: 'applied', snapshot, mode: plan.mode };
+      });
+    } catch (error) {
+      return rethrowResetSnapshotWriteError(error);
+    }
+  }
+
   async saveDecision(
     input: SuggestionDecisionInput,
   ): Promise<SuggestionWriteOutcome> {
@@ -680,6 +730,18 @@ function rethrowSnapshotWriteError(error: unknown): never {
   }
 
   throw error;
+}
+
+function rethrowResetSnapshotWriteError(error: unknown): never {
+  const { sqlState } = getErrorDetails(error);
+
+  if (sqlState === CHECK_VIOLATION) throw new BudgetResetConstraintError();
+  if (sqlState === LOCK_TIMEOUT) throw new BudgetResetLockTimeoutError();
+  if (sqlState === STATEMENT_TIMEOUT) {
+    throw new BudgetResetStatementTimeoutError();
+  }
+
+  rethrowSnapshotWriteError(error);
 }
 
 const decisionMonthOf = (decision: SuggestionDecisionRecord): string =>

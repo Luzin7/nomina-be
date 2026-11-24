@@ -134,6 +134,7 @@ const WRITES: Record<string, Kind[]> = {
   'budget/features/reject-budget-suggestion/reject-budget-suggestion.handler.ts':
     ['ledger'],
   'budget/features/save-config/save-config.handler.ts': ['ledger'],
+  'budget/features/reset-budget/reset-budget.handler.ts': ['ledger'],
   'card-cycle/features/save-card-cycle-budget/save-card-cycle-budget.handler.ts':
     ['ledger'],
   'category/features/create-category/create-category.handler.ts': ['category'],
