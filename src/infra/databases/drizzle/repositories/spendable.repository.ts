@@ -7,6 +7,7 @@ import {
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import {
   SpendableCashFlowInput,
+  SpendableCashBalance,
   SpendableRecurrence,
   SpendableRepository,
 } from '@modules/spendable/repositories/contracts/SpendableRepository';
@@ -22,6 +23,38 @@ const epochMsInUtc = (column: AnyColumn | SQL) =>
   sql<string>`(EXTRACT(EPOCH FROM ${column}) * 1000)::bigint`;
 
 const epochMsToDate = (epochMs: string) => new Date(Number(epochMs));
+
+type PendingExpenseRow = {
+  id: string;
+  accountId: string;
+  amount: number;
+};
+
+type DebitRow = {
+  transactionId: string | null;
+  accountId: string;
+  debitedCents: number;
+};
+
+const debitKey = (transactionId: string, accountId: string): string =>
+  `${transactionId}|${accountId}`;
+
+const debitsByMovement = (debits: DebitRow[]): Map<string, number> =>
+  new Map(
+    debits.map((debit) => [
+      debitKey(debit.transactionId ?? '', debit.accountId),
+      debit.debitedCents,
+    ]),
+  );
+
+const notDebitedCents = (
+  expense: PendingExpenseRow,
+  debits: Map<string, number>,
+): number =>
+  Math.max(
+    0,
+    expense.amount + (debits.get(debitKey(expense.id, expense.accountId)) ?? 0),
+  );
 
 type RecurrenceRow = {
   id: string;
@@ -53,11 +86,61 @@ export class SpendableRepositoryImplementation implements SpendableRepository {
   }
 
   async sumPendingCashExpenses(input: SpendableCashFlowInput): Promise<number> {
-    return this.sumCashFlow(
-      input,
-      TransactionType.EXPENSE,
-      TransactionStatus.PENDING,
-    );
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      const expenses: PendingExpenseRow[] = await tx
+        .select({
+          id: schema.transactions.id,
+          accountId: schema.transactions.accountId,
+          amount: schema.transactions.amount,
+        })
+        .from(schema.transactions)
+        .innerJoin(
+          schema.accounts,
+          eq(schema.accounts.id, schema.transactions.accountId),
+        )
+        .where(
+          this.cashFlowConditions(
+            input,
+            TransactionType.EXPENSE,
+            TransactionStatus.PENDING,
+          ),
+        );
+
+      if (expenses.length === 0) return 0;
+
+      const debits: DebitRow[] = await tx
+        .select({
+          transactionId: schema.balanceMovements.transactionId,
+          accountId: schema.balanceMovements.accountId,
+          debitedCents: sql<number>`LEAST(
+            SUM(${schema.balanceMovements.delta}),
+            0
+          )`.mapWith(Number),
+        })
+        .from(schema.balanceMovements)
+        .where(
+          and(
+            inArray(schema.balanceMovements.accountId, [
+              ...new Set(expenses.map((expense) => expense.accountId)),
+            ]),
+            inArray(
+              schema.balanceMovements.transactionId,
+              expenses.map((expense) => expense.id),
+            ),
+          ),
+        )
+        .groupBy(
+          schema.balanceMovements.transactionId,
+          schema.balanceMovements.accountId,
+        );
+
+      const debited = debitsByMovement(debits);
+
+      return expenses.reduce(
+        (total, expense) => total + notDebitedCents(expense, debited),
+        0,
+      );
+    });
   }
 
   async sumCompletedCashIncome(input: SpendableCashFlowInput): Promise<number> {
@@ -66,6 +149,24 @@ export class SpendableRepositoryImplementation implements SpendableRepository {
       TransactionType.INCOME,
       TransactionStatus.COMPLETED,
     );
+  }
+
+  async listCashBalances(workspaceId: string): Promise<SpendableCashBalance[]> {
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      return tx
+        .select({
+          accountId: schema.accounts.id,
+          balanceCents: schema.accounts.balance,
+        })
+        .from(schema.accounts)
+        .where(
+          and(
+            eq(schema.accounts.workspaceId, workspaceId),
+            inArray(schema.accounts.type, CASH_ACCOUNT_TYPES),
+          ),
+        )
+        .orderBy(schema.accounts.id);
+    });
   }
 
   async listActiveRecurrences(
@@ -148,21 +249,27 @@ export class SpendableRepositoryImplementation implements SpendableRepository {
           schema.accounts,
           eq(schema.accounts.id, schema.transactions.accountId),
         )
-        .where(
-          and(
-            eq(schema.transactions.workspaceId, input.workspaceId),
-            eq(schema.transactions.type, type),
-            eq(schema.transactions.status, status),
-            inArray(schema.accounts.type, CASH_ACCOUNT_TYPES),
-            withinLocalDays(schema.transactions.date, {
-              start: input.startDate,
-              end: input.endDate,
-              timezone: input.timezone,
-            }),
-          ),
-        );
+        .where(this.cashFlowConditions(input, type, status));
 
       return row.total;
     });
+  }
+
+  private cashFlowConditions(
+    input: SpendableCashFlowInput,
+    type: TransactionType,
+    status: TransactionStatus,
+  ): SQL | undefined {
+    return and(
+      eq(schema.transactions.workspaceId, input.workspaceId),
+      eq(schema.transactions.type, type),
+      eq(schema.transactions.status, status),
+      inArray(schema.accounts.type, CASH_ACCOUNT_TYPES),
+      withinLocalDays(schema.transactions.date, {
+        start: input.startDate,
+        end: input.endDate,
+        timezone: input.timezone,
+      }),
+    );
   }
 }

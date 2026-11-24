@@ -6,20 +6,30 @@ const CURRENT_TIMEOUT_STATEMENT = 'current_setting';
 const SET_TIMEOUT_STATEMENT = 'SET LOCAL statement_timeout = 1000';
 const RESTORE_TIMEOUT_STATEMENT = 'set_config';
 
-function makeRepository(result: unknown) {
+function makeSequencedRepository(results: unknown[]) {
+  let next = 0;
+  const consume = (): unknown => {
+    const result = results[Math.min(next, results.length - 1)];
+    next += 1;
+    return result;
+  };
   const execute = jest.fn().mockResolvedValue([{ statementTimeout: '5s' }]);
   const builder = {
     select: jest.fn(),
     from: jest.fn(),
     innerJoin: jest.fn(),
     where: jest.fn(),
-    limit: jest.fn().mockResolvedValue(result),
-    then: (resolve: (value: unknown) => unknown) => resolve(result),
+    groupBy: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn(async () => consume()),
+    then: (resolve: (value: unknown) => unknown) => resolve(consume()),
   };
   builder.select.mockReturnValue(builder);
   builder.from.mockReturnValue(builder);
   builder.innerJoin.mockReturnValue(builder);
   builder.where.mockReturnValue(builder);
+  builder.groupBy.mockReturnValue(builder);
+  builder.orderBy.mockReturnValue(builder);
 
   const transaction = jest.fn(
     async (callback: (tx: unknown) => Promise<unknown>) =>
@@ -32,6 +42,10 @@ function makeRepository(result: unknown) {
     execute,
     transaction,
   };
+}
+
+function makeRepository(result: unknown) {
+  return makeSequencedRepository([result]);
 }
 
 const statementsOf = (execute: jest.Mock): string[] =>
@@ -79,12 +93,31 @@ describe('SpendableRepositoryImplementation read timeouts', () => {
     expectBoundedRead(execute);
   });
 
-  it('bounds the pending cash expense sum to one second', async () => {
-    const { repository, execute } = makeRepository([{ total: 700 }]);
+  it('subtracts only the undebited remainder of pending cash expenses', async () => {
+    const { repository, execute } = makeSequencedRepository([
+      [
+        { id: 'tx-1', accountId: 'acc-1', amount: 20000 },
+        { id: 'tx-2', accountId: 'acc-1', amount: 30000 },
+        { id: 'tx-3', accountId: 'acc-2', amount: 5000 },
+      ],
+      [
+        { transactionId: 'tx-1', accountId: 'acc-1', debitedCents: -20000 },
+        { transactionId: 'tx-2', accountId: 'acc-1', debitedCents: -12000 },
+      ],
+    ]);
 
     const total = await repository.sumPendingCashExpenses(CASH_FLOW);
 
-    expect(total).toBe(700);
+    expect(total).toBe(23000);
+    expectBoundedRead(execute);
+  });
+
+  it('skips the movement read when there is no pending cash expense', async () => {
+    const { repository, execute } = makeSequencedRepository([[]]);
+
+    const total = await repository.sumPendingCashExpenses(CASH_FLOW);
+
+    expect(total).toBe(0);
     expectBoundedRead(execute);
   });
 
@@ -94,6 +127,17 @@ describe('SpendableRepositoryImplementation read timeouts', () => {
     const total = await repository.sumCompletedCashIncome(CASH_FLOW);
 
     expect(total).toBe(900);
+    expectBoundedRead(execute);
+  });
+
+  it('bounds the cash balance list to one second', async () => {
+    const { repository, execute } = makeRepository([
+      { accountId: 'acc-1', balanceCents: 200000 },
+    ]);
+
+    const balances = await repository.listCashBalances('ws-1');
+
+    expect(balances).toEqual([{ accountId: 'acc-1', balanceCents: 200000 }]);
     expectBoundedRead(execute);
   });
 

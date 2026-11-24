@@ -1,5 +1,6 @@
 import {
   AccountType,
+  isValidDueDay,
   normalizeWorkspaceCycle,
   type WorkspaceCycle,
 } from '@constants/enums';
@@ -86,6 +87,7 @@ type CardPlan = {
 type CardContext = {
   workspaceId: string;
   accounts: AnyAccount[];
+  cashAccountIds: ReadonlySet<string>;
   today: PlainDate;
   window: CycleWindow;
 };
@@ -108,6 +110,7 @@ type ScheduledTotalsInput = {
 type InvoicePlanInput = {
   card: CreditCard;
   accounts: AnyAccount[];
+  cashAccountIds: ReadonlySet<string>;
   calendar: InvoiceCalendar;
   current: InvoiceBounds;
   window: CycleWindow;
@@ -117,8 +120,8 @@ type InvoicePlanInput = {
 const isCashType = (type: string): boolean =>
   type === AccountType.CHECKING || type === AccountType.CASH;
 
-const isCashAccount = (account: AnyAccount): boolean =>
-  isCashType(account.type);
+const isUsableDueDay = (dueDay: number | null): dueDay is number =>
+  dueDay !== null && isValidDueDay(dueDay);
 
 const isCreditCard = (account: AnyAccount): account is CreditCard =>
   account instanceof CreditCard;
@@ -177,6 +180,9 @@ export class GetSpendableService implements Service<
       await this.accountRepository.findAllByWorkspaceId(workspaceId);
     const window = CycleWindow.of(today, cycle);
     const cards = accounts.filter(isCreditCard);
+    const cashBalances =
+      await this.spendableRepository.listCashBalances(workspaceId);
+    const cashAccountIds = new Set(cashBalances.map((cash) => cash.accountId));
 
     const [
       pendingExpensesCents,
@@ -197,11 +203,21 @@ export class GetSpendableService implements Service<
         timezone,
       }),
       this.spendableRepository.listActiveRecurrences(workspaceId),
-      this.cardResolutionsOf({ workspaceId, cards, accounts, today, window }),
+      this.cardResolutionsOf({
+        workspaceId,
+        cards,
+        accounts,
+        cashAccountIds,
+        today,
+        window,
+      }),
     ]);
 
     const scheduled = this.scheduledTotalsOf({ recurrences, window, timezone });
-    const cashCents = this.cashBalanceOf(accounts);
+    const cashCents = cashBalances.reduce(
+      (total, cash) => total + cash.balanceCents,
+      0,
+    );
     const cardHeadrooms = cardResolutions
       .map((resolution) => resolution.card)
       .filter((card): card is CardHeadroom => card !== null);
@@ -240,12 +256,6 @@ export class GetSpendableService implements Service<
       'YYYY-MM-DD',
       timezone,
     );
-  }
-
-  private cashBalanceOf(accounts: AnyAccount[]): number {
-    return accounts
-      .filter(isCashAccount)
-      .reduce((total, account) => total + Number(account.balance), 0);
   }
 
   private scheduledTotalsOf({
@@ -296,12 +306,20 @@ export class GetSpendableService implements Service<
     workspaceId,
     cards,
     accounts,
+    cashAccountIds,
     today,
     window,
   }: CardPlansInput): Promise<CardResolution[]> {
     const plans = await Promise.all(
       cards.map((card) =>
-        this.planCard({ workspaceId, card, accounts, today, window }),
+        this.planCard({
+          workspaceId,
+          card,
+          accounts,
+          cashAccountIds,
+          today,
+          window,
+        }),
       ),
     );
     const invoices = plans.flatMap((plan) =>
@@ -338,11 +356,12 @@ export class GetSpendableService implements Service<
     workspaceId,
     card,
     accounts,
+    cashAccountIds,
     today,
     window,
   }: CardPlanInput): Promise<CardPlan> {
     const dueDay = card.dueDay;
-    if (dueDay === null)
+    if (!isUsableDueDay(dueDay))
       return {
         card,
         headroom: null,
@@ -380,6 +399,7 @@ export class GetSpendableService implements Service<
       invoice: this.invoicePlanOf({
         card,
         accounts,
+        cashAccountIds,
         calendar,
         current,
         window,
@@ -399,6 +419,7 @@ export class GetSpendableService implements Service<
   private invoicePlanOf({
     card,
     accounts,
+    cashAccountIds,
     calendar,
     current,
     window,
@@ -406,7 +427,7 @@ export class GetSpendableService implements Service<
   }: InvoicePlanInput): InvoicePlan | null {
     const bounds = this.billInWindowOf(calendar, current, window);
     if (bounds === null) return null;
-    if (!this.fundsFromCash(card, accounts)) return null;
+    if (!this.fundsFromCash(card, accounts, cashAccountIds)) return null;
 
     return {
       card,
@@ -426,14 +447,18 @@ export class GetSpendableService implements Service<
     return window.contains(previous.dueDate) ? previous : null;
   }
 
-  private fundsFromCash(card: CreditCard, accounts: AnyAccount[]): boolean {
+  private fundsFromCash(
+    card: CreditCard,
+    accounts: AnyAccount[],
+    cashAccountIds: ReadonlySet<string>,
+  ): boolean {
     if (!card.autoPayEnabled) return true;
 
     const source = accounts.find(
       (account) => account.id === card.autoPaySourceAccountId,
     );
 
-    return source === undefined || isCashAccount(source);
+    return source === undefined || cashAccountIds.has(source.id);
   }
 
   private spendOn(

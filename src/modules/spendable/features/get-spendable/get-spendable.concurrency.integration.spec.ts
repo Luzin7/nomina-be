@@ -1,5 +1,6 @@
 import {
   AccountType,
+  BalanceMovementCause,
   RecurrenceFrequency,
   TransactionStatus,
   TransactionType,
@@ -204,6 +205,22 @@ describe('spendable reads against a real postgres', () => {
     return id;
   }
 
+  async function insertMovement(
+    transactionId: string,
+    accountId: string,
+    delta: number,
+    balanceAfter: number,
+  ): Promise<void> {
+    await db.insert(schema.balanceMovements).values({
+      workspaceId,
+      accountId,
+      transactionId,
+      cause: BalanceMovementCause.STATUS_CHANGED,
+      delta,
+      balanceAfter,
+    });
+  }
+
   describe('cash flow window', () => {
     beforeEach(async () => {
       await insertAccount('checking', {
@@ -304,6 +321,59 @@ describe('spendable reads against a real postgres', () => {
 
       expect(income).toBe(133000);
       expect(pending).toBe(37000);
+    });
+
+    it('counts only the part of a pending expense already debited', async () => {
+      const debited = await insertTransaction({
+        accountId: 'checking',
+        amount: 20000,
+        status: TransactionStatus.PENDING,
+        date: '2026-11-19T15:00:00.000Z',
+      });
+      await insertMovement(debited, 'checking', -20000, 180000);
+      const partiallyDebited = await insertTransaction({
+        accountId: 'checking',
+        amount: 30000,
+        status: TransactionStatus.PENDING,
+        date: '2026-11-20T15:00:00.000Z',
+      });
+      await insertMovement(partiallyDebited, 'checking', -12000, 168000);
+      const reverted = await insertTransaction({
+        accountId: 'checking',
+        amount: 40000,
+        status: TransactionStatus.PENDING,
+        date: '2026-11-22T15:00:00.000Z',
+      });
+      await insertMovement(reverted, 'checking', 40000, 208000);
+
+      const pending = await spendable.sumPendingCashExpenses({
+        workspaceId,
+        ...WINDOW,
+      });
+
+      expect(pending).toBe(58000);
+    });
+
+    it('reads cash from the same account types as the pending expenses', async () => {
+      await insertAccount('savings', { type: 'SAVINGS', balance: 70000 });
+      await insertTransaction({
+        accountId: 'savings',
+        amount: 25000,
+        status: TransactionStatus.PENDING,
+        date: '2026-11-21T15:00:00.000Z',
+      });
+
+      const balances = await spendable.listCashBalances(workspaceId);
+      const pending = await spendable.sumPendingCashExpenses({
+        workspaceId,
+        ...WINDOW,
+      });
+
+      expect(balances).toEqual([
+        { accountId: 'cash', balanceCents: 5000 },
+        { accountId: 'checking', balanceCents: 200000 },
+      ]);
+      expect(pending).toBe(0);
     });
 
     it('reads the workspace cycle from the database', async () => {

@@ -1,5 +1,8 @@
 import { AccountType, RecurrenceFrequency } from '@constants/enums';
 import type { AnyAccount } from '@modules/account/entities/types';
+import { CashAccount } from '@modules/account/entities/CashAccounts';
+import { CheckingAccount } from '@modules/account/entities/CheckingAccount';
+import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { InvestmentAccount } from '@modules/account/entities/InvestmentAccount';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { CardInvoiceRepository } from '@modules/account/repositories/contracts/CardInvoiceRepository';
@@ -37,6 +40,7 @@ type InvoiceOverride = {
 type Given = {
   cycle: string | null;
   accounts: AnyAccount[];
+  cashBalances?: { accountId: string; balanceCents: number }[];
   budgets: Record<string, number>;
   spends: Record<string, number>;
   invoices: Record<string, InvoiceOverride>;
@@ -56,6 +60,35 @@ const investment = (balance: bigint, id = 'acc-9') => {
   if (account.isLeft()) throw account.value;
   return account.value;
 };
+
+const isCashEntity = (
+  account: AnyAccount,
+): account is CheckingAccount | CashAccount =>
+  account instanceof CheckingAccount || account instanceof CashAccount;
+
+const cashRowsOf = (accounts: AnyAccount[]) =>
+  accounts.filter(isCashEntity).map((account) => ({
+    accountId: account.id,
+    balanceCents: Number(account.balance),
+  }));
+
+const unreadableCard = (dueDay: number, id = 'card-bad'): CreditCard =>
+  CreditCard.reconstitute(
+    {
+      workspaceId: WORKSPACE_ID,
+      name: 'Broken',
+      balance: 0n,
+      creditLimit: 500000n,
+      closingDaysBeforeDue: 5,
+      dueDay,
+      timezone: TIMEZONE,
+      autoPayEnabled: false,
+      autoPayConfirmedAt: null,
+      autoPayEnabledAt: null,
+      autoPaySourceAccountId: null,
+    },
+    id,
+  );
 
 const recurrence = (
   overrides: Partial<SpendableRecurrence> = {},
@@ -157,6 +190,9 @@ describe('GetSpendableService', () => {
 
     spendableRepository = {
       findCycle: jest.fn(async () => given.cycle),
+      listCashBalances: jest.fn(
+        async () => given.cashBalances ?? cashRowsOf(given.accounts),
+      ),
       sumPendingCashExpenses: jest.fn(async () => given.pendingCents),
       sumCompletedCashIncome: jest.fn(async () => given.completedIncomeCents),
       listActiveRecurrences: jest.fn(async () => given.recurrences),
@@ -537,6 +573,27 @@ describe('GetSpendableService', () => {
 
     expect(cardInvoiceRepository.findTotals).toHaveBeenCalledTimes(1);
     expect(cardInvoiceRepository.findTotals.mock.calls[0][1]).toHaveLength(2);
+  });
+
+  it('edge: an out-of-range due day lists the card instead of failing', async () => {
+    given.accounts = [checking(200000n), unreadableCard(32)];
+
+    const result = await run();
+
+    expect(result.cardsWithoutDueDate).toEqual([
+      { accountId: 'card-bad', name: 'Broken', limitCents: 500000 },
+    ]);
+    expect(result.cashFreeCents).toBe(200000);
+  });
+
+  it('edge: cash reads the same account types as the pending bills', async () => {
+    given.accounts = [checking(100000n)];
+    given.cashBalances = [{ accountId: 'acc-1', balanceCents: 30000 }];
+
+    const result = await run();
+
+    expect(result.cashCents).toBe(30000);
+    expect(result.cashFreeCents).toBe(30000);
   });
 
   it('edge: a card with no due date is listed instead of dropped', async () => {

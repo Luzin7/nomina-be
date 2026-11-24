@@ -20,8 +20,17 @@ export type SpendableRecurrence = {
   materializedDates: Date[];
 };
 
+export type SpendableCashBalance = {
+  accountId: string;
+  balanceCents: number;
+};
+
 export abstract class SpendableRepository {
   abstract findCycle(workspaceId: string): Promise<string | null>;
+
+  abstract listCashBalances(
+    workspaceId: string,
+  ): Promise<SpendableCashBalance[]>;
 
   abstract sumPendingCashExpenses(
     input: SpendableCashFlowInput,
