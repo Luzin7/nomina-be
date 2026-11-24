@@ -356,6 +356,29 @@ describe('spendable reads against a real postgres', () => {
       expect(pendingCents).toBe(58000);
     });
 
+    it('floors a bill debited beyond its amount instead of lowering another bill', async () => {
+      const overDebited = await insertTransaction({
+        accountId: 'checking',
+        amount: 10000,
+        status: TransactionStatus.PENDING,
+        date: '2026-11-23T15:00:00.000Z',
+      });
+      await insertMovement(overDebited, 'checking', -15000, 185000);
+      await insertTransaction({
+        accountId: 'cash',
+        amount: 7000,
+        status: TransactionStatus.PENDING,
+        date: '2026-11-24T15:00:00.000Z',
+      });
+
+      const { pendingCents } = await spendable.readCashSnapshot({
+        workspaceId,
+        ...WINDOW,
+      });
+
+      expect(pendingCents).toBe(7000);
+    });
+
     it('reads cash from the same account types as the pending expenses', async () => {
       await insertAccount('savings', { type: 'SAVINGS', balance: 70000 });
       await insertTransaction({
@@ -383,8 +406,8 @@ describe('spendable reads against a real postgres', () => {
     });
   });
 
-  describe('single cash snapshot', () => {
-    it('moves both halves together while a debit is held open', async () => {
+  describe('cash snapshot under a concurrent writer', () => {
+    it('ignores an uncommitted debit and reports both halves once it commits', async () => {
       await insertAccount('checking', {
         type: AccountType.CHECKING,
         balance: 200000,
