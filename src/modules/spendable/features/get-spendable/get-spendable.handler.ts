@@ -180,38 +180,33 @@ export class GetSpendableService implements Service<
       await this.accountRepository.findAllByWorkspaceId(workspaceId);
     const window = CycleWindow.of(today, cycle);
     const cards = accounts.filter(isCreditCard);
-    const cashBalances =
-      await this.spendableRepository.listCashBalances(workspaceId);
+    const { cashBalances, pendingCents: pendingExpensesCents } =
+      await this.spendableRepository.readCashSnapshot({
+        workspaceId,
+        startDate: window.startDate,
+        endDate: window.endDate,
+        timezone,
+      });
     const cashAccountIds = new Set(cashBalances.map((cash) => cash.accountId));
 
-    const [
-      pendingExpensesCents,
-      completedIncomeCents,
-      recurrences,
-      cardResolutions,
-    ] = await Promise.all([
-      this.spendableRepository.sumPendingCashExpenses({
-        workspaceId,
-        startDate: window.startDate,
-        endDate: window.endDate,
-        timezone,
-      }),
-      this.spendableRepository.sumCompletedCashIncome({
-        workspaceId,
-        startDate: window.startDate,
-        endDate: window.endDate,
-        timezone,
-      }),
-      this.spendableRepository.listActiveRecurrences(workspaceId),
-      this.cardResolutionsOf({
-        workspaceId,
-        cards,
-        accounts,
-        cashAccountIds,
-        today,
-        window,
-      }),
-    ]);
+    const [completedIncomeCents, recurrences, cardResolutions] =
+      await Promise.all([
+        this.spendableRepository.sumCompletedCashIncome({
+          workspaceId,
+          startDate: window.startDate,
+          endDate: window.endDate,
+          timezone,
+        }),
+        this.spendableRepository.listActiveRecurrences(workspaceId),
+        this.cardResolutionsOf({
+          workspaceId,
+          cards,
+          accounts,
+          cashAccountIds,
+          today,
+          window,
+        }),
+      ]);
 
     const scheduled = this.scheduledTotalsOf({ recurrences, window, timezone });
     const cashCents = cashBalances.reduce(

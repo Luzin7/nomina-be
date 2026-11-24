@@ -85,6 +85,7 @@ describe('spendable reads against a real postgres', () => {
   let cardCycle: CardCycleRepositoryImplementation;
   let cardInvoice: CardInvoiceRepositoryImplementation;
   let databaseName: string;
+  let databaseUrl: string;
   let workspaceId: string;
   let otherWorkspaceId: string;
   let categoryId: string;
@@ -97,6 +98,7 @@ describe('spendable reads against a real postgres', () => {
 
     const url = new URL(server.url);
     url.pathname = `/${databaseName}`;
+    databaseUrl = url.toString();
     client = postgres(url.toString(), {
       max: 2,
       onnotice: () => undefined,
@@ -314,13 +316,13 @@ describe('spendable reads against a real postgres', () => {
         workspaceId,
         ...WINDOW,
       });
-      const pending = await spendable.sumPendingCashExpenses({
+      const { pendingCents } = await spendable.readCashSnapshot({
         workspaceId,
         ...WINDOW,
       });
 
       expect(income).toBe(133000);
-      expect(pending).toBe(37000);
+      expect(pendingCents).toBe(37000);
     });
 
     it('counts only the part of a pending expense already debited', async () => {
@@ -346,12 +348,12 @@ describe('spendable reads against a real postgres', () => {
       });
       await insertMovement(reverted, 'checking', 40000, 208000);
 
-      const pending = await spendable.sumPendingCashExpenses({
+      const { pendingCents } = await spendable.readCashSnapshot({
         workspaceId,
         ...WINDOW,
       });
 
-      expect(pending).toBe(58000);
+      expect(pendingCents).toBe(58000);
     });
 
     it('reads cash from the same account types as the pending expenses', async () => {
@@ -363,22 +365,72 @@ describe('spendable reads against a real postgres', () => {
         date: '2026-11-21T15:00:00.000Z',
       });
 
-      const balances = await spendable.listCashBalances(workspaceId);
-      const pending = await spendable.sumPendingCashExpenses({
+      const snapshot = await spendable.readCashSnapshot({
         workspaceId,
         ...WINDOW,
       });
 
-      expect(balances).toEqual([
+      expect(snapshot.cashBalances).toEqual([
         { accountId: 'cash', balanceCents: 5000 },
         { accountId: 'checking', balanceCents: 200000 },
       ]);
-      expect(pending).toBe(0);
+      expect(snapshot.pendingCents).toBe(0);
     });
 
     it('reads the workspace cycle from the database', async () => {
       expect(await spendable.findCycle(workspaceId)).toBe('monthly');
       expect(await spendable.findCycle(randomUUID())).toBeNull();
+    });
+  });
+
+  describe('single cash snapshot', () => {
+    it('moves both halves together while a debit is held open', async () => {
+      await insertAccount('checking', {
+        type: AccountType.CHECKING,
+        balance: 200000,
+      });
+      const bill = await insertTransaction({
+        accountId: 'checking',
+        amount: 100000,
+        status: TransactionStatus.PENDING,
+        date: '2026-11-19T15:00:00.000Z',
+      });
+      const writer = postgres(databaseUrl, {
+        max: 1,
+        onnotice: () => undefined,
+      });
+
+      try {
+        await writer`BEGIN`;
+        await writer`UPDATE accounts SET balance = balance - 100000 WHERE id = 'checking'`;
+        await writer`
+          INSERT INTO balance_movements (workspace_id, account_id, transaction_id, cause, delta, balance_after)
+          VALUES (${workspaceId}, 'checking', ${bill}, ${BalanceMovementCause.STATUS_CHANGED}, -100000, 100000)
+        `;
+
+        const held = await spendable.readCashSnapshot({
+          workspaceId,
+          ...WINDOW,
+        });
+
+        await writer`COMMIT`;
+        const committed = await spendable.readCashSnapshot({
+          workspaceId,
+          ...WINDOW,
+        });
+
+        expect(held).toEqual({
+          cashBalances: [{ accountId: 'checking', balanceCents: 200000 }],
+          pendingCents: 100000,
+        });
+        expect(committed).toEqual({
+          cashBalances: [{ accountId: 'checking', balanceCents: 100000 }],
+          pendingCents: 0,
+        });
+      } finally {
+        await writer`ROLLBACK`;
+        await writer.end({ timeout: 5 });
+      }
     });
   });
 
@@ -741,10 +793,8 @@ describe('spendable reads against a real postgres', () => {
           workspaceId,
           ...WINDOW,
         }),
-        pending: await spendable.sumPendingCashExpenses({
-          workspaceId,
-          ...WINDOW,
-        }),
+        pending: (await spendable.readCashSnapshot({ workspaceId, ...WINDOW }))
+          .pendingCents,
         recurrences: await spendable.listActiveRecurrences(workspaceId),
         spend: await cardCycle.sumCycleSpend({
           workspaceId,

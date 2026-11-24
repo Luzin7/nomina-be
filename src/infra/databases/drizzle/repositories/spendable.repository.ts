@@ -8,6 +8,7 @@ import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import {
   SpendableCashFlowInput,
   SpendableCashBalance,
+  SpendableCashSnapshot,
   SpendableRecurrence,
   SpendableRepository,
 } from '@modules/spendable/repositories/contracts/SpendableRepository';
@@ -24,37 +25,15 @@ const epochMsInUtc = (column: AnyColumn | SQL) =>
 
 const epochMsToDate = (epochMs: string) => new Date(Number(epochMs));
 
-type PendingExpenseRow = {
-  id: string;
-  accountId: string;
-  amount: number;
+type CashSnapshotRow = {
+  pendingCents: string;
+  cashBalances: SpendableCashBalance[];
 };
 
-type DebitRow = {
-  transactionId: string | null;
-  accountId: string;
-  debitedCents: number;
-};
-
-const debitKey = (transactionId: string, accountId: string): string =>
-  `${transactionId}|${accountId}`;
-
-const debitsByMovement = (debits: DebitRow[]): Map<string, number> =>
-  new Map(
-    debits.map((debit) => [
-      debitKey(debit.transactionId ?? '', debit.accountId),
-      debit.debitedCents,
-    ]),
-  );
-
-const notDebitedCents = (
-  expense: PendingExpenseRow,
-  debits: Map<string, number>,
-): number =>
-  Math.max(
-    0,
-    expense.amount + (debits.get(debitKey(expense.id, expense.accountId)) ?? 0),
-  );
+const cashTypesIn = sql`(${sql.join(
+  CASH_ACCOUNT_TYPES.map((type) => sql`${type}`),
+  sql`, `,
+)})`;
 
 type RecurrenceRow = {
   id: string;
@@ -85,61 +64,55 @@ export class SpendableRepositoryImplementation implements SpendableRepository {
     });
   }
 
-  async sumPendingCashExpenses(input: SpendableCashFlowInput): Promise<number> {
+  async readCashSnapshot(
+    input: SpendableCashFlowInput,
+  ): Promise<SpendableCashSnapshot> {
     return this.drizzle.withStatementTimeout(async (tx) => {
-      const expenses: PendingExpenseRow[] = await tx
-        .select({
-          id: schema.transactions.id,
-          accountId: schema.transactions.accountId,
-          amount: schema.transactions.amount,
-        })
-        .from(schema.transactions)
-        .innerJoin(
-          schema.accounts,
-          eq(schema.accounts.id, schema.transactions.accountId),
-        )
-        .where(
-          this.cashFlowConditions(
-            input,
-            TransactionType.EXPENSE,
-            TransactionStatus.PENDING,
-          ),
-        );
-
-      if (expenses.length === 0) return 0;
-
-      const debits: DebitRow[] = await tx
-        .select({
-          transactionId: schema.balanceMovements.transactionId,
-          accountId: schema.balanceMovements.accountId,
-          debitedCents: sql<number>`LEAST(
-            SUM(${schema.balanceMovements.delta}),
+      const [row] = await tx.execute<CashSnapshotRow>(sql`
+        WITH cash_accounts AS (
+          SELECT a.id, a.balance
+          FROM accounts a
+          WHERE a.workspace_id = ${input.workspaceId}
+            AND a.type IN ${cashTypesIn}
+        ),
+        pending AS (
+          SELECT COALESCE(
+            SUM(GREATEST(0, t.amount + LEAST(COALESCE(d.debited, 0), 0))),
             0
-          )`.mapWith(Number),
-        })
-        .from(schema.balanceMovements)
-        .where(
-          and(
-            inArray(schema.balanceMovements.accountId, [
-              ...new Set(expenses.map((expense) => expense.accountId)),
-            ]),
-            inArray(
-              schema.balanceMovements.transactionId,
-              expenses.map((expense) => expense.id),
-            ),
-          ),
+          )::text AS "pendingCents"
+          FROM transactions t
+          INNER JOIN cash_accounts a ON a.id = t.account_id
+          LEFT JOIN LATERAL (
+            SELECT SUM(m.delta) AS debited
+            FROM balance_movements m
+            WHERE m.account_id = t.account_id
+              AND m.transaction_id = t.id
+          ) d ON true
+          WHERE t.workspace_id = ${input.workspaceId}
+            AND t.type = ${TransactionType.EXPENSE}
+            AND t.status = ${TransactionStatus.PENDING}
+            AND ${withinLocalDays(sql`t.date`, {
+              start: input.startDate,
+              end: input.endDate,
+              timezone: input.timezone,
+            })}
         )
-        .groupBy(
-          schema.balanceMovements.transactionId,
-          schema.balanceMovements.accountId,
-        );
+        SELECT
+          p."pendingCents",
+          COALESCE((
+            SELECT json_agg(
+              json_build_object('accountId', c.id, 'balanceCents', c.balance)
+              ORDER BY c.id
+            )
+            FROM cash_accounts c
+          ), '[]'::json) AS "cashBalances"
+        FROM pending p
+      `);
 
-      const debited = debitsByMovement(debits);
-
-      return expenses.reduce(
-        (total, expense) => total + notDebitedCents(expense, debited),
-        0,
-      );
+      return {
+        cashBalances: row.cashBalances,
+        pendingCents: Number(row.pendingCents),
+      };
     });
   }
 
@@ -149,24 +122,6 @@ export class SpendableRepositoryImplementation implements SpendableRepository {
       TransactionType.INCOME,
       TransactionStatus.COMPLETED,
     );
-  }
-
-  async listCashBalances(workspaceId: string): Promise<SpendableCashBalance[]> {
-    return this.drizzle.withStatementTimeout(async (tx) => {
-      return tx
-        .select({
-          accountId: schema.accounts.id,
-          balanceCents: schema.accounts.balance,
-        })
-        .from(schema.accounts)
-        .where(
-          and(
-            eq(schema.accounts.workspaceId, workspaceId),
-            inArray(schema.accounts.type, CASH_ACCOUNT_TYPES),
-          ),
-        )
-        .orderBy(schema.accounts.id);
-    });
   }
 
   async listActiveRecurrences(

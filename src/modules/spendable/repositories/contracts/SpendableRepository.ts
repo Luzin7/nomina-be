@@ -25,16 +25,17 @@ export type SpendableCashBalance = {
   balanceCents: number;
 };
 
+export type SpendableCashSnapshot = {
+  cashBalances: SpendableCashBalance[];
+  pendingCents: number;
+};
+
 export abstract class SpendableRepository {
   abstract findCycle(workspaceId: string): Promise<string | null>;
 
-  abstract listCashBalances(
-    workspaceId: string,
-  ): Promise<SpendableCashBalance[]>;
-
-  abstract sumPendingCashExpenses(
+  abstract readCashSnapshot(
     input: SpendableCashFlowInput,
-  ): Promise<number>;
+  ): Promise<SpendableCashSnapshot>;
 
   abstract sumCompletedCashIncome(
     input: SpendableCashFlowInput,

@@ -190,10 +190,10 @@ describe('GetSpendableService', () => {
 
     spendableRepository = {
       findCycle: jest.fn(async () => given.cycle),
-      listCashBalances: jest.fn(
-        async () => given.cashBalances ?? cashRowsOf(given.accounts),
-      ),
-      sumPendingCashExpenses: jest.fn(async () => given.pendingCents),
+      readCashSnapshot: jest.fn(async () => ({
+        cashBalances: given.cashBalances ?? cashRowsOf(given.accounts),
+        pendingCents: given.pendingCents,
+      })),
       sumCompletedCashIncome: jest.fn(async () => given.completedIncomeCents),
       listActiveRecurrences: jest.fn(async () => given.recurrences),
     } as unknown as jest.Mocked<SpendableRepository>;
@@ -364,7 +364,7 @@ describe('GetSpendableService', () => {
     expect(result.cycleEndDate).toBe('2026-11-15');
     expect(result.daysRemaining).toBe(1);
     expect(result.spendableCents).toBe(300000);
-    expect(spendableRepository.sumPendingCashExpenses).toHaveBeenCalledWith({
+    expect(spendableRepository.readCashSnapshot).toHaveBeenCalledWith({
       workspaceId: WORKSPACE_ID,
       startDate: '2026-11-01',
       endDate: '2026-11-15',
@@ -666,7 +666,7 @@ describe('GetSpendableService', () => {
 
     await run();
 
-    expect(spendableRepository.sumPendingCashExpenses).toHaveBeenCalledWith(
+    expect(spendableRepository.readCashSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: WORKSPACE_ID }),
     );
     expect(spendableRepository.listActiveRecurrences).toHaveBeenCalledWith(
