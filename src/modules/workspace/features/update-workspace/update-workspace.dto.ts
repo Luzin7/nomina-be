@@ -1,7 +1,8 @@
+import { WORKSPACE_CYCLE_OPTIONS } from '@constants/enums';
 import { ZodValidationPipe } from '@shared/pipes/ZodValidation';
 import { z } from 'zod';
 
-const updateWorkspaceBodySchema = z.object({
+export const updateWorkspaceBodySchema = z.object({
   name: z
     .string()
     .trim()
@@ -12,6 +13,7 @@ const updateWorkspaceBodySchema = z.object({
     .trim()
     .length(3, 'Moeda deve ter 3 caracteres (ex: BRL)')
     .optional(),
+  cycle: z.enum(WORKSPACE_CYCLE_OPTIONS).optional(),
 });
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars

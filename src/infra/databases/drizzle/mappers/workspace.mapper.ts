@@ -1,3 +1,4 @@
+import { normalizeWorkspaceCycle } from '@constants/enums';
 import * as schema from '@infra/databases/drizzle/schema';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 
@@ -9,6 +10,7 @@ export class WorkspaceMapper {
     const result = Workspace.create(
       {
         name: raw.name,
+        cycle: normalizeWorkspaceCycle(raw.cycle),
       },
       raw.id,
     );

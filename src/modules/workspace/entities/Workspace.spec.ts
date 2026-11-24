@@ -32,6 +32,12 @@ describe('Workspace entity', () => {
     it('should accept name with exactly 2 characters', () => {
       expect(Workspace.create(makeProps({ name: 'AB' })).isRight()).toBe(true);
     });
+
+    it('should default cycle to monthly', () => {
+      const result = Workspace.create(makeProps());
+      if (result.isLeft()) throw result.value;
+      expect(result.value.cycle).toBe('monthly');
+    });
   });
 
   describe('updateDetails()', () => {
@@ -54,6 +60,13 @@ describe('Workspace entity', () => {
       expect(ws.updateDetails('A', 'BRL', 'America/Sao_Paulo').isLeft()).toBe(
         true,
       );
+    });
+
+    it('should keep the cycle when updateDetails omits it', () => {
+      const ws = makeWorkspace();
+      ws.updateDetails('New Name', 'BRL', 'UTC', 'half_month');
+      ws.updateDetails('Newer Name', 'BRL', 'UTC');
+      expect(ws.cycle).toBe('half_month');
     });
   });
 });

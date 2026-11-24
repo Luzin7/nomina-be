@@ -26,6 +26,7 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
         name: workspace.name,
         currency: workspace.currency,
         timezone: workspace.timezone,
+        cycle: workspace.cycle,
       })
       .returning();
 
@@ -55,6 +56,7 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
         name: workspace.name,
         currency: workspace.currency,
         timezone: workspace.timezone,
+        cycle: workspace.cycle,
       });
 
       await tx.insert(schema.workspaceUsers).values({
@@ -99,6 +101,7 @@ export class WorkspaceRepositoryImplementation implements WorkspaceRepository {
         name: workspace.name,
         currency: workspace.currency,
         timezone: workspace.timezone,
+        cycle: workspace.cycle,
       })
       .where(eq(schema.workspaces.id, workspace.id))
       .returning();
