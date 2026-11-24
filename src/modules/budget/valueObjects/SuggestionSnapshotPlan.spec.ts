@@ -1,5 +1,8 @@
 import type { BudgetSnapshot } from '@modules/budget/repositories/contracts/BudgetRepository';
-import { planSuggestionSnapshot } from './SuggestionSnapshotPlan';
+import {
+  planResetSnapshot,
+  planSuggestionSnapshot,
+} from './SuggestionSnapshotPlan';
 
 function makeSnapshot(overrides: Partial<BudgetSnapshot> = {}): BudgetSnapshot {
   return {
@@ -89,5 +92,47 @@ describe('planSuggestionSnapshot', () => {
 
     expect(plan.monthlyIncome).toBeNull();
     expect(plan.allocations[0].percentageOfIncome).toBeNull();
+  });
+});
+
+describe('planResetSnapshot', () => {
+  const MONTH_START = new Date('2026-11-01T03:00:00.000Z');
+
+  it('keeps the mode of the month it rewrites', () => {
+    const plan = planResetSnapshot(
+      makeSnapshot({
+        effectiveFrom: MONTH_START,
+        monthlyIncome: 1_000_000,
+        mode: 'percentage',
+      }),
+      MONTH_START,
+      SPLIT.allocations,
+    );
+
+    expect(plan).toEqual({
+      monthlyIncome: 1_000_000,
+      mode: 'percentage',
+      allocations: [
+        {
+          categoryId: 'housing',
+          groupName: 'Essenciais',
+          groupOrder: 0,
+          categoryOrder: 0,
+          percentageOfIncome: 30,
+          targetCents: 300_000,
+        },
+      ],
+    });
+  });
+
+  it('defaults the mode to fixed when the month has no snapshot', () => {
+    const plan = planResetSnapshot(
+      makeSnapshot({ monthlyIncome: 1_000_000, mode: 'percentage' }),
+      MONTH_START,
+      SPLIT.allocations,
+    );
+
+    expect(plan.mode).toBe('fixed');
+    expect(plan.monthlyIncome).toBe(1_000_000);
   });
 });

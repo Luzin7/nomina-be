@@ -131,6 +131,7 @@ const BUDGET_STATUS_GOLDEN = {
   exists: true,
   mode: 'percentage',
   monthlyIncomeCents: 300000,
+  planEligible: false,
   effectiveFrom: new Date('2026-10-01T03:00:00.000Z'),
   allocations: [
     {
@@ -384,6 +385,9 @@ describe('report regression goldens', () => {
             projection: MONTH_SUMMARY_PROJECTION_CENTS,
           }),
         ),
+      } as never,
+      {
+        execute: jest.fn().mockResolvedValue(right({ planEligible: false })),
       } as never,
       {
         execute: jest.fn().mockResolvedValue(TIMEZONE),

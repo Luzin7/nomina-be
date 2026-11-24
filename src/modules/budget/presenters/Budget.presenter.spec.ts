@@ -29,6 +29,7 @@ function makeStatus(projection: MonthProjection | null): BudgetStatusResponse {
     exists: true,
     mode: 'percentage',
     monthlyIncomeCents: 850_000,
+    planEligible: true,
     effectiveFrom: new Date('2026-11-01T03:00:00.000Z'),
     allocations: [
       {
@@ -174,7 +175,7 @@ describe('BudgetPresenter', () => {
   });
 
   describe('toSuggestion', () => {
-    it('does not expose the plan fields', () => {
+    it('exposes the plan eligibility without the plan fields', () => {
       const presented = BudgetPresenter.toSuggestion({
         month: '2026-11',
         monthStart: new Date('2026-11-01T03:00:00.000Z'),
@@ -186,7 +187,7 @@ describe('BudgetPresenter', () => {
       });
 
       expect(presented).not.toHaveProperty('plan');
-      expect(presented).not.toHaveProperty('planEligible');
+      expect(presented.planEligible).toBe(true);
     });
   });
 });

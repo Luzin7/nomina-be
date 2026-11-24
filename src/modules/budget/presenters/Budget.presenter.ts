@@ -13,6 +13,7 @@ export class BudgetPresenter {
       exists: true as const,
       mode: response.mode,
       monthlyIncomeCents: response.monthlyIncomeCents,
+      planEligible: response.planEligible,
       effectiveFrom: response.effectiveFrom,
       allocations: response.allocations.map((allocation) => ({
         categoryId: allocation.categoryId,
@@ -87,8 +88,9 @@ export class BudgetPresenter {
     basisMonths,
     income,
     split,
+    planEligible,
   }: BudgetSuggestion) {
-    return { month, monthStart, basisMonths, income, split };
+    return { month, monthStart, basisMonths, income, split, planEligible };
   }
 
   static toDecision({ kind, status, month }: SuggestionDecisionOutcome) {

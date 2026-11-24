@@ -626,7 +626,7 @@ export const budgetSuggestionDecisions = pgTable(
     ),
     check(
       'chk_budget_suggestion_decision_kind',
-      sql`${table.kind} IN ('income', 'split')`,
+      sql`${table.kind} IN ('income', 'split', 'reset')`,
     ),
     check(
       'chk_budget_suggestion_decision_value',

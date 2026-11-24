@@ -16,6 +16,8 @@ import { GetBudgetStatusController } from './features/get-status/get-status.cont
 import { GetBudgetStatusService } from './features/get-status/get-status.handler';
 import { RejectBudgetSuggestionController } from './features/reject-budget-suggestion/reject-budget-suggestion.controller';
 import { RejectBudgetSuggestionService } from './features/reject-budget-suggestion/reject-budget-suggestion.handler';
+import { ResetBudgetController } from './features/reset-budget/reset-budget.controller';
+import { ResetBudgetService } from './features/reset-budget/reset-budget.handler';
 import { SaveBudgetConfigController } from './features/save-config/save-config.controller';
 import { SaveBudgetConfigService } from './features/save-config/save-config.handler';
 
@@ -35,6 +37,7 @@ import { SaveBudgetConfigService } from './features/save-config/save-config.hand
     AcceptIncomeSuggestionController,
     AcceptSplitSuggestionController,
     RejectBudgetSuggestionController,
+    ResetBudgetController,
   ],
   providers: [
     GetBudgetStatusService,
@@ -44,6 +47,7 @@ import { SaveBudgetConfigService } from './features/save-config/save-config.hand
     AcceptIncomeSuggestionService,
     AcceptSplitSuggestionService,
     RejectBudgetSuggestionService,
+    ResetBudgetService,
   ],
   exports: [GetBudgetStatusService, BudgetSuggestionModule],
 })

@@ -136,6 +136,40 @@ describe('resolveSplitProgress', () => {
     );
   });
 
+  it('is accepted in the month of a reset', () => {
+    const decisions = [makeDecision({ kind: 'reset', month: '2026-11' })];
+
+    expect(resolveSplitProgress({ ...base, decisions }).status).toBe(
+      'accepted',
+    );
+  });
+
+  it('lets a reset supersede a rejected split in the same month', () => {
+    const decisions = [
+      makeDecision({ kind: 'split', month: '2026-11', decision: 'rejected' }),
+      makeDecision({ kind: 'reset', month: '2026-11' }),
+    ];
+
+    expect(resolveSplitProgress({ ...base, decisions }).status).toBe(
+      'accepted',
+    );
+  });
+
+  it('anchors the step on the month of a reset', () => {
+    const decisions = [
+      makeDecision({
+        kind: 'reset',
+        month: '2026-09',
+        incomeCents: 500_000,
+      }),
+    ];
+
+    expect(resolveSplitProgress({ ...base, decisions })).toEqual({
+      status: 'open',
+      step: 3,
+    });
+  });
+
   it('skips only the current month after a glide-step rejection', () => {
     const decisions = [
       makeDecision({ month: '2026-09', incomeCents: 500_000 }),

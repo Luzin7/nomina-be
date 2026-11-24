@@ -101,6 +101,9 @@ describe('budget status over a hidden category', () => {
         execute: jest.fn().mockResolvedValue(right(makeSummary())),
       } as unknown as FindMonthSummaryService,
       {
+        execute: jest.fn().mockResolvedValue(right({ planEligible: false })),
+      } as never,
+      {
         execute: jest.fn().mockResolvedValue('UTC'),
       } as unknown as GetWorkspaceTimezoneService,
       dateProvider,
