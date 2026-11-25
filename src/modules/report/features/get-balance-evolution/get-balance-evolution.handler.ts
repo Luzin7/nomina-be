@@ -14,7 +14,7 @@ import {
 } from '@shared/cache/report-cache';
 import { Either, right } from '@shared/core/errors/Either';
 import { MoneyUtils } from '@utils/MoneyUtils';
-import { and, eq, gte, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { and, eq, gte, lte, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { BalanceEvolutionRequest } from './get-balance-evolution.dto';
 
@@ -357,7 +357,6 @@ export class BalanceEvolutionService {
 
     const [
       generalPeriod,
-      investmentOpening,
       investmentPeriod,
       totalInvestedResult,
       totalGeneralBalance,
@@ -365,7 +364,6 @@ export class BalanceEvolutionService {
       currentNetWorth,
     ] = await Promise.all([
       this.queryPeriod(context, generalFilter),
-      this.queryOpening(context, investmentFilter),
       this.queryPeriod(context, investmentFilter),
       this.queryTotalInvested(workspaceId),
       this.queryTotalGeneralBalance(workspaceId),
@@ -387,7 +385,7 @@ export class BalanceEvolutionService {
     });
 
     const investments = buildDailySummary({
-      opening: investmentOpening,
+      opening: [],
       period: investmentPeriod,
       resolve: resolveInvestmentType,
       dateProvider: this.dateProvider,
@@ -418,32 +416,6 @@ export class BalanceEvolutionService {
     };
 
     return right(response);
-  }
-
-  private async queryOpening(
-    context: QueryContext,
-    filter: ReturnType<typeof and>,
-  ): Promise<OpeningRow[]> {
-    return await this.drizzle.db
-      .select(selectFields)
-      .from(schema.transactions)
-      .innerJoin(
-        schema.accounts,
-        eq(schema.transactions.accountId, schema.accounts.id),
-      )
-      .leftJoin(
-        destAccount,
-        eq(schema.transactions.destinationAccountId, destAccount.id),
-      )
-      .where(
-        and(
-          eq(schema.transactions.workspaceId, context.workspaceId),
-          isCompleted,
-          lt(schema.transactions.date, context.startDate),
-          filter,
-        ),
-      )
-      .groupBy(...groupByFields);
   }
 
   private async queryPeriod(
