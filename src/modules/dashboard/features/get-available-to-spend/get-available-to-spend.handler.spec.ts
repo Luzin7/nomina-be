@@ -240,6 +240,7 @@ describe('GetAvailableToSpendService', () => {
   let getSpendable: jest.Mocked<GetSpendableService>;
   let spendableRepository: jest.Mocked<SpendableRepository>;
   let warn: jest.SpyInstance;
+  let log: jest.SpyInstance;
 
   let currentBudget: BudgetStatusResponse;
   const givenBudget = (budget: BudgetStatusResponse) => {
@@ -348,6 +349,7 @@ describe('GetAvailableToSpendService', () => {
     givenAccounts();
     givenHorizon(makeHorizonMonth());
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
 
     cache = new InMemoryCacheProvider();
     service = new GetAvailableToSpendService(
@@ -691,6 +693,21 @@ describe('GetAvailableToSpendService', () => {
 
       expect(cardInvoiceRepository.findTotals).toHaveBeenCalledTimes(1);
       expect(withParcels).toBe(baseline);
+    });
+  });
+
+  describe('compute timing', () => {
+    it('logs one line per miss with every step rounded in milliseconds', async () => {
+      await run();
+
+      const computeLines = log.mock.calls.filter(([line]) =>
+        String(line).startsWith('available-to-spend compute '),
+      );
+
+      expect(computeLines).toHaveLength(1);
+      expect(computeLines[0][0]).toMatch(
+        /^available-to-spend compute workspaceId=\S+ budgetMs=\d+ planMs=\d+ goalAportesMs=\d+ spendableMs=\d+ projectionMs=\d+ totalMs=\d+$/,
+      );
     });
   });
 
