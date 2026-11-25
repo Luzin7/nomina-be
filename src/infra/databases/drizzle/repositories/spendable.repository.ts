@@ -39,6 +39,7 @@ type RecurrenceRow = {
   id: string;
   type: string;
   accountType: string;
+  timezone: string;
   amount: number;
   frequency: string;
   interval: number;
@@ -133,6 +134,7 @@ export class SpendableRepositoryImplementation implements SpendableRepository {
             id: schema.recurringTransactions.id,
             type: schema.recurringTransactions.type,
             accountType: schema.accounts.type,
+            timezone: schema.accounts.timezone,
             amount: schema.recurringTransactions.amount,
             frequency: schema.recurringTransactions.frequency,
             interval: schema.recurringTransactions.interval,
@@ -171,6 +173,7 @@ export class SpendableRepositoryImplementation implements SpendableRepository {
       id: row.id,
       type: row.type as SpendableRecurrence['type'],
       accountType: row.accountType as AccountType,
+      timezone: row.timezone,
       amount: row.amount,
       frequency: row.frequency as RecurrenceFrequency,
       interval: row.interval,

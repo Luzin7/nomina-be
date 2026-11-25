@@ -96,6 +96,7 @@ const recurrence = (
   id: 'rule-1',
   type: 'EXPENSE',
   accountType: AccountType.CHECKING,
+  timezone: TIMEZONE,
   amount: 50000,
   frequency: RecurrenceFrequency.MONTHLY,
   interval: 1,

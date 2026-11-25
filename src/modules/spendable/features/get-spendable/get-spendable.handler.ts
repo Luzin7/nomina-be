@@ -4,7 +4,6 @@ import {
   normalizeWorkspaceCycle,
   type WorkspaceCycle,
 } from '@constants/enums';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import type { AnyAccount } from '@modules/account/entities/types';
@@ -287,7 +286,7 @@ export class GetSpendableService implements Service<
             startDate: current.startDate,
             frequency: current.frequency,
             interval: current.interval,
-            timezone: RECURRING_GENERATION_TIMEZONE,
+            timezone: current.timezone,
           },
           date,
           this.dateProvider,

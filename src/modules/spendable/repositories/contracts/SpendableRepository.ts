@@ -11,6 +11,7 @@ export type SpendableRecurrence = {
   id: string;
   type: 'INCOME' | 'EXPENSE';
   accountType: AccountType;
+  timezone: string;
   amount: number;
   frequency: RecurrenceFrequency;
   interval: number;
