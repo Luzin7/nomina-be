@@ -239,6 +239,7 @@ describe('GetAvailableToSpendService', () => {
   let resolveSuggestion: jest.Mocked<ResolveBudgetSuggestionService>;
   let getSpendable: jest.Mocked<GetSpendableService>;
   let spendableRepository: jest.Mocked<SpendableRepository>;
+  let dateProvider: DayJsDateProvider;
   let warn: jest.SpyInstance;
   let log: jest.SpyInstance;
 
@@ -341,7 +342,7 @@ describe('GetAvailableToSpendService', () => {
     const workspaceTimezone = {
       execute: jest.fn().mockResolvedValue(TIMEZONE),
     } as unknown as GetWorkspaceTimezoneService;
-    const dateProvider = new DayJsDateProvider();
+    dateProvider = new DayJsDateProvider();
     jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
 
     givenBudget(makeBudget());
@@ -384,6 +385,32 @@ describe('GetAvailableToSpendService', () => {
     return result.value;
   };
 
+  describe('daysRemaining', () => {
+    it('matches the spendable cycle window mid-month', async () => {
+      givenProjection(0, 15);
+
+      const response = await run();
+
+      expect(response.daysRemaining).toBe(16);
+      expect(response.daysRemaining).toBe(response.spendable?.daysRemaining);
+    });
+
+    it('matches the spendable cycle window on the last day of the month', async () => {
+      jest
+        .spyOn(dateProvider, 'now')
+        .mockReturnValue(new Date('2026-11-30T12:00:00.000Z'));
+      getSpendable.execute.mockResolvedValue(
+        right({ ...SPENDABLE, daysRemaining: 1 }),
+      );
+      givenProjection(0, 0);
+
+      const response = await run();
+
+      expect(response.daysRemaining).toBe(1);
+      expect(response.daysRemaining).toBe(response.spendable?.daysRemaining);
+    });
+  });
+
   describe('figure', () => {
     it('subtracts recurring and goal aportes from the remaining budget', async () => {
       givenBudget(makeBudget({ totalTargetCents: 1_500, totalSpent: 500 }));
@@ -394,7 +421,7 @@ describe('GetAvailableToSpendService', () => {
 
       expect(response).toMatchObject({
         month: '2026-11',
-        daysRemaining: 3,
+        daysRemaining: 16,
         budget: {
           exists: true,
           source: 'declared',
@@ -408,7 +435,7 @@ describe('GetAvailableToSpendService', () => {
           goalAportesCents: 300,
         },
         spendableCents: 500,
-        perDayCents: 166,
+        perDayCents: 31,
         state: 'within-budget',
       });
     });
@@ -442,13 +469,13 @@ describe('GetAvailableToSpendService', () => {
       expect(response.state).toBe('within-budget');
     });
 
-    it('floors the daily allowance and never divides by less than one day', async () => {
+    it('floors the daily allowance over the cycle window days', async () => {
       givenBudget(makeBudget({ totalTargetCents: 1_000, totalSpent: 0 }));
       givenProjection(0, 0);
 
       const response = await run();
 
-      expect(response.perDayCents).toBe(1_000);
+      expect(response.perDayCents).toBe(62);
     });
 
     it('uses null instead of zero without a budget snapshot and still computes reservations', async () => {
@@ -465,7 +492,7 @@ describe('GetAvailableToSpendService', () => {
 
       expect(response).toEqual({
         month: '2026-11',
-        daysRemaining: 3,
+        daysRemaining: 16,
         budget: { exists: false, recurringDueCents: 200, totalSpentCents: 0 },
         remainingBudgetCents: null,
         reservations: {
@@ -582,7 +609,7 @@ describe('GetAvailableToSpendService', () => {
 
       const response = await run();
 
-      expect(response.perDayCents).toBe(333);
+      expect(response.perDayCents).toBe(62);
     });
 
     it('does not read the month summary when the budget carries the projection', async () => {
@@ -736,7 +763,7 @@ describe('GetAvailableToSpendService', () => {
         },
         remainingBudgetCents: 6_000,
         spendableCents: 5_500,
-        perDayCents: 1_833,
+        perDayCents: 343,
         state: 'within-budget',
       });
     });
@@ -819,7 +846,7 @@ describe('GetAvailableToSpendService', () => {
         },
         remainingBudgetCents: 6_000,
         spendableCents: 5_500,
-        perDayCents: 1_833,
+        perDayCents: 343,
         state: 'within-budget',
       });
     });
@@ -975,12 +1002,12 @@ describe('GetAvailableToSpendService', () => {
       expect(second).toEqual(first);
     });
 
-    it('keys the cache under v9 with the workspace cycle', async () => {
+    it('keys the cache under v10 with the workspace cycle', async () => {
       await service.execute(REQUEST);
 
       expect([...cache.values.keys()]).toEqual([
         expect.stringMatching(
-          /^dashboard:available-to-spend:v9:ws-1:g\d+:c\d+:o\d+:2026-11-15:monthly$/,
+          /^dashboard:available-to-spend:v10:ws-1:g\d+:c\d+:o\d+:2026-11-15:monthly$/,
         ),
       ]);
     });
@@ -1528,7 +1555,7 @@ describe('GetAvailableToSpendService', () => {
 
         expect(response.spendable).toEqual(SPENDABLE);
         expect(response.spendableCents).toBe(800);
-        expect(response.daysRemaining).toBe(3);
+        expect(response.daysRemaining).toBe(16);
         expect(response.budget).toMatchObject({ totalTargetCents: 1_500 });
       });
 
