@@ -1,3 +1,4 @@
+import type { WorkspaceCycle } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import {
@@ -17,6 +18,15 @@ import {
   InvoiceCalendar,
   InvoiceKey,
 } from '@modules/account/valueObjects/InvoiceCalendar';
+import {
+  openInvoiceOf,
+  payableInvoiceOf,
+} from '@modules/account/valueObjects/OpenInvoice';
+import { buildInvoiceStatementFromTotals } from '@modules/account/valueObjects/InvoiceStatement';
+import { CycleWindow } from '@modules/spendable/valueObjects/CycleWindow';
+import { WorkspaceNotFoundError } from '@modules/workspace/errors';
+import { GetWorkspaceCycleService } from '@modules/workspace/services/get-workspace-cycle.service';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -52,14 +62,15 @@ type UpcomingPlan = {
   account: CreditCard;
   calendar: InvoiceCalendar;
   today: string;
-  bounds: InvoiceBounds[];
+  current: InvoiceBounds;
+  window: CycleWindow;
 };
 
 type ProjectionInput = {
   recurrences: CardRecurrence[];
   from: Date;
   to: Date;
-  plan: UpcomingPlan;
+  plan: Pick<UpcomingPlan, 'account' | 'calendar'>;
 };
 
 const LOCAL_DAY_FORMAT = 'YYYY-MM-DD';
@@ -74,6 +85,8 @@ export class GetUpcomingInvoicesService implements Service<
     private readonly accountRepository: AccountRepository,
     private readonly cardInvoiceRepository: CardInvoiceRepository,
     private readonly cardRecurrenceRepository: CardRecurrenceRepository,
+    private readonly workspaceCycle: GetWorkspaceCycleService,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
     private readonly cache: CacheProvider,
   ) {}
@@ -94,7 +107,13 @@ export class GetUpcomingInvoicesService implements Service<
       return left(new CreditCardCycleNotConfiguredError());
     }
 
-    const plan = this.planOf(account, account.dueDay);
+    const [cycle, timezone] = await Promise.all([
+      this.workspaceCycle.execute(request.workspaceId),
+      this.workspaceTimezone.execute(request.workspaceId),
+    ]);
+    if (cycle === null) return left(new WorkspaceNotFoundError());
+
+    const plan = this.planOf(account, account.dueDay, cycle, timezone);
     const generation = await readLedgerGeneration(
       this.cache,
       request.workspaceId,
@@ -114,7 +133,12 @@ export class GetUpcomingInvoicesService implements Service<
     });
   }
 
-  private planOf(account: CreditCard, dueDay: number): UpcomingPlan {
+  private planOf(
+    account: CreditCard,
+    dueDay: number,
+    cycle: WorkspaceCycle,
+    timezone: string,
+  ): UpcomingPlan {
     const calendar = new InvoiceCalendar({
       closingDaysBeforeDue: account.closingDaysBeforeDue,
       dueDay,
@@ -122,21 +146,16 @@ export class GetUpcomingInvoicesService implements Service<
     const today = this.dateProvider.format(
       this.dateProvider.now(),
       LOCAL_DAY_FORMAT,
-      account.timezone,
+      timezone,
     );
-    const keys: InvoiceKey[] = [];
-    let cursor = calendar.invoiceKeyFor(today);
-
-    for (let step = 0; step < UPCOMING_INVOICE_COUNT; step++) {
-      cursor = calendar.nextKey(cursor);
-      keys.push(cursor);
-    }
+    const current = calendar.bounds(calendar.invoiceKeyFor(today));
 
     return {
       account,
       calendar,
       today,
-      bounds: keys.map((key) => calendar.bounds(key)),
+      current,
+      window: CycleWindow.of(today, cycle),
     };
   }
 
@@ -144,30 +163,47 @@ export class GetUpcomingInvoicesService implements Service<
     workspaceId: string,
     plan: UpcomingPlan,
   ): Promise<Either<Error, UpcomingInvoicesResponse>> {
-    const { account, calendar, today, bounds } = plan;
+    const { account, calendar, today, current, window } = plan;
+    const candidate = openInvoiceOf(calendar, current, window);
+    const keys = this.keysFrom(
+      calendar,
+      candidate.key,
+      candidate.key !== current.key
+        ? UPCOMING_INVOICE_COUNT + 1
+        : UPCOMING_INVOICE_COUNT,
+    );
+    const totals = await this.cardInvoiceRepository.findTotals(
+      workspaceId,
+      keys.map((key) => cardInvoiceWindowOf(account, calendar, key, today)),
+    );
+    const statementOf = (key: InvoiceKey) =>
+      buildInvoiceStatementFromTotals(totals[keys.indexOf(key)]);
+    const start = payableInvoiceOf(
+      current,
+      candidate,
+      (key) => statementOf(key).remaining,
+    );
+    const startIndex = keys.indexOf(start.key);
+    const selected = keys
+      .slice(startIndex, startIndex + UPCOMING_INVOICE_COUNT)
+      .map((key) => calendar.bounds(key));
     const from = this.dateProvider.startOfDay(
-      bounds[0].periodStart,
+      selected[0].periodStart,
       account.timezone,
     );
     const to = this.dateProvider.startOfDay(
-      bounds[bounds.length - 1].endExclusive,
+      selected[selected.length - 1].endExclusive,
       account.timezone,
     );
 
-    const [totals, recurrences] = await Promise.all([
-      this.cardInvoiceRepository.findTotals(
-        workspaceId,
-        bounds.map(({ key }) =>
-          cardInvoiceWindowOf(account, calendar, key, today),
-        ),
-      ),
-      this.cardRecurrenceRepository.findCardRecurrences({
+    const recurrences = await this.cardRecurrenceRepository.findCardRecurrences(
+      {
         workspaceId,
         accountId: account.id,
         from,
         to,
-      }),
-    ]);
+      },
+    );
     const projectedByKey = this.projectedCentsByKey({
       recurrences,
       from,
@@ -176,8 +212,10 @@ export class GetUpcomingInvoicesService implements Service<
     });
 
     return right({
-      invoices: bounds.map((invoiceBounds, index) => {
-        const pendingChargesCents = Number(totals[index].pendingCharges);
+      invoices: selected.map((invoiceBounds) => {
+        const pendingChargesCents = Number(
+          totals[keys.indexOf(invoiceBounds.key)].pendingCharges,
+        );
         const projectedCents = projectedByKey.get(invoiceBounds.key) ?? 0;
 
         return {
@@ -191,6 +229,22 @@ export class GetUpcomingInvoicesService implements Service<
         };
       }),
     });
+  }
+
+  private keysFrom(
+    calendar: InvoiceCalendar,
+    key: InvoiceKey,
+    count: number,
+  ): InvoiceKey[] {
+    const keys: InvoiceKey[] = [];
+    let cursor = key;
+
+    for (let step = 0; step < count; step++) {
+      keys.push(cursor);
+      cursor = calendar.nextKey(cursor);
+    }
+
+    return keys;
   }
 
   private projectedCentsByKey({

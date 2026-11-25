@@ -15,6 +15,9 @@ import {
   makeCreditCard,
 } from '@modules/account/test-helpers/mock-factories';
 import { CardInvoiceTotals } from '@modules/account/valueObjects/CardInvoiceWindow';
+import { WorkspaceNotFoundError } from '@modules/workspace/errors';
+import { GetWorkspaceCycleService } from '@modules/workspace/services/get-workspace-cycle.service';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { ledgerGenerationKey } from '@shared/cache/report-cache';
@@ -22,6 +25,7 @@ import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cach
 import { GetUpcomingInvoicesService } from './get-upcoming-invoices.handler';
 
 const NOW = new Date('2026-10-15T12:00:00.000Z');
+const TOTALS_ROWS = 7;
 
 const makeTotals = (
   overrides: Partial<CardInvoiceTotals> = {},
@@ -50,8 +54,8 @@ const makeRecurrence = (
   ...overrides,
 });
 
-const sixTotals = (overrides: Record<number, bigint> = {}) =>
-  Array.from({ length: 6 }, (_, index) =>
+const invoiceTotals = (overrides: Record<number, bigint> = {}) =>
+  Array.from({ length: TOTALS_ROWS }, (_, index) =>
     makeTotals({ pendingCharges: overrides[index] ?? 0n }),
   );
 
@@ -60,6 +64,7 @@ describe('GetUpcomingInvoicesService', () => {
   let accountRepository: jest.Mocked<AccountRepository>;
   let cardInvoiceRepository: jest.Mocked<CardInvoiceRepository>;
   let cardRecurrenceRepository: jest.Mocked<CardRecurrenceRepository>;
+  let workspaceCycle: jest.Mocked<GetWorkspaceCycleService>;
   let dateProvider: DayJsDateProvider;
   let cache: InMemoryCacheProvider;
 
@@ -69,6 +74,10 @@ describe('GetUpcomingInvoicesService', () => {
       accountRepository,
       cardInvoiceRepository,
       cardRecurrenceRepository,
+      workspaceCycle,
+      {
+        execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+      } as unknown as GetWorkspaceTimezoneService,
       dateProvider,
       cache,
     );
@@ -79,12 +88,15 @@ describe('GetUpcomingInvoicesService', () => {
       findById: jest.fn(),
     } as unknown as jest.Mocked<AccountRepository>;
     cardInvoiceRepository = {
-      findTotals: jest.fn().mockResolvedValue(sixTotals()),
+      findTotals: jest.fn().mockResolvedValue(invoiceTotals()),
       findPeriodTransactions: jest.fn(),
     } as jest.Mocked<CardInvoiceRepository>;
     cardRecurrenceRepository = {
       findCardRecurrences: jest.fn().mockResolvedValue([]),
     } as jest.Mocked<CardRecurrenceRepository>;
+    workspaceCycle = {
+      execute: jest.fn().mockResolvedValue('monthly'),
+    } as unknown as jest.Mocked<GetWorkspaceCycleService>;
     dateProvider = new DayJsDateProvider();
     cache = new InMemoryCacheProvider();
     build();
@@ -99,6 +111,16 @@ describe('GetUpcomingInvoicesService', () => {
     const result = await run();
 
     expect(result.value).toBeInstanceOf(AccountNotFoundError);
+  });
+
+  it('returns WorkspaceNotFoundError when the workspace is gone', async () => {
+    accountRepository.findById.mockResolvedValue(makeCreditCard());
+    workspaceCycle.execute.mockResolvedValue(null);
+
+    const result = await run();
+
+    expect(result.isLeft()).toBe(true);
+    expect(result.value).toBeInstanceOf(WorkspaceNotFoundError);
   });
 
   it('returns UnauthorizedError for an account of another workspace', async () => {
@@ -129,7 +151,7 @@ describe('GetUpcomingInvoicesService', () => {
     expect(result.value).toBeInstanceOf(CreditCardCycleNotConfiguredError);
   });
 
-  it('lists the six invoices after the open one with their bounds', async () => {
+  it('lists the six invoices starting at the open one with their bounds', async () => {
     accountRepository.findById.mockResolvedValue(makeCreditCard());
 
     const result = await run();
@@ -138,16 +160,16 @@ describe('GetUpcomingInvoicesService', () => {
     expect(result.value).toMatchObject({
       invoices: [
         {
-          key: '2026-12',
-          periodStart: '2026-11-11',
-          periodEnd: '2026-12-10',
-          dueDate: '2026-12-15',
+          key: '2026-11',
+          periodStart: '2026-10-11',
+          periodEnd: '2026-11-10',
+          dueDate: '2026-11-15',
         },
+        { key: '2026-12' },
         { key: '2027-01' },
         { key: '2027-02' },
         { key: '2027-03' },
-        { key: '2027-04' },
-        { key: '2027-05', periodEnd: '2027-05-10', dueDate: '2027-05-15' },
+        { key: '2027-04', periodEnd: '2027-04-10', dueDate: '2027-04-15' },
       ],
     });
   });
@@ -155,7 +177,9 @@ describe('GetUpcomingInvoicesService', () => {
   it('counts a materialized pending row on the occurrence date once', async () => {
     const occurrence = new Date('2026-12-20T15:00:00.000Z');
     accountRepository.findById.mockResolvedValue(makeCreditCard());
-    cardInvoiceRepository.findTotals.mockResolvedValue(sixTotals({ 1: 5000n }));
+    cardInvoiceRepository.findTotals.mockResolvedValue(
+      invoiceTotals({ 3: 5000n }),
+    );
     cardRecurrenceRepository.findCardRecurrences.mockResolvedValue([
       makeRecurrence({ materializedDates: [occurrence] }),
     ]);
@@ -164,7 +188,8 @@ describe('GetUpcomingInvoicesService', () => {
 
     expect(result.value).toMatchObject({
       invoices: [
-        { key: '2026-12', projectedCents: 0, committedCents: 0 },
+        { key: '2026-11', projectedCents: 0, committedCents: 0 },
+        { key: '2026-12', projectedCents: 0 },
         {
           key: '2027-01',
           pendingChargesCents: 5000,
@@ -179,7 +204,6 @@ describe('GetUpcomingInvoicesService', () => {
         },
         { key: '2027-03', projectedCents: 5000 },
         { key: '2027-04', projectedCents: 5000 },
-        { key: '2027-05', projectedCents: 5000 },
       ],
     });
   });
@@ -194,12 +218,12 @@ describe('GetUpcomingInvoicesService', () => {
 
     expect(result.value).toMatchObject({
       invoices: [
+        { key: '2026-11', projectedCents: 0 },
         { key: '2026-12', projectedCents: 0 },
         { key: '2027-01', projectedCents: 5000 },
         { key: '2027-02', projectedCents: 5000 },
         { key: '2027-03', projectedCents: 5000 },
         { key: '2027-04', projectedCents: 0 },
-        { key: '2027-05', projectedCents: 0 },
       ],
     });
   });
@@ -212,8 +236,8 @@ describe('GetUpcomingInvoicesService', () => {
     expect(cardRecurrenceRepository.findCardRecurrences).toHaveBeenCalledWith({
       workspaceId: 'ws-1',
       accountId: 'acc-1',
-      from: new Date('2026-11-11T03:00:00.000Z'),
-      to: new Date('2027-05-11T03:00:00.000Z'),
+      from: new Date('2026-10-11T03:00:00.000Z'),
+      to: new Date('2027-04-11T03:00:00.000Z'),
     });
   });
 
@@ -223,12 +247,13 @@ describe('GetUpcomingInvoicesService', () => {
     await run();
 
     expect(cardInvoiceRepository.findTotals).toHaveBeenCalledWith('ws-1', [
+      expect.objectContaining({ periodStart: '2026-09-11' }),
+      expect.objectContaining({ periodStart: '2026-10-11' }),
       expect.objectContaining({ periodStart: '2026-11-11' }),
       expect.objectContaining({ periodStart: '2026-12-11' }),
       expect.objectContaining({ periodStart: '2027-01-11' }),
       expect.objectContaining({ periodStart: '2027-02-11' }),
       expect.objectContaining({ periodStart: '2027-03-11' }),
-      expect.objectContaining({ periodStart: '2027-04-11' }),
     ]);
   });
 
@@ -243,16 +268,16 @@ describe('GetUpcomingInvoicesService', () => {
     expect(result.value).toMatchObject({
       invoices: [
         {
-          key: '2027-02',
-          periodStart: '2027-01-24',
-          periodEnd: '2027-02-23',
-          dueDate: '2027-02-28',
+          key: '2027-01',
+          periodStart: '2026-12-24',
+          periodEnd: '2027-01-23',
+          dueDate: '2027-01-28',
         },
-        { key: '2027-03', periodStart: '2027-02-24', dueDate: '2027-03-28' },
+        { key: '2027-02', periodStart: '2027-01-24', dueDate: '2027-02-28' },
+        { key: '2027-03' },
         { key: '2027-04' },
         { key: '2027-05' },
         { key: '2027-06' },
-        { key: '2027-07' },
       ],
     });
   });
@@ -262,8 +287,8 @@ describe('GetUpcomingInvoicesService', () => {
       makeCreditCard({ id }),
     );
     cardInvoiceRepository.findTotals
-      .mockResolvedValueOnce(sixTotals({ 0: 100n }))
-      .mockResolvedValueOnce(sixTotals({ 0: 700n }));
+      .mockResolvedValueOnce(invoiceTotals({ 1: 100n }))
+      .mockResolvedValueOnce(invoiceTotals({ 1: 700n }));
 
     await run('acc-1');
     const second = await run('acc-2');
@@ -276,8 +301,8 @@ describe('GetUpcomingInvoicesService', () => {
   it('serves the cached response until the ledger generation changes', async () => {
     accountRepository.findById.mockResolvedValue(makeCreditCard());
     cardInvoiceRepository.findTotals
-      .mockResolvedValueOnce(sixTotals({ 0: 100n }))
-      .mockResolvedValueOnce(sixTotals({ 0: 900n }));
+      .mockResolvedValueOnce(invoiceTotals({ 1: 100n }))
+      .mockResolvedValueOnce(invoiceTotals({ 1: 900n }));
 
     await run();
     const cached = await run();
@@ -292,14 +317,14 @@ describe('GetUpcomingInvoicesService', () => {
     });
   });
 
-  it('resolves today in the account timezone', async () => {
+  it('resolves today in the workspace timezone', async () => {
     build(new Date('2026-10-11T02:00:00.000Z'));
     accountRepository.findById.mockResolvedValue(makeCreditCard());
 
     const result = await run();
 
     expect(result.value).toMatchObject({
-      invoices: [{ key: '2026-11' }, {}, {}, {}, {}, {}],
+      invoices: [{ key: '2026-10' }, {}, {}, {}, {}, {}],
     });
   });
 });

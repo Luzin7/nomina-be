@@ -10,6 +10,7 @@ import { AccountRepositoryImplementation } from '@infra/databases/drizzle/reposi
 import { CardInvoiceRepositoryImplementation } from '@infra/databases/drizzle/repositories/card-invoice.repository';
 import { CardInvoiceSettlementRepositoryImplementation } from '@infra/databases/drizzle/repositories/card-invoice-settlement.repository';
 import { TransactionRepositoryImplementation } from '@infra/databases/drizzle/repositories/transaction.repository';
+import { WorkspaceRepositoryImplementation } from '@infra/databases/drizzle/repositories/workspace.repository';
 import * as schema from '@infra/databases/drizzle/schema';
 import { GetCreditCardInvoiceService } from '@modules/account/features/get-credit-card-invoice/get-credit-card-invoice.handler';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
@@ -18,6 +19,9 @@ import { SYSTEM_CATEGORY } from '@modules/category/constants/system-categories';
 import { PayCreditCardInvoiceService } from '@modules/transaction/features/pay-credit-card-invoice/pay-credit-card-invoice.service';
 import { CardInvoiceSettlementRepository } from '@modules/transaction/repositories/contracts/CardInvoiceSettlementRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
+import { GetWorkspaceCycleService } from '@modules/workspace/services/get-workspace-cycle.service';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
@@ -56,6 +60,8 @@ describe('auto pay card invoices against a real postgres', () => {
   let dateProvider: DayJsDateProvider;
   let payInvoice: PayCreditCardInvoiceService;
   const cache = {
+    get: jest.fn(),
+    set: jest.fn(),
     acquireLock: jest.fn(),
     releaseLock: jest.fn(),
     delByPattern: jest.fn(),
@@ -96,8 +102,14 @@ describe('auto pay card invoices against a real postgres', () => {
           provide: CardInvoiceSettlementRepository,
           useClass: CardInvoiceSettlementRepositoryImplementation,
         },
+        {
+          provide: WorkspaceRepository,
+          useClass: WorkspaceRepositoryImplementation,
+        },
         { provide: CacheProvider, useValue: cache },
         { provide: DateProvider, useValue: dateProvider },
+        GetWorkspaceCycleService,
+        GetWorkspaceTimezoneService,
         GetCreditCardInvoiceService,
         PayCreditCardInvoiceService,
         AutoPayCardInvoicesJobService,
@@ -117,6 +129,8 @@ describe('auto pay card invoices against a real postgres', () => {
 
   beforeEach(async () => {
     jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
+    cache.get.mockResolvedValue(null);
+    cache.set.mockResolvedValue(undefined);
     cache.acquireLock.mockResolvedValue(LOCK_HANDLE);
     cache.releaseLock.mockResolvedValue(true);
     cache.delByPattern.mockResolvedValue(0);
