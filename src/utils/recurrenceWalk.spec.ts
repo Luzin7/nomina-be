@@ -25,6 +25,7 @@ const stepOf = (date: Date, rule: RecurrenceRule): Date =>
 const makeRule = (overrides: Partial<RecurrenceRule> = {}): RecurrenceRule => ({
   frequency: RecurrenceFrequency.MONTHLY,
   interval: 1,
+  timezone: DEFAULT_TIMEZONE,
   startDate: new Date('2026-01-10T12:00:00.000Z'),
   endDate: null,
   lastGenerated: null,
@@ -117,6 +118,18 @@ describe('walkOccurrences', () => {
       walk(
         makeRule({
           materializedDates: [new Date('2026-02-10T12:00:00.000Z')],
+        }),
+        '2026-01-01T00:00:00.000Z',
+        '2026-03-31T23:59:59.999Z',
+      ),
+    ).toEqual(['2026-01-10T12:00:00.000Z', '2026-03-10T12:00:00.000Z']);
+  });
+
+  it('matches a materialized date by its local day', () => {
+    expect(
+      walk(
+        makeRule({
+          materializedDates: [new Date('2026-02-10T13:00:00.000Z')],
         }),
         '2026-01-01T00:00:00.000Z',
         '2026-03-31T23:59:59.999Z',

@@ -836,6 +836,38 @@ describe('GetSpendableService', () => {
     expect(result.spendableCents).toBe(50000);
   });
 
+  it('edge: a weekly rule older than the step cap still bills this cycle', async () => {
+    given.accounts = [checking(500000n)];
+    given.recurrences = [
+      recurrence({
+        frequency: RecurrenceFrequency.WEEKLY,
+        amount: 50000,
+        startDate: new Date('2005-01-05T12:00:00.000Z'),
+      }),
+    ];
+
+    const result = await run();
+
+    expect(result.obligationsCents).toBe(4 * 50000);
+  });
+
+  it('edge: an occurrence materialized an hour off the grid is not counted twice', async () => {
+    const startDate = new Date('2026-11-05T12:00:00.000Z');
+
+    given.accounts = [checking(100000n)];
+    given.recurrences = [
+      recurrence({
+        startDate,
+        materializedDates: [new Date('2026-11-05T13:00:00.000Z')],
+      }),
+    ];
+
+    const result = await run();
+
+    expect(result.obligationsCents).toBe(0);
+    expect(result.spendableCents).toBe(100000);
+  });
+
   it('serves the second read from the cache', async () => {
     given.accounts = [checking(100000n)];
 

@@ -277,7 +277,7 @@ export class GetSpendableService implements Service<
     { from, until }: { from: Date; until: Date },
   ): number {
     const occurrences = walkOccurrences({
-      rule,
+      rule: { ...rule, lastGenerated: this.walkAnchorOf(rule, from) },
       from,
       until,
       nextOccurrence: (date, current) =>
@@ -294,6 +294,13 @@ export class GetSpendableService implements Service<
     });
 
     return occurrences.length * rule.amount;
+  }
+
+  private walkAnchorOf(rule: SpendableRecurrence, from: Date): Date {
+    const generated = rule.lastGenerated;
+    if (generated !== null && generated.getTime() >= from.getTime())
+      return generated;
+    return new Date(from.getTime() - 1);
   }
 
   private async cardResolutionsOf({
