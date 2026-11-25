@@ -3,6 +3,38 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.7.0](https://github.com/Luzin7/nomina-be/compare/v2.6.0...v2.7.0) (2026-11-25)
+
+### Features
+
+* **budget:** reset a month from the suggested plan ([a1cd6ca](https://github.com/Luzin7/nomina-be/commit/a1cd6ca2b28ed4e66df4160889f281426ed42532))
+* **spendable:** compute what can be spent this cycle ([3ad7733](https://github.com/Luzin7/nomina-be/commit/3ad7733deedee41711f69ca072af6829f68a18de))
+* **spendable:** expose GET /spendable and reuse it in the dashboard ([4a3c356](https://github.com/Luzin7/nomina-be/commit/4a3c356f185b8f096264e187581c58aaae035a69))
+* **transaction:** delete future pending occurrences of a recurring rule ([51d2b9c](https://github.com/Luzin7/nomina-be/commit/51d2b9c03a4808dbaf95b1c4333c5f6b601d0381))
+* **transaction:** detach recurring transactions that lose their rule ([77dcd0c](https://github.com/Luzin7/nomina-be/commit/77dcd0cbc895d8ceb4f0c9f482018c313ac04d2a))
+* **transaction:** detect recurring suggestions after writes ([cec84b2](https://github.com/Luzin7/nomina-be/commit/cec84b251826f7f8b34a304ef96eb1ec1db71350))
+* **transaction:** log the deactivation of an exhausted recurring plan ([b668b75](https://github.com/Luzin7/nomina-be/commit/b668b758b313bc2049b17278bf1b1e5b6260b4ec))
+* **workspace:** add the cycle to workspaces ([c345689](https://github.com/Luzin7/nomina-be/commit/c345689079780407099a942c24bafcc38f891a97))
+
+### Bug Fixes
+
+* **account:** repair find-account validation ([df6e0c1](https://github.com/Luzin7/nomina-be/commit/df6e0c171aef2fc74995599f7794a780983a347b))
+* **installment-schedule:** return the first occurrence strictly after the anchor ([8727ad3](https://github.com/Luzin7/nomina-be/commit/8727ad34052324a4a70f58bf4cf13378f5624bb7))
+* **recurring:** resolve zoned date math through the wall clock ([92a3cf4](https://github.com/Luzin7/nomina-be/commit/92a3cf42c31f6ceb81781bc6fa7aff9890b97ff0))
+* **recurring:** schedule rules in their account timezone ([77a1f5b](https://github.com/Luzin7/nomina-be/commit/77a1f5bf4417571cc350c5333365e15823168d97))
+* **spendable:** anchor the occurrence walk and match materialized days ([ece72d0](https://github.com/Luzin7/nomina-be/commit/ece72d009183ff9d43b7250925db84e25b14ab1a))
+* **spendable:** exclude debited pending bills and unreadable cards ([6456cf9](https://github.com/Luzin7/nomina-be/commit/6456cf902aa43207fadb38e01719dfd915d026f1))
+* **spendable:** read cash and pending obligations in one statement ([dae1b89](https://github.com/Luzin7/nomina-be/commit/dae1b89d731f02cd540a33c206b9aa46b0d36757))
+* **spendable:** schedule rules in their account timezone ([28852b5](https://github.com/Luzin7/nomina-be/commit/28852b56234c601b76c73a52724b5b4a5e3cb615))
+* **transaction:** stop recurring generation at the plan end ([acab4de](https://github.com/Luzin7/nomina-be/commit/acab4de1f353da07ed8a1639c22d2a3a5e3841c9))
+* **workspace:** require owner or admin membership to update workspace ([6b1c006](https://github.com/Luzin7/nomina-be/commit/6b1c0068af0c678e510a453c824e67c097ebadd6))
+
+### Performance Improvements
+
+* **spendable:** group the debited movements once in the cash snapshot ([eebc6ef](https://github.com/Luzin7/nomina-be/commit/eebc6efeacc85e77ac43be39f71c9f4d4e9e6b59))
+* **spendable:** probe the debited movements per pending bill ([a826272](https://github.com/Luzin7/nomina-be/commit/a826272af21e87f9688f89c20e11f12c14d62daa))
+* **spendable:** use sargable cycle ranges and batch card invoice totals ([89591c0](https://github.com/Luzin7/nomina-be/commit/89591c027219beb8e09fee6805f3adfeac202d4d))
+
 ## [2.6.0](https://github.com/Luzin7/nomina-be/compare/v2.5.2...v2.6.0) (2026-11-16)
 
 ### Features
