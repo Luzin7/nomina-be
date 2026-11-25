@@ -6,11 +6,25 @@ import {
 } from '@modules/account/errors';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { CardInvoiceRepository } from '@modules/account/repositories/contracts/CardInvoiceRepository';
-import { cardInvoiceWindowOf } from '@modules/account/valueObjects/CardInvoiceWindow';
+import {
+  cardInvoiceWindowOf,
+  type CardInvoiceTotals,
+  type CardInvoiceWindow,
+} from '@modules/account/valueObjects/CardInvoiceWindow';
 import {
   InvoiceCalendar,
-  InvoiceKey,
+  type InvoiceBounds,
+  type InvoiceKey,
+  type PlainDate,
 } from '@modules/account/valueObjects/InvoiceCalendar';
+import {
+  openInvoiceOf,
+  payableInvoiceOf,
+} from '@modules/account/valueObjects/OpenInvoice';
+import { CycleWindow } from '@modules/spendable/valueObjects/CycleWindow';
+import { WorkspaceNotFoundError } from '@modules/workspace/errors';
+import { GetWorkspaceCycleService } from '@modules/workspace/services/get-workspace-cycle.service';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import {
   buildInvoiceStatementFromTotals,
   InvoiceStatus,
@@ -44,6 +58,19 @@ type Response = {
   invoiceStatus: InvoiceStatus;
 };
 
+type ResolvedInvoice = {
+  bounds: InvoiceBounds;
+  totals: CardInvoiceTotals;
+  window: CardInvoiceWindow;
+};
+
+type CardContext = {
+  account: CreditCard;
+  calendar: InvoiceCalendar;
+  today: PlainDate;
+  workspaceId: string;
+};
+
 const invoiceKeyOf = (year: number, month: number): InvoiceKey =>
   `${year}-${String(month).padStart(2, '0')}`;
 
@@ -58,6 +85,8 @@ export class GetCreditCardInvoiceService implements Service<
   constructor(
     private readonly accountRepository: AccountRepository,
     private readonly cardInvoiceRepository: CardInvoiceRepository,
+    private readonly workspaceCycle: GetWorkspaceCycleService,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
   ) {}
 
@@ -80,30 +109,33 @@ export class GetCreditCardInvoiceService implements Service<
       dueDay: account.dueDay,
     });
 
-    const today = this.dateProvider.format(
-      this.dateProvider.now(),
-      'YYYY-MM-DD',
-      account.timezone,
-    );
+    const timezone = await this.workspaceTimezone.execute(props.workspaceId);
+    const today = this.localTodayOf(timezone);
     const currentKey = calendar.invoiceKeyFor(today);
-    const key =
+    const context = {
+      account,
+      calendar,
+      today,
+      workspaceId: props.workspaceId,
+    };
+    const resolved =
       props.month && props.year
-        ? invoiceKeyOf(props.year, props.month)
-        : currentKey;
-    const bounds = calendar.bounds(key);
-    const [year, month] = key.split('-').map(Number);
-    const window = cardInvoiceWindowOf(account, calendar, key, today);
+        ? await this.requestedInvoiceOf(context, props.month, props.year)
+        : await this.defaultInvoiceOf(context);
 
-    const [[totals], transactions] = await Promise.all([
-      this.cardInvoiceRepository.findTotals(props.workspaceId, [window]),
-      this.cardInvoiceRepository.findPeriodTransactions(
+    if (resolved === null) return left(new WorkspaceNotFoundError());
+
+    const { bounds, totals, window } = resolved;
+
+    const transactions =
+      await this.cardInvoiceRepository.findPeriodTransactions(
         props.workspaceId,
         window,
-      ),
-    ]);
+      );
     const statement = buildInvoiceStatementFromTotals(totals);
     const pendingAmount = totals.pendingCharges;
     const totalAmount = statement.remaining;
+    const [dueYear, dueMonth] = bounds.key.split('-').map(Number);
 
     return right({
       account,
@@ -117,17 +149,74 @@ export class GetCreditCardInvoiceService implements Service<
           ? null
           : atLeastZero(account.creditLimit - totalAmount - pendingAmount),
       dueDate: bounds.dueDate,
-      dueMonth: month,
-      dueYear: year,
+      dueMonth,
+      dueYear,
       periodStart: bounds.periodStart,
       periodEnd: bounds.periodEnd,
       invoiceStatus: invoiceStatusOf({
         statement,
-        key,
+        key: bounds.key,
         currentKey,
         dueDate: bounds.dueDate,
         today,
       }),
     });
+  }
+
+  private async requestedInvoiceOf(
+    { account, calendar, today, workspaceId }: CardContext,
+    month: number,
+    year: number,
+  ): Promise<ResolvedInvoice> {
+    const bounds = calendar.bounds(invoiceKeyOf(year, month));
+    const window = cardInvoiceWindowOf(account, calendar, bounds.key, today);
+    const [totals] = await this.cardInvoiceRepository.findTotals(workspaceId, [
+      window,
+    ]);
+
+    return { bounds, totals, window };
+  }
+
+  private async defaultInvoiceOf({
+    account,
+    calendar,
+    today,
+    workspaceId,
+  }: CardContext): Promise<ResolvedInvoice | null> {
+    const cycle = await this.workspaceCycle.execute(workspaceId);
+    if (cycle === null) return null;
+
+    const cycleWindow = CycleWindow.of(today, cycle);
+    const current = calendar.bounds(calendar.invoiceKeyFor(today));
+    const candidate = openInvoiceOf(calendar, current, cycleWindow);
+    const keys =
+      candidate.key !== current.key
+        ? [candidate.key, current.key]
+        : [current.key];
+    const windows = keys.map((key) =>
+      cardInvoiceWindowOf(account, calendar, key, today),
+    );
+    const totals = await this.cardInvoiceRepository.findTotals(
+      workspaceId,
+      windows,
+    );
+    const statementOf = (key: InvoiceKey) =>
+      buildInvoiceStatementFromTotals(totals[keys.indexOf(key)]);
+    const bounds = payableInvoiceOf(
+      current,
+      candidate,
+      (key) => statementOf(key).remaining,
+    );
+    const index = keys.indexOf(bounds.key);
+
+    return { bounds, totals: totals[index], window: windows[index] };
+  }
+
+  private localTodayOf(timezone: string): PlainDate {
+    return this.dateProvider.format(
+      this.dateProvider.now(),
+      'YYYY-MM-DD',
+      timezone,
+    );
   }
 }

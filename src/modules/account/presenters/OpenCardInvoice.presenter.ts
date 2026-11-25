@@ -9,6 +9,7 @@ export class OpenCardInvoicePresenter {
     return {
       accountId: invoice.account.id,
       accountName: invoice.account.name,
+      key: invoice.key,
       totalAmount: toDecimal(invoice.totalAmount),
       previousBalance: toDecimal(invoice.previousBalance),
       statementTotal: toDecimal(invoice.statementTotal),

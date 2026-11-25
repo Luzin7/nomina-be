@@ -17,8 +17,13 @@ import {
 import {
   InvoiceCalendar,
   type InvoiceBounds,
+  type InvoiceKey,
   type PlainDate,
 } from '@modules/account/valueObjects/InvoiceCalendar';
+import {
+  openInvoiceOf,
+  payableInvoiceOf,
+} from '@modules/account/valueObjects/OpenInvoice';
 import { buildInvoiceStatementFromTotals } from '@modules/account/valueObjects/InvoiceStatement';
 import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
@@ -71,16 +76,29 @@ type CardResolution = {
   invoiceCents: number;
 };
 
-type InvoicePlan = {
+type DatedCardDraft = {
   card: CreditCard;
-  window: CardInvoiceWindow;
+  calendar: InvoiceCalendar;
+  current: InvoiceBounds;
+  candidate: InvoiceBounds;
+  keys: InvoiceKey[];
+  windows: CardInvoiceWindow[];
+  totals: CardInvoiceTotals[];
 };
 
-type CardPlan = {
+type UndatedCardDraft = {
   card: CreditCard;
-  headroom: CardHeadroom | null;
-  undated: CardWithoutDueDate | null;
-  invoice: InvoicePlan | null;
+  undated: CardWithoutDueDate;
+  windows: CardInvoiceWindow[];
+  totals: CardInvoiceTotals[];
+};
+
+type CardDraft = DatedCardDraft | UndatedCardDraft;
+
+type CardDraftInput = {
+  card: CreditCard;
+  today: PlainDate;
+  window: CycleWindow;
 };
 
 type CardContext = {
@@ -93,7 +111,12 @@ type CardContext = {
 
 type CardPlansInput = CardContext & { cards: CreditCard[] };
 
-type CardPlanInput = CardContext & { card: CreditCard };
+type CardResolutionInput = {
+  draft: CardDraft;
+  workspaceId: string;
+  accounts: AnyAccount[];
+  cashAccountIds: ReadonlySet<string>;
+};
 
 type ScheduledTotals = {
   expensesCents: number;
@@ -104,15 +127,6 @@ type ScheduledTotalsInput = {
   recurrences: SpendableRecurrence[];
   window: CycleWindow;
   timezone: string;
-};
-
-type InvoicePlanInput = {
-  card: CreditCard;
-  accounts: AnyAccount[];
-  cashAccountIds: ReadonlySet<string>;
-  calendar: InvoiceCalendar;
-  bill: InvoiceBounds | null;
-  today: PlainDate;
 };
 
 const isCashType = (type: string): boolean =>
@@ -310,63 +324,40 @@ export class GetSpendableService implements Service<
     today,
     window,
   }: CardPlansInput): Promise<CardResolution[]> {
-    const plans = await Promise.all(
-      cards.map((card) =>
-        this.planCard({
+    const drafts = cards.map((card) => this.draftOf({ card, today, window }));
+    const windows = drafts.flatMap((draft) => draft.windows);
+    const totals =
+      windows.length === 0
+        ? []
+        : await this.cardInvoiceRepository.findTotals(workspaceId, windows);
+    let cursor = 0;
+    const withTotals = drafts.map((draft) => {
+      const billTotals = totals.slice(cursor, cursor + draft.windows.length);
+      cursor += draft.windows.length;
+
+      return { ...draft, totals: billTotals };
+    });
+
+    return Promise.all(
+      withTotals.map((draft) =>
+        this.resolutionOf({
+          draft,
           workspaceId,
-          card,
           accounts,
           cashAccountIds,
-          today,
-          window,
         }),
       ),
     );
-    const invoices = plans.flatMap((plan) =>
-      plan.invoice === null ? [] : [plan.invoice],
-    );
-    const totals = await this.invoiceTotalsOf(workspaceId, invoices);
-    const remainingByCard = new Map(
-      invoices.map((invoice, index) => [
-        invoice.card.id,
-        Number(buildInvoiceStatementFromTotals(totals[index]).remaining),
-      ]),
-    );
-
-    return plans.map((plan) => ({
-      card: plan.headroom,
-      undated: plan.undated,
-      invoiceCents: remainingByCard.get(plan.card.id) ?? 0,
-    }));
   }
 
-  private invoiceTotalsOf(
-    workspaceId: string,
-    invoices: InvoicePlan[],
-  ): Promise<CardInvoiceTotals[]> {
-    if (invoices.length === 0) return Promise.resolve([]);
-
-    return this.cardInvoiceRepository.findTotals(
-      workspaceId,
-      invoices.map((invoice) => invoice.window),
-    );
-  }
-
-  private async planCard({
-    workspaceId,
-    card,
-    accounts,
-    cashAccountIds,
-    today,
-    window,
-  }: CardPlanInput): Promise<CardPlan> {
+  private draftOf({ card, today, window }: CardDraftInput): CardDraft {
     const dueDay = card.dueDay;
     if (!isUsableDueDay(dueDay))
       return {
         card,
-        headroom: null,
         undated: this.undatedCardOf(card),
-        invoice: null,
+        windows: [],
+        totals: [],
       };
 
     const calendar = new InvoiceCalendar({
@@ -374,38 +365,66 @@ export class GetSpendableService implements Service<
       closingDaysBeforeDue: card.closingDaysBeforeDue,
     });
     const current = calendar.bounds(calendar.invoiceKeyFor(today));
-    const bill = this.billInWindowOf(calendar, current, window);
-    const [budget, currentSpendCents] = await Promise.all([
-      this.cardCycleRepository.findApplicableBudget(
-        workspaceId,
-        card.id,
-        current.dueDate,
-      ),
-      this.spendOn(workspaceId, card, current),
-    ]);
+    const candidate = openInvoiceOf(calendar, current, window);
+    const keys =
+      candidate.key !== current.key
+        ? [candidate.key, current.key]
+        : [current.key];
 
     return {
       card,
-      headroom:
-        budget === null
-          ? null
-          : CardHeadroom.of({
-              accountId: card.id,
-              name: card.name,
-              dueDate: bill?.dueDate ?? current.dueDate,
-              limitCents: budget.limitCents,
-              spendCents: currentSpendCents,
-            }),
-      undated: null,
-      invoice: this.invoicePlanOf({
-        card,
-        accounts,
-        cashAccountIds,
-        calendar,
-        bill,
-        today,
-      }),
+      calendar,
+      current,
+      candidate,
+      keys,
+      windows: keys.map((key) =>
+        cardInvoiceWindowOf(card, calendar, key, today),
+      ),
+      totals: [],
     };
+  }
+
+  private async resolutionOf({
+    draft,
+    workspaceId,
+    accounts,
+    cashAccountIds,
+  }: CardResolutionInput): Promise<CardResolution> {
+    if ('undated' in draft)
+      return { card: null, undated: draft.undated, invoiceCents: 0 };
+
+    const { card, current, candidate, keys, totals } = draft;
+
+    const statementOf = (key: InvoiceKey) =>
+      buildInvoiceStatementFromTotals(totals[keys.indexOf(key)]);
+    const bounds = payableInvoiceOf(
+      current,
+      candidate,
+      (key) => statementOf(key).remaining,
+    );
+    const [budget, spendCents] = await Promise.all([
+      this.cardCycleRepository.findApplicableBudget(
+        workspaceId,
+        card.id,
+        bounds.dueDate,
+      ),
+      this.spendOn(workspaceId, card, bounds),
+    ]);
+    const headroom =
+      budget === null
+        ? null
+        : CardHeadroom.of({
+            accountId: card.id,
+            name: card.name,
+            dueDate: bounds.dueDate,
+            limitCents: budget.limitCents,
+            spendCents,
+          });
+    const invoiceCents = this.fundsFromCash(card, accounts, cashAccountIds)
+      ? Number(statementOf(bounds.key).remaining)
+      : 0;
+
+    return { card: headroom, undated: null, invoiceCents };
   }
 
   private undatedCardOf(card: CreditCard): CardWithoutDueDate {
@@ -414,35 +433,6 @@ export class GetSpendableService implements Service<
       name: card.name,
       limitCents: card.creditLimit === null ? null : Number(card.creditLimit),
     });
-  }
-
-  private invoicePlanOf({
-    card,
-    accounts,
-    cashAccountIds,
-    calendar,
-    bill,
-    today,
-  }: InvoicePlanInput): InvoicePlan | null {
-    if (bill === null) return null;
-    if (!this.fundsFromCash(card, accounts, cashAccountIds)) return null;
-
-    return {
-      card,
-      window: cardInvoiceWindowOf(card, calendar, bill.key, today),
-    };
-  }
-
-  private billInWindowOf(
-    calendar: InvoiceCalendar,
-    current: InvoiceBounds,
-    window: CycleWindow,
-  ): InvoiceBounds | null {
-    if (window.contains(current.dueDate)) return current;
-
-    const previous = calendar.bounds(calendar.previousKey(current.key));
-
-    return window.contains(previous.dueDate) ? previous : null;
   }
 
   private fundsFromCash(

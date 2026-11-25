@@ -278,7 +278,8 @@ describe('GetSpendableService', () => {
       headroomCents: 40000,
     });
     expect(result.cardsHeadroomCents).toBe(40000);
-    expect(result.spendableCents).toBe(240000);
+    expect(result.obligationsCents).toBe(10000);
+    expect(result.spendableCents).toBe(230000);
   });
 
   it('row 5: three declared cards sum their headrooms', async () => {
@@ -296,7 +297,8 @@ describe('GetSpendableService', () => {
 
     expect(result.cards).toHaveLength(3);
     expect(result.cardsHeadroomCents).toBe(75000);
-    expect(result.spendableCents).toBe(275000);
+    expect(result.obligationsCents).toBe(25000);
+    expect(result.spendableCents).toBe(250000);
   });
 
   it('row 6: a card without a declared budget does not appear', async () => {
@@ -310,8 +312,8 @@ describe('GetSpendableService', () => {
     const result = await run();
 
     expect(result.cards).toEqual([]);
-    expect(result.obligationsCents).toBe(0);
-    expect(result.spendableCents).toBe(200000);
+    expect(result.obligationsCents).toBe(80000);
+    expect(result.spendableCents).toBe(120000);
   });
 
   it('row 7: a card budget with empty cash spends from the card only', async () => {
@@ -324,7 +326,7 @@ describe('GetSpendableService', () => {
 
     expect(result.cashFreeCents).toBe(0);
     expect(result.spendableCents).toBe(50000);
-    expect(result.state).toBe('cards_only');
+    expect(result.state).toBe('obligations_above_cash');
   });
 
   it('row 8: overdrawn cash stays negative and never nets the card', async () => {
@@ -459,12 +461,12 @@ describe('GetSpendableService', () => {
     expect(cardCycleRepository.sumCycleSpend).toHaveBeenCalledWith(
       expect.objectContaining({
         accountId: 'card-1',
-        periodStart: '2026-10-21',
-        periodEnd: '2026-11-20',
+        periodStart: '2026-09-21',
+        periodEnd: '2026-10-20',
       }),
     );
-    expect(result.obligationsCents).toBe(0);
-    expect(result.spendableCents).toBe(150000);
+    expect(result.obligationsCents).toBe(100000);
+    expect(result.spendableCents).toBe(50000);
   });
 
   it('edge: the budget of the current invoice cycle is the one applied', async () => {
