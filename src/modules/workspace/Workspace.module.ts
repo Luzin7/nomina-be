@@ -31,6 +31,7 @@ import { UpdateWorkspaceUserService } from './features/update-workspace-user/upd
 import { UpdateWorkspaceController } from './features/update-workspace/update-workspace.controller';
 import { UpdateWorkspaceService } from './features/update-workspace/update-workspace.service';
 import { GetWorkspaceTimezoneService } from './services/get-workspace-timezone.service';
+import { WorkspaceAccessPolicy } from './services/WorkspaceAccessPolicy';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { GetWorkspaceTimezoneService } from './services/get-workspace-timezone.s
     AcceptWorkspaceInviteService,
     SetDefaultWorkspaceService,
     GetWorkspaceTimezoneService,
+    WorkspaceAccessPolicy,
   ],
   exports: [
     FindWorkspaceByIdService,
