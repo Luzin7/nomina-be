@@ -665,6 +665,10 @@ export const balanceMovements = pgTable(
   },
   (table) => [
     index('idx_balance_movements_account_seq').on(table.accountId, table.seq),
+    index('balance_movements_transaction_id_account_id_idx').on(
+      table.transactionId,
+      table.accountId,
+    ),
     uniqueIndex('ux_balance_movements_opening')
       .on(table.accountId)
       .where(sql`${table.cause} = ${sql.raw(OPENING_CAUSE_LITERAL)}`),
