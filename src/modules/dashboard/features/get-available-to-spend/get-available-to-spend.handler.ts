@@ -66,6 +66,15 @@ type SpendableOutcome = {
 
 type Request = Pick<TokenPayloadSchema, 'workspaceId' | 'sub'>;
 
+type ComputeStep =
+  | 'budget'
+  | 'plan'
+  | 'goalAportes'
+  | 'spendable'
+  | 'projection';
+
+type ComputeTimings = Record<ComputeStep, number>;
+
 type InsightContext = Request & {
   budget: BudgetStatusResponse;
   figure: SpendableFigure;
@@ -144,20 +153,33 @@ export class GetAvailableToSpendService implements Service<
     today: string,
   ): Promise<Either<Error, ComputedAvailableToSpend>> {
     const [year, month] = today.split('-').map(Number);
+    const startedAt = performance.now();
+    const timings: ComputeTimings = {
+      budget: 0,
+      plan: 0,
+      goalAportes: 0,
+      spendable: 0,
+      projection: 0,
+    };
 
     const [budget, plan, goalAportesCents, spendable] = await Promise.all([
-      this.getBudgetStatus.execute({ workspaceId, sub, month, year }),
-      this.resolveMonthPlan.execute({ workspaceId, month, year, today }),
-      this.goalRepository.sumMonthlyAporteCents(workspaceId),
-      this.spendableOf(workspaceId),
+      this.timeStep(timings, 'budget', () =>
+        this.getBudgetStatus.execute({ workspaceId, sub, month, year }),
+      ),
+      this.timeStep(timings, 'plan', () =>
+        this.resolveMonthPlan.execute({ workspaceId, month, year, today }),
+      ),
+      this.timeStep(timings, 'goalAportes', () =>
+        this.goalRepository.sumMonthlyAporteCents(workspaceId),
+      ),
+      this.timeStep(timings, 'spendable', () => this.spendableOf(workspaceId)),
     ]);
     if (budget.isLeft()) return left(budget.value);
     if (plan.isLeft()) return left(plan.value);
 
-    const projectionResult = await this.currentProjectionOf(budget.value, {
-      workspaceId,
-      sub,
-    });
+    const projectionResult = await this.timeStep(timings, 'projection', () =>
+      this.currentProjectionOf(budget.value, { workspaceId, sub }),
+    );
     if (projectionResult.isLeft()) return left(projectionResult.value);
 
     const projection = projectionResult.value;
@@ -177,6 +199,10 @@ export class GetAvailableToSpendService implements Service<
       today,
     });
 
+    this.logger.log(
+      `available-to-spend compute workspaceId=${workspaceId} budgetMs=${timings.budget} planMs=${timings.plan} goalAportesMs=${timings.goalAportes} spendableMs=${timings.spendable} projectionMs=${timings.projection} totalMs=${Math.round(performance.now() - startedAt)}`,
+    );
+
     return right({
       degraded:
         ranked.degraded || isDegradedPlan(plan.value) || spendable.failed,
@@ -192,6 +218,20 @@ export class GetAvailableToSpendService implements Service<
         spendable: spendable.spendable,
       },
     });
+  }
+
+  private async timeStep<T>(
+    timings: ComputeTimings,
+    step: ComputeStep,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const startedAt = performance.now();
+
+    try {
+      return await run();
+    } finally {
+      timings[step] = Math.round(performance.now() - startedAt);
+    }
   }
 
   private async spendableOf(workspaceId: string): Promise<SpendableOutcome> {

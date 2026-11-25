@@ -26,8 +26,9 @@ import { SetAutopayService } from './features/set-autopay/set-autopay.service';
 import { UpdateAccountController } from './features/update-account/update-account.controller';
 import { UpdateAccountService } from './features/update-account/update-account.service';
 import { DateModule } from '@providers/date/Date.module';
+import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 @Module({
-  imports: [DatabaseModule, SubscriptionModule, DateModule],
+  imports: [DatabaseModule, SubscriptionModule, DateModule, WorkspaceModule],
   controllers: [
     CreateAccountController,
     UpdateAccountController,
