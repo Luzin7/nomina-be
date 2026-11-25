@@ -1,7 +1,9 @@
 import {
   BusinessRuleDomainError,
   ConflictDomainError,
+  DomainError,
   ForbiddenDomainError,
+  ServiceUnavailableDomainError,
 } from '@shared/core/errors/DomainError';
 
 export class EmptyBudgetAllocationsError extends BusinessRuleDomainError {
@@ -97,6 +99,32 @@ export class BudgetSuggestionChangedError extends ConflictDomainError {
 export class BudgetSuggestionUnavailableError extends BusinessRuleDomainError {
   constructor() {
     super('Não há uma sugestão pendente para esta decisão.');
+  }
+}
+
+export class BudgetResetUnavailableError extends BusinessRuleDomainError {
+  constructor() {
+    super('Não há um orçamento sugerido e uma renda declarada para reiniciar.');
+  }
+}
+
+export class BudgetResetLockTimeoutError extends ServiceUnavailableDomainError {
+  constructor() {
+    super(
+      'Outro ajuste de orçamento está em andamento. Tente novamente em instantes.',
+    );
+  }
+}
+
+export class BudgetResetStatementTimeoutError extends ServiceUnavailableDomainError {
+  constructor() {
+    super('O reinício do orçamento demorou demais. Tente novamente.');
+  }
+}
+
+export class BudgetResetConstraintError extends DomainError {
+  constructor() {
+    super('O reinício do orçamento violou uma restrição do banco de dados.');
   }
 }
 

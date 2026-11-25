@@ -10,6 +10,11 @@ export type FindManyRecurringByWorkspaceQuery = {
   kind?: RecurringKind;
 };
 
+export type RecurringRuleSchedule = {
+  recurring: RecurringTransaction;
+  timezone: string;
+};
+
 export type RecurringSummaryRule = {
   id: string;
   title: string;
@@ -22,13 +27,23 @@ export type RecurringSummaryRule = {
   endDate: Date | null;
   active: boolean;
   exhausted: boolean;
+  timezone: string;
 };
 
 export type FindSummaryRulesQuery = {
   workspaceId: string;
-  todayStart: Date;
-  timezone: string;
+  now: Date;
 };
+
+export type DeleteRecurringTransactionQuery = {
+  workspaceId: string;
+  timezone: string;
+  todayStart: Date;
+};
+
+export type CreateGeneratedTransactionsResult =
+  | { outcome: 'written'; createdCount: number }
+  | { outcome: 'skipped-rule-locked' };
 
 export abstract class RecurringTransactionRepository {
   abstract create(
@@ -39,7 +54,10 @@ export abstract class RecurringTransactionRepository {
     recurringTransaction: RecurringTransaction,
   ): Promise<RecurringTransaction>;
 
-  abstract delete(id: string): Promise<void>;
+  abstract deleteWithFuturePendingOccurrences(
+    id: string,
+    query: DeleteRecurringTransactionQuery,
+  ): Promise<void>;
 
   abstract findById(id: string): Promise<RecurringTransaction | null>;
 
@@ -50,18 +68,18 @@ export abstract class RecurringTransactionRepository {
   abstract findNeedingGenerationByWorkspaceId(
     workspaceId: string,
     referenceDate: Date,
-  ): Promise<RecurringTransaction[]>;
+  ): Promise<RecurringRuleSchedule[]>;
 
   abstract listNeedingGeneration(
     referenceDate: Date,
     limit: number,
     afterId: string | null,
-  ): Promise<RecurringTransaction[]>;
+  ): Promise<RecurringRuleSchedule[]>;
 
   abstract createGeneratedTransactions(
     transactions: Transaction[],
     updatedRecurring: RecurringTransaction,
-  ): Promise<number>;
+  ): Promise<CreateGeneratedTransactionsResult>;
 
   abstract findSummaryRules(
     query: FindSummaryRulesQuery,

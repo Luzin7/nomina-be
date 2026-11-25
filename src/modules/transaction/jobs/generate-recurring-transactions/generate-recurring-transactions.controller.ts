@@ -29,12 +29,22 @@ const OUTCOME_MESSAGES: Record<RecurringGenerationOutcome, OutcomeMessage> = {
   'skipped-lock-held': () => `${JOB_NAME} skipped: another run holds the lock.`,
   'nothing-due': () =>
     `${JOB_NAME} completed: no recurring transactions were due.`,
-  success: ({ generatedCount, processedCount }) =>
-    `${JOB_NAME} completed: generated ${generatedCount} transactions from ${processedCount} recurring transactions, no failures.`,
-  'partial-failure': ({ generatedCount, failedCount, processedCount }) =>
-    `${JOB_NAME} completed with failures: generated ${generatedCount} transactions from ${processedCount} recurring transactions, ${failedCount} of ${processedCount} failed.`,
-  'total-failure': ({ generatedCount, failedCount, processedCount }) =>
-    `${JOB_NAME} failed: generated ${generatedCount} transactions from ${processedCount} recurring transactions, all ${failedCount} failed.`,
+  success: ({ generatedCount, skippedCount, processedCount }) =>
+    `${JOB_NAME} completed: generated ${generatedCount} transactions from ${processedCount} recurring transactions (${skippedCount} skipped), no failures.`,
+  'partial-failure': ({
+    generatedCount,
+    skippedCount,
+    failedCount,
+    processedCount,
+  }) =>
+    `${JOB_NAME} completed with failures: generated ${generatedCount} transactions from ${processedCount} recurring transactions, ${failedCount} of ${processedCount} failed, ${skippedCount} skipped.`,
+  'total-failure': ({
+    generatedCount,
+    skippedCount,
+    failedCount,
+    processedCount,
+  }) =>
+    `${JOB_NAME} failed: generated ${generatedCount} transactions from ${processedCount} recurring transactions, all ${failedCount} failed, ${skippedCount} skipped.`,
 };
 
 const OUTCOME_LOG_LEVEL: Record<

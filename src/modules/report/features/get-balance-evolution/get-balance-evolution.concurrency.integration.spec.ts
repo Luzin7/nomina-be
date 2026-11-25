@@ -23,6 +23,7 @@ import { MonthProjectionRepository } from '@modules/report/repositories/contract
 import { ReportRepository } from '@modules/report/repositories/contracts/ReportRepository';
 import { CreateTransactionService } from '@modules/transaction/features/create-transaction/create-transaction.service';
 import { PayCreditCardInvoiceService } from '@modules/transaction/features/pay-credit-card-invoice/pay-credit-card-invoice.service';
+import { RecurringSuggestionDetectionDispatcher } from '@modules/transaction/features/recurring-suggestions/recurring-suggestion-detection.dispatcher';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
@@ -139,6 +140,10 @@ describe('balance evolution net worth series', () => {
         { provide: ConfigService, useValue: {} },
         { provide: DateProvider, useValue: new FixedNowDateProvider() },
         GetWorkspaceTimezoneService,
+        {
+          provide: RecurringSuggestionDetectionDispatcher,
+          useValue: { notify: () => undefined },
+        },
         CreateTransactionService,
         PayCreditCardInvoiceService,
         BalanceEvolutionService,

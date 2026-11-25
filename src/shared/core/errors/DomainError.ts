@@ -21,6 +21,8 @@ export abstract class BusinessRuleDomainError extends DomainError {}
 // 400 - Operação inválida de estado (ex: tentar cancelar uma transação já concluída)
 export abstract class InvalidOperationDomainError extends DomainError {}
 
+export abstract class ServiceUnavailableDomainError extends DomainError {}
+
 // 403 - Permissão negada (ex: usuário tentando deletar conta de um workspace que não é dono)
 export abstract class ForbiddenDomainError extends DomainError {}
 

@@ -38,6 +38,26 @@ export enum GoalProgressSource {
   ACCOUNT = 'account',
 }
 
+export const WORKSPACE_CYCLE_OPTIONS = [
+  'monthly',
+  'half_month',
+  'weekly',
+] as const;
+
+export type WorkspaceCycle = (typeof WORKSPACE_CYCLE_OPTIONS)[number];
+
+export const DEFAULT_WORKSPACE_CYCLE: WorkspaceCycle = 'monthly';
+
+export function isWorkspaceCycle(value: unknown): value is WorkspaceCycle {
+  return (WORKSPACE_CYCLE_OPTIONS as readonly unknown[]).includes(value);
+}
+
+export function normalizeWorkspaceCycle(
+  value: string | null | undefined,
+): WorkspaceCycle {
+  return isWorkspaceCycle(value) ? value : DEFAULT_WORKSPACE_CYCLE;
+}
+
 export const CLOSING_DAYS_BEFORE_DUE_OPTIONS = [5, 7, 10] as const;
 
 export type ClosingDaysBeforeDue =

@@ -6,6 +6,7 @@ import {
   type BudgetPlanSides,
 } from '@modules/budget/valueObjects/BudgetPlanSides';
 import type { ResolvedMonthPlan } from '@modules/report/services/resolve-month-plan.service';
+import type { SpendablePayload } from '@modules/spendable/presenters/Spendable.presenter';
 import type { ProvisionalBasis } from '@modules/report/valueObjects/ProvisionalPlan';
 
 export type InsightCode =
@@ -73,6 +74,7 @@ export type AvailableToSpendResponse = {
   state: AvailableToSpendState;
   insight: AvailableToSpendInsight | null;
   unbudgetedCategories: UnbudgetedCategory[];
+  spendable: SpendablePayload | null;
 } & BudgetPlanSides;
 
 export type SpendableFigureInput = {

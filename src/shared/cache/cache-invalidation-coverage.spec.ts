@@ -56,6 +56,10 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
   },
   'card-cycle/features/get-card-cycle-status/get-card-cycle-status.handler.ts':
     { route: 'account:cycle', kinds: ['ledger'] },
+  'spendable/features/get-spendable/get-spendable.handler.ts': {
+    route: 'spendable:get',
+    kinds: ['ledger'],
+  },
   'transaction/features/list-transaction/list-transaction.service.ts': {
     route: 'transaction:list',
     kinds: ['ledger', 'category'],
@@ -113,6 +117,8 @@ const WRITES: Record<string, Kind[]> = {
     ['ledger'],
   'transaction/features/recurring-suggestions/mark-recurring-suggestions-shown.service.ts':
     ['ledger'],
+  'transaction/features/recurring-suggestions/detect-recurring-suggestions.service.ts':
+    ['ledger'],
   'transaction/jobs/generate-recurring-transactions/generate-recurring-transactions.service.ts':
     ['ledger'],
   'transaction/jobs/settle-card-installments/settle-card-installments.service.ts':
@@ -132,6 +138,7 @@ const WRITES: Record<string, Kind[]> = {
   'budget/features/reject-budget-suggestion/reject-budget-suggestion.handler.ts':
     ['ledger'],
   'budget/features/save-config/save-config.handler.ts': ['ledger'],
+  'budget/features/reset-budget/reset-budget.handler.ts': ['ledger'],
   'card-cycle/features/save-card-cycle-budget/save-card-cycle-budget.handler.ts':
     ['ledger'],
   'category/features/create-category/create-category.handler.ts': ['category'],

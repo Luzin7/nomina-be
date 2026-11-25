@@ -1,4 +1,3 @@
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import {
   BudgetRepository,
   type BudgetSnapshot,
@@ -281,7 +280,7 @@ export class ResolveMonthPlanService implements Service<
           startDate: rule.startDate,
           frequency: rule.frequency,
           interval: rule.interval,
-          timezone: RECURRING_GENERATION_TIMEZONE,
+          timezone: rule.timezone,
         },
         date,
         this.dateProvider,

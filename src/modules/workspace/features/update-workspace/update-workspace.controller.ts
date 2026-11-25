@@ -10,8 +10,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { CurrentLoggedUser } from '@providers/auth/decorators/CurrentLoggedUser.decorator';
 import { Roles } from '@providers/auth/decorators/Roles.decorator';
 import { RolesGuard } from '@providers/auth/guards/Roles.guard';
+import type { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { statusCode } from '@shared/core/types/statusCode';
 import {
   UpdateWorkspaceBodyPipe,
@@ -29,12 +31,14 @@ export class UpdateWorkspaceController {
   @Put(':workspaceId')
   @HttpCode(statusCode.OK)
   async handle(
+    @CurrentLoggedUser() user: TokenPayloadSchema,
     @Param('workspaceId') workspaceId: string,
     @Body(UpdateWorkspaceBodyPipe) body: UpdateWorkspaceBodyRequest,
   ) {
     const data = await this.service.execute({
       ...body,
       workspaceId,
+      sub: user.sub,
     });
 
     if (data.isLeft()) {

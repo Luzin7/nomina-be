@@ -21,6 +21,7 @@ import { RecurrenceRule, walkOccurrences } from '@utils/recurrenceWalk';
 
 export type RecurringRuleSnapshot = RecurrenceRule & {
   id: string;
+  timezone: string;
   type: 'INCOME' | 'EXPENSE';
   categoryId: string | null;
   amount: number;

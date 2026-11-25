@@ -1,6 +1,5 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { MIN_INSTALLMENTS_FOR_PLAN } from '@constants/recurring';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import { projectMonth } from '@modules/report/valueObjects/ProjectionHorizon';
@@ -150,7 +149,7 @@ const occurrencesInWindow = ({
         startDate: rule.startDate,
         frequency: rule.frequency,
         interval: rule.interval,
-        timezone: RECURRING_GENERATION_TIMEZONE,
+        timezone: rule.timezone,
       },
       cursor,
       dateProvider,
@@ -164,7 +163,6 @@ type Next30DaysWindow = {
   rules: RecurringSummaryRule[];
   start: Date;
   end: Date;
-  timezone: string;
   dateProvider: DateProvider;
 };
 
@@ -172,14 +170,13 @@ const next30Days = ({
   rules,
   start,
   end,
-  timezone,
   dateProvider,
 }: Next30DaysWindow): RecurringSummaryEntry[] =>
   rules
     .filter(isContributing)
     .flatMap((rule) =>
       occurrencesInWindow({ rule, start, end, dateProvider }).map((date) => ({
-        date: dateProvider.format(date, 'YYYY-MM-DD', timezone),
+        date: dateProvider.format(date, 'YYYY-MM-DD', rule.timezone),
         name: rule.title,
         amountCents: rule.amount,
         type: rule.type,
@@ -273,11 +270,7 @@ export class RecurringSummaryService implements Service<
 
     const [rules, ledger, recurringRules, materializedThisMonthCents] =
       await Promise.all([
-        this.recurringRepository.findSummaryRules({
-          workspaceId,
-          todayStart,
-          timezone,
-        }),
+        this.recurringRepository.findSummaryRules({ workspaceId, now }),
         this.monthProjectionRepository.findMonthLedger({
           workspaceId,
           timezone,
@@ -349,7 +342,6 @@ export class RecurringSummaryService implements Service<
         rules,
         start: todayStart,
         end: windowEnd,
-        timezone,
         dateProvider: this.dateProvider,
       }),
       byFrequency: byFrequency(rules),

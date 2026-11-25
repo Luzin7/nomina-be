@@ -7,6 +7,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import {
   NotFoundDomainError,
   PLAN_LIMIT_EXCEEDED_CODE,
   PlanLimitExceededDomainError,
+  ServiceUnavailableDomainError,
   UnauthorizedDomainError,
 } from '@shared/core/errors/DomainError';
 
@@ -60,6 +62,10 @@ export class ErrorPresenter {
 
     if (error instanceof HttpException) {
       throw error;
+    }
+
+    if (error instanceof ServiceUnavailableDomainError) {
+      throw new ServiceUnavailableException(error.message);
     }
 
     ErrorPresenter.logger.error('Erro de Servidor/Domínio não tratado:', error);

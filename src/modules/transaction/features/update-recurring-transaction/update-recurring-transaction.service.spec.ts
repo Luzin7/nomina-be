@@ -63,14 +63,17 @@ describe('UpdateRecurringTransactionService', () => {
     recurringRepository = {
       create: jest.fn(),
       update: jest.fn().mockImplementation(async (recurring) => recurring),
-      delete: jest.fn(),
+      deleteWithFuturePendingOccurrences: jest.fn(),
       findById: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       findNeedingGenerationByWorkspaceId: jest.fn(),
       listNeedingGeneration: jest.fn().mockResolvedValue([]),
       createGeneratedTransactions: jest
         .fn()
-        .mockImplementation(async (transactions) => transactions.length),
+        .mockImplementation(async (transactions) => ({
+          outcome: 'written',
+          createdCount: transactions.length,
+        })),
       findSummaryRules: jest.fn(),
       findCompletedRecurringExpense: jest.fn(),
     } as jest.Mocked<RecurringTransactionRepository>;
@@ -346,7 +349,9 @@ describe('UpdateRecurringTransactionService', () => {
     if (result.isLeft()) return;
     expect(result.value.accountId).toBe('acc-2');
 
-    recurringRepository.listNeedingGeneration.mockResolvedValue([result.value]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      { recurring: result.value, timezone: 'America/Sao_Paulo' },
+    ]);
     await runGenerationJob(new Date('2024-02-05T00:00:00.000Z')).execute();
 
     const [transactions] =
@@ -401,7 +406,9 @@ describe('UpdateRecurringTransactionService', () => {
     expect(result.value.startDate).toEqual(new Date('2024-01-20'));
     expect(result.value.lastGenerated).toBeNull();
 
-    recurringRepository.listNeedingGeneration.mockResolvedValue([result.value]);
+    recurringRepository.listNeedingGeneration.mockResolvedValue([
+      { recurring: result.value, timezone: 'America/Sao_Paulo' },
+    ]);
     await runGenerationJob(NOW).execute();
 
     const [transactions] =

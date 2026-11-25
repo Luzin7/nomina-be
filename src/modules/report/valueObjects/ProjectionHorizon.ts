@@ -1,5 +1,4 @@
 import { type BudgetMode } from '@constants/enums';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { projectMonthEnd } from '@modules/report/valueObjects/MonthProjection';
 import type {
   MonthProjection,
@@ -123,7 +122,7 @@ const stepOccurrence = (date: Date, rule: RecurringRuleSnapshot): Date =>
       startDate: rule.startDate,
       frequency: rule.frequency,
       interval: rule.interval,
-      timezone: RECURRING_GENERATION_TIMEZONE,
+      timezone: rule.timezone,
     },
     date,
     pureDateAdder,

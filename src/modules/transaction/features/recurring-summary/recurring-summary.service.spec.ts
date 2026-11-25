@@ -41,6 +41,7 @@ const makeRule = (
   endDate: null,
   active: true,
   exhausted: false,
+  timezone: TIMEZONE,
   ...overrides,
 });
 
@@ -69,6 +70,7 @@ const makeSnapshot = (
   endDate: null,
   lastGenerated: null,
   materializedDates: [],
+  timezone: TIMEZONE,
   ...overrides,
 });
 

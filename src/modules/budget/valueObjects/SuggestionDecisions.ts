@@ -1,4 +1,4 @@
-export type SuggestionKind = 'income' | 'split';
+export type SuggestionKind = 'income' | 'split' | 'reset';
 
 export type SuggestionDecisionRecord = {
   kind: SuggestionKind;
@@ -51,6 +51,28 @@ const ofKind = (
 const isIncomeBased = (decision: SuggestionDecisionRecord): boolean =>
   decision.decision === 'accepted' && decision.incomeCents !== null;
 
+const asAcceptedSplit = (
+  decision: SuggestionDecisionRecord,
+): SuggestionDecisionRecord => ({
+  ...decision,
+  kind: 'split',
+  decision: 'accepted',
+});
+
+const splitSettlements = (
+  decisions: SuggestionDecisionRecord[],
+): SuggestionDecisionRecord[] => {
+  const resets = ofKind(decisions, 'reset').map(asAcceptedSplit);
+  const resetMonths = new Set(resets.map(({ month }) => month));
+  const splits = ofKind(decisions, 'split').filter(
+    ({ month }) => !resetMonths.has(month),
+  );
+
+  return splits
+    .concat(resets)
+    .sort((a, b) => monthIndex(a.month) - monthIndex(b.month));
+};
+
 const hasMovedEnough = (baseCents: number, rejectedCents: number): boolean =>
   Math.abs(baseCents - rejectedCents) >= REJECTION_REOPEN_RATIO * rejectedCents;
 
@@ -84,7 +106,7 @@ export function resolveSplitProgress({
   hasIncomeBasis,
   steps,
 }: ResolveSplitProgressInput): SplitProgress {
-  const splitDecisions = ofKind(decisions, 'split');
+  const splitDecisions = splitSettlements(decisions);
   const current = monthIndex(currentMonth);
   const thisMonth = splitDecisions.find(
     (decision) => decision.month === currentMonth,

@@ -2,6 +2,7 @@ import { BUDGET_MODE_DEFAULT, type BudgetMode } from '@constants/enums';
 import type {
   BudgetSnapshot,
   SaveBudgetAllocationInput,
+  SuggestedAllocationInput,
   SuggestionSnapshotWrite,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
 
@@ -20,6 +21,27 @@ const percentageOf = (
   monthlyIncome === null
     ? null
     : Math.round((targetCents * PERCENT) / monthlyIncome);
+
+const planOfTargets = (
+  monthlyIncome: number | null,
+  mode: BudgetMode,
+  allocations: SuggestedAllocationInput[],
+): SuggestionSnapshotPlan => ({
+  monthlyIncome,
+  mode,
+  allocations: allocations.map((allocation) => ({
+    ...allocation,
+    percentageOfIncome: percentageOf(allocation.targetCents, monthlyIncome),
+  })),
+});
+
+const modeOfMonth = (
+  snapshot: BudgetSnapshot | null,
+  monthStart: Date,
+): BudgetMode =>
+  snapshot !== null && snapshot.effectiveFrom.getTime() === monthStart.getTime()
+    ? snapshot.mode
+    : 'fixed';
 
 export function planSuggestionSnapshot(
   current: BudgetSnapshot | null,
@@ -43,14 +65,21 @@ export function planSuggestionSnapshot(
     };
   }
 
-  const monthlyIncome = current?.monthlyIncome ?? null;
+  return planOfTargets(
+    current?.monthlyIncome ?? null,
+    'fixed',
+    write.allocations,
+  );
+}
 
-  return {
-    monthlyIncome,
-    mode: 'fixed',
-    allocations: write.allocations.map((allocation) => ({
-      ...allocation,
-      percentageOfIncome: percentageOf(allocation.targetCents, monthlyIncome),
-    })),
-  };
+export function planResetSnapshot(
+  current: BudgetSnapshot | null,
+  monthStart: Date,
+  allocations: SuggestedAllocationInput[],
+): SuggestionSnapshotPlan {
+  return planOfTargets(
+    current?.monthlyIncome ?? null,
+    modeOfMonth(current, monthStart),
+    allocations,
+  );
 }

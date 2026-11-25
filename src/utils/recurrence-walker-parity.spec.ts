@@ -1,5 +1,4 @@
 import { RecurrenceFrequency } from '@constants/enums';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
@@ -72,7 +71,12 @@ const CASES: ScheduleCase[] = [
   }),
 ];
 
-function generatorDates({ startDate, frequency, interval }: ScheduleCase) {
+function generatorDates({
+  startDate,
+  frequency,
+  interval,
+  timezone,
+}: ScheduleCase) {
   const dates = [startDate];
   while (dates.length < STEPS) {
     dates.push(
@@ -81,7 +85,7 @@ function generatorDates({ startDate, frequency, interval }: ScheduleCase) {
         baseDate: dates[dates.length - 1],
         frequency,
         interval,
-        timezone: RECURRING_GENERATION_TIMEZONE,
+        timezone,
       }),
     );
   }
@@ -92,11 +96,7 @@ function nextOccurrenceDates(scheduleInput: ScheduleCase) {
   const dates = [scheduleInput.startDate];
   while (dates.length < STEPS) {
     dates.push(
-      nextOccurrenceAfter(
-        { ...scheduleInput, timezone: RECURRING_GENERATION_TIMEZONE },
-        dates[dates.length - 1],
-        dateProvider,
-      ),
+      nextOccurrenceAfter(scheduleInput, dates[dates.length - 1], dateProvider),
     );
   }
   return dates.map((date) => date.toISOString());

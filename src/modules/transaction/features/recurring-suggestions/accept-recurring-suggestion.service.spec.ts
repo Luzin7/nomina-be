@@ -15,9 +15,11 @@ import { ActiveBillRule } from '@modules/transaction/valueObjects/BillSuggestion
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { AcceptRecurringSuggestionService } from './accept-recurring-suggestion.service';
+import { RecurringSuggestionDetectionDispatcher } from './recurring-suggestion-detection.dispatcher';
 
 const makeRepository = (): jest.Mocked<RecurringSuggestionRepository> => ({
   findDetectionState: jest.fn(),
+  findDueWorkspaceBatch: jest.fn(),
   findBillCandidates: jest.fn(),
   findActiveExpenseRules: jest.fn().mockResolvedValue([]),
   persistDetection: jest.fn(),
@@ -51,6 +53,7 @@ describe('AcceptRecurringSuggestionService', () => {
   let timezoneService: jest.Mocked<GetWorkspaceTimezoneService>;
   let dateProvider: jest.Mocked<DateProvider>;
   let cacheProvider: jest.Mocked<CacheProvider>;
+  let detectionDispatcher: jest.Mocked<RecurringSuggestionDetectionDispatcher>;
 
   beforeEach(() => {
     repository = makeRepository();
@@ -67,11 +70,16 @@ describe('AcceptRecurringSuggestionService', () => {
       delByPattern: jest.fn(),
     } as unknown as jest.Mocked<CacheProvider>;
 
+    detectionDispatcher = {
+      notify: jest.fn(),
+    } as unknown as jest.Mocked<RecurringSuggestionDetectionDispatcher>;
+
     service = new AcceptRecurringSuggestionService(
       repository,
       timezoneService,
       dateProvider,
       cacheProvider,
+      detectionDispatcher,
     );
   });
 
@@ -171,6 +179,42 @@ describe('AcceptRecurringSuggestionService', () => {
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
+  });
+
+  it('notifies detection once after the ledger bump without awaiting it', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(makeSuggestion());
+    repository.accept.mockResolvedValue({
+      kind: 'accepted',
+      recurringId: 'rec-1',
+    });
+    const pendingDetection = new Promise<void>(() => undefined);
+    (detectionDispatcher.notify as jest.Mock).mockReturnValue(pendingDetection);
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isRight()).toBe(true);
+    expect(detectionDispatcher.notify).toHaveBeenCalledTimes(1);
+    expect(detectionDispatcher.notify).toHaveBeenCalledWith('ws-1');
+    expect(
+      cacheProvider.incrementCounter.mock.invocationCallOrder[0],
+    ).toBeLessThan(detectionDispatcher.notify.mock.invocationCallOrder[0]);
+  });
+
+  it('does not notify detection when the replay skips the ledger bump', async () => {
+    repository.findByIdForWorkspace.mockResolvedValue(
+      makeSuggestion({
+        status: RecurringSuggestionStatus.ACCEPTED,
+        recurringId: 'rec-1',
+      }),
+    );
+    repository.accept.mockResolvedValue({
+      kind: 'already-accepted',
+      recurringId: 'rec-1',
+    });
+
+    await service.execute(makeRequest());
+
+    expect(detectionDispatcher.notify).not.toHaveBeenCalled();
   });
 
   it('refuses a suggestion whose bill already has an active rule', async () => {

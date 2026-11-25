@@ -70,6 +70,7 @@ const rule = (
   endDate: null,
   lastGenerated: null,
   materializedDates: [],
+  timezone: TIMEZONE,
   ...overrides,
 });
 

@@ -12,6 +12,7 @@ import { ReportRepository } from '@modules/report/repositories/contracts/ReportR
 import { SubscriptionRepository } from '@modules/subscription/repositories/contracts/SubscriptionRepository';
 import { RecurringSuggestionRepository } from '@modules/transaction/repositories/contracts/RecurringSuggestionRepository';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
+import { SpendableRepository } from '@modules/spendable/repositories/contracts/SpendableRepository';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { AuthSessionsRepository } from '@modules/user/repositories/contracts/auth-session.repository';
 import { RefreshTokensRepository } from '@modules/user/repositories/contracts/refresh-token.repository';
@@ -41,6 +42,7 @@ import { RecurringSuggestionRepositoryImplementation } from './drizzle/repositor
 import { RecurringTransactionRepositoryImplementation } from './drizzle/repositories/recurring-transaction.repository';
 import { RefreshTokenRepositoryImplementation } from './drizzle/repositories/refresh-token.repository';
 import { ReportRepositoryImplementation } from './drizzle/repositories/report.repository';
+import { SpendableRepositoryImplementation } from './drizzle/repositories/spendable.repository';
 import { SubscriptionRepositoryImplementation } from './drizzle/repositories/subscription.repository';
 import { TransactionRepositoryImplementation } from './drizzle/repositories/transaction.repository';
 import { UserRepositoryImplementation } from './drizzle/repositories/user.repository';
@@ -138,6 +140,10 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
       provide: CardInvoiceSettlementRepository,
       useClass: CardInvoiceSettlementRepositoryImplementation,
     },
+    {
+      provide: SpendableRepository,
+      useClass: SpendableRepositoryImplementation,
+    },
   ],
   exports: [
     DrizzleService,
@@ -162,6 +168,7 @@ import { WorkspaceRepositoryImplementation } from './drizzle/repositories/worksp
     ReportRepository,
     CardInvoiceRepository,
     CardInvoiceSettlementRepository,
+    SpendableRepository,
   ],
 })
 export class DatabaseModule {}

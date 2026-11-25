@@ -14,10 +14,9 @@ import { Injectable } from '@nestjs/common';
 import { getErrorDetails } from '@shared/utils/error-details';
 import { and, desc, eq, lte, sql } from 'drizzle-orm';
 import * as schema from '../schema';
-import { instantOf, localDayIn } from '../sql-helpers';
+import { withinLocalDays } from '../sql-helpers';
 
 const UNIQUE_VIOLATION = '23505';
-
 type CardCyclePeriodRow = typeof schema.cardCyclePeriods.$inferSelect;
 type CardCycleBudgetRow = typeof schema.cardCycleBudgets.$inferSelect;
 
@@ -84,20 +83,22 @@ export class CardCycleRepositoryImplementation implements CardCycleRepository {
     accountId: string,
     dueDate: string,
   ): Promise<CardCycleBudgetRecord | null> {
-    const [row] = await this.drizzle.db
-      .select()
-      .from(schema.cardCycleBudgets)
-      .where(
-        and(
-          eq(schema.cardCycleBudgets.workspaceId, workspaceId),
-          eq(schema.cardCycleBudgets.accountId, accountId),
-          lte(schema.cardCycleBudgets.effectiveFrom, dueDate),
-        ),
-      )
-      .orderBy(desc(schema.cardCycleBudgets.effectiveFrom))
-      .limit(1);
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(schema.cardCycleBudgets)
+        .where(
+          and(
+            eq(schema.cardCycleBudgets.workspaceId, workspaceId),
+            eq(schema.cardCycleBudgets.accountId, accountId),
+            lte(schema.cardCycleBudgets.effectiveFrom, dueDate),
+          ),
+        )
+        .orderBy(desc(schema.cardCycleBudgets.effectiveFrom))
+        .limit(1);
 
-    return row ? toCardCycleBudgetRecord(row) : null;
+      return row ? toCardCycleBudgetRecord(row) : null;
+    });
   }
 
   async saveBudget(
@@ -155,25 +156,31 @@ export class CardCycleRepositoryImplementation implements CardCycleRepository {
   }
 
   async sumCycleSpend(input: CardCycleSpendInput): Promise<number> {
-    const [row] = await this.drizzle.db
-      .select({
-        total:
-          sql<number>`COALESCE(SUM(${schema.transactions.amount}), 0)`.mapWith(
-            Number,
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      const [row] = await tx
+        .select({
+          total:
+            sql<number>`COALESCE(SUM(${schema.transactions.amount}), 0)`.mapWith(
+              Number,
+            ),
+        })
+        .from(schema.transactions)
+        .where(
+          and(
+            eq(schema.transactions.workspaceId, input.workspaceId),
+            eq(schema.transactions.accountId, input.accountId),
+            eq(schema.transactions.type, TransactionType.EXPENSE),
+            eq(schema.transactions.status, TransactionStatus.COMPLETED),
+            withinLocalDays(schema.transactions.date, {
+              start: input.periodStart,
+              end: input.periodEnd,
+              timezone: input.timezone,
+            }),
           ),
-      })
-      .from(schema.transactions)
-      .where(
-        and(
-          eq(schema.transactions.workspaceId, input.workspaceId),
-          eq(schema.transactions.accountId, input.accountId),
-          eq(schema.transactions.type, TransactionType.EXPENSE),
-          eq(schema.transactions.status, TransactionStatus.COMPLETED),
-          sql`${localDayIn(instantOf(schema.transactions.date), sql`${input.timezone}`)} BETWEEN ${input.periodStart}::date AND ${input.periodEnd}::date`,
-        ),
-      );
+        );
 
-    return row.total;
+      return row.total;
+    });
   }
 }
 

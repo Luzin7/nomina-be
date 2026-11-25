@@ -72,10 +72,6 @@ export class DayJsDateProvider implements DateProvider {
     return dayjs().add(days, 'day').toDate();
   }
 
-  addYearsInCurrentDate(years: number): Date {
-    return dayjs().add(years, 'year').toDate();
-  }
-
   isBefore({
     startDate = new Date(),
     endDate,

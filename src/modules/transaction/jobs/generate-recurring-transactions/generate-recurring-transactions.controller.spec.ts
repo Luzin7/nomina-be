@@ -25,6 +25,7 @@ function summaryOf(
   return {
     outcome: 'success',
     generatedCount: 0,
+    skippedCount: 0,
     failedCount: 0,
     processedCount: 0,
     ...overrides,
@@ -73,13 +74,16 @@ describe('GenerateRecurringTransactionsJobController', () => {
       summaryOf({
         outcome: 'success',
         generatedCount: 2,
+        skippedCount: 1,
         failedCount: 0,
-        processedCount: 2,
+        processedCount: 3,
       }),
     );
 
     expect(loggerLog).toHaveBeenCalledWith(
-      expect.stringMatching(/generated 2 transactions from 2 .*no failures/i),
+      expect.stringMatching(
+        /generated 2 transactions from 3 .*1 skipped.*no failures/i,
+      ),
     );
     expect(loggerWarn).not.toHaveBeenCalled();
     expect(loggerError).not.toHaveBeenCalled();

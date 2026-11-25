@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
 import {
   PostgresJsDatabase,
   PostgresJsQueryResultHKT,
@@ -8,7 +9,29 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { DRIZZLE_TOKEN } from './drizzle.provider';
 import * as schema from './schema';
 
-type DrizzleExecutor = PgDatabase<PostgresJsQueryResultHKT, typeof schema>;
+export type DrizzleExecutor = PgDatabase<
+  PostgresJsQueryResultHKT,
+  typeof schema
+>;
+
+const READ_STATEMENT_TIMEOUT_MS = 1_000;
+const SET_READ_TIMEOUT = sql.raw(
+  `SET LOCAL statement_timeout = ${READ_STATEMENT_TIMEOUT_MS}`,
+);
+const READ_CURRENT_TIMEOUT = sql`SELECT current_setting('statement_timeout') AS "statementTimeout"`;
+
+const readCurrentTimeout = async (
+  executor: DrizzleExecutor,
+): Promise<string> => {
+  const [row] = await executor.execute<{ statementTimeout: string }>(
+    READ_CURRENT_TIMEOUT,
+  );
+
+  return row.statementTimeout;
+};
+
+const restoreTimeout = (previous: string) =>
+  sql`SELECT set_config('statement_timeout', ${previous}, true)`;
 
 @Injectable()
 export class DrizzleService {
@@ -22,6 +45,22 @@ export class DrizzleService {
 
   get db(): DrizzleExecutor {
     return this.transactionContext.getStore() ?? this.pool;
+  }
+
+  withStatementTimeout<Result>(
+    work: (db: DrizzleExecutor) => Promise<Result>,
+  ): Promise<Result> {
+    return this.db.transaction(async (transaction) => {
+      const previous = await readCurrentTimeout(transaction);
+
+      await transaction.execute(SET_READ_TIMEOUT);
+
+      const result = await work(transaction);
+
+      await transaction.execute(restoreTimeout(previous));
+
+      return result;
+    });
   }
 
   runWithin<Result>(

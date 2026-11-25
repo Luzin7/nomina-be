@@ -131,9 +131,15 @@ export function nextOccurrenceAfter(
     return weeklyOccurrenceAfter(schedule, after, dateProvider);
   }
 
-  const period = calendarPeriodIndex(schedule, after, dateProvider);
+  let index = calendarPeriodIndex(schedule, after, dateProvider);
+  let candidate = addOccurrences(schedule, index, dateProvider);
 
-  return addOccurrences(schedule, period + 1, dateProvider);
+  while (candidate.getTime() <= after.getTime()) {
+    index++;
+    candidate = addOccurrences(schedule, index, dateProvider);
+  }
+
+  return candidate;
 }
 
 export function calculateInstallmentEndDate(
@@ -141,6 +147,39 @@ export function calculateInstallmentEndDate(
   dateProvider: DateAdder,
 ): Date {
   return addOccurrences(input, input.installments - 1, dateProvider);
+}
+
+export type PlanExhaustionInput = ScheduleBase & {
+  installmentCount: number | null;
+  endDate: Date | null;
+};
+
+function planLastDay(
+  plan: PlanExhaustionInput,
+  dateProvider: InferenceDateProvider,
+): string | null {
+  if (plan.endDate) {
+    return localCalendarDate(plan.endDate, plan.timezone, dateProvider);
+  }
+  if (plan.installmentCount === null) return null;
+
+  const lastInstallment = calculateInstallmentEndDate(
+    { ...plan, installments: plan.installmentCount },
+    dateProvider,
+  );
+
+  return localCalendarDate(lastInstallment, plan.timezone, dateProvider);
+}
+
+export function isPlanExhaustedBefore(
+  plan: PlanExhaustionInput,
+  instant: Date,
+  dateProvider: InferenceDateProvider,
+): boolean {
+  const lastDay = planLastDay(plan, dateProvider);
+  if (lastDay === null) return false;
+
+  return localCalendarDate(instant, plan.timezone, dateProvider) > lastDay;
 }
 
 function localCalendarDate(

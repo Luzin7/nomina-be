@@ -23,8 +23,12 @@ import { GetProjectionService } from '@modules/report/features/get-projection/ge
 import { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { MonthSummary } from '@modules/report/valueObjects/MonthSummary';
 import { HorizonMonth } from '@modules/report/valueObjects/ProjectionHorizon';
+import { GetSpendableService } from '@modules/spendable/features/get-spendable/get-spendable.handler';
+import type { SpendablePayload } from '@modules/spendable/presenters/Spendable.presenter';
+import { SpendableRepository } from '@modules/spendable/repositories/contracts/SpendableRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Logger } from '@nestjs/common';
+import { captureException } from '@sentry/nestjs';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { left, right } from '@shared/core/errors/Either';
 import { CardBillDueInsightService } from '../../services/card-bill-due-insight.service';
@@ -32,9 +36,27 @@ import { BudgetSuggestionInsightService } from '../../services/budget-suggestion
 import { ProjectionShortfallInsightService } from '../../services/projection-shortfall-insight.service';
 import { GetAvailableToSpendService } from './get-available-to-spend.handler';
 
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
+
 const TIMEZONE = 'America/Sao_Paulo';
 const NOW = new Date('2026-11-15T12:00:00.000Z');
 const REQUEST = { workspaceId: 'ws-1', sub: 'user-1' };
+
+const SPENDABLE: SpendablePayload = {
+  state: 'normal',
+  cycle: 'monthly',
+  cycleStartDate: '2026-11-01',
+  cycleEndDate: '2026-11-30',
+  daysRemaining: 16,
+  cashCents: 200000,
+  obligationsCents: 60000,
+  cashFreeCents: 140000,
+  incomeCents: 677000,
+  cards: [],
+  cardsWithoutDueDate: [],
+  cardsHeadroomCents: 0,
+  spendableCents: 140000,
+};
 
 const NO_SUGGESTION: BudgetSuggestion = {
   month: '2026-11',
@@ -127,6 +149,7 @@ const makeBudget = (
   exists: true,
   mode: 'percentage',
   monthlyIncomeCents: 1_500,
+  planEligible: true,
   effectiveFrom: new Date('2026-11-01T03:00:00.000Z'),
   allocations: [makeAllocation()],
   pillars: [],
@@ -214,6 +237,8 @@ describe('GetAvailableToSpendService', () => {
   let cardInvoiceRepository: jest.Mocked<CardInvoiceRepository>;
   let getProjection: jest.Mocked<GetProjectionService>;
   let resolveSuggestion: jest.Mocked<ResolveBudgetSuggestionService>;
+  let getSpendable: jest.Mocked<GetSpendableService>;
+  let spendableRepository: jest.Mocked<SpendableRepository>;
   let warn: jest.SpyInstance;
 
   let currentBudget: BudgetStatusResponse;
@@ -306,6 +331,12 @@ describe('GetAvailableToSpendService', () => {
     resolveSuggestion = {
       execute: jest.fn().mockResolvedValue(right(NO_SUGGESTION)),
     } as unknown as jest.Mocked<ResolveBudgetSuggestionService>;
+    getSpendable = {
+      execute: jest.fn().mockResolvedValue(right(SPENDABLE)),
+    } as unknown as jest.Mocked<GetSpendableService>;
+    spendableRepository = {
+      findCycle: jest.fn().mockResolvedValue('monthly'),
+    } as unknown as jest.Mocked<SpendableRepository>;
     const workspaceTimezone = {
       execute: jest.fn().mockResolvedValue(TIMEZONE),
     } as unknown as GetWorkspaceTimezoneService;
@@ -331,6 +362,8 @@ describe('GetAvailableToSpendService', () => {
       ),
       new ProjectionShortfallInsightService(getProjection),
       makeBudgetSuggestionInsight(),
+      getSpendable,
+      spendableRepository,
       workspaceTimezone,
       dateProvider,
       cache,
@@ -448,6 +481,7 @@ describe('GetAvailableToSpendService', () => {
         unbudgetedCategories: [],
         overPlanCents: 0,
         insight: null,
+        spendable: SPENDABLE,
       });
     });
 
@@ -589,6 +623,11 @@ describe('GetAvailableToSpendService', () => {
           new GetBudgetStatusService(
             budgetRepository,
             findMonthSummary,
+            {
+              execute: jest
+                .fn()
+                .mockResolvedValue(right({ planEligible: false })),
+            } as never,
             workspaceTimezone,
             dateProvider,
             new InMemoryCacheProvider(),
@@ -603,6 +642,8 @@ describe('GetAvailableToSpendService', () => {
           ),
           new ProjectionShortfallInsightService(getProjection),
           makeBudgetSuggestionInsight(),
+          getSpendable,
+          spendableRepository,
           workspaceTimezone,
           dateProvider,
           new InMemoryCacheProvider(),
@@ -887,6 +928,8 @@ describe('GetAvailableToSpendService', () => {
         ),
         new ProjectionShortfallInsightService(getProjection),
         makeBudgetSuggestionInsight(),
+        getSpendable,
+        spendableRepository,
         workspaceTimezone,
         dateProvider,
         new InMemoryCacheProvider(),
@@ -915,14 +958,34 @@ describe('GetAvailableToSpendService', () => {
       expect(second).toEqual(first);
     });
 
-    it('keys the cache under v7', async () => {
+    it('keys the cache under v9 with the workspace cycle', async () => {
       await service.execute(REQUEST);
 
       expect([...cache.values.keys()]).toEqual([
         expect.stringMatching(
-          /^dashboard:available-to-spend:v7:ws-1:g\d+:c\d+:o\d+:2026-11-15$/,
+          /^dashboard:available-to-spend:v9:ws-1:g\d+:c\d+:o\d+:2026-11-15:monthly$/,
         ),
       ]);
+    });
+
+    it('misses the cache when the workspace cycle changes', async () => {
+      await service.execute(REQUEST);
+      spendableRepository.findCycle.mockResolvedValue('half_month');
+      getSpendable.execute.mockResolvedValue(
+        right({
+          ...SPENDABLE,
+          cycle: 'half_month',
+          cycleStartDate: '2026-11-16',
+          cycleEndDate: '2026-11-30',
+        }),
+      );
+
+      const second = await service.execute(REQUEST);
+
+      expect(getSpendable.execute).toHaveBeenCalledTimes(2);
+      expect(second.value).toMatchObject({
+        spendable: { cycle: 'half_month', cycleStartDate: '2026-11-16' },
+      });
     });
   });
 
@@ -1227,6 +1290,8 @@ describe('GetAvailableToSpendService', () => {
         ),
         new ProjectionShortfallInsightService(getProjection),
         makeBudgetSuggestionInsight(),
+        getSpendable,
+        spendableRepository,
         { execute: jest.fn().mockResolvedValue(TIMEZONE) } as never,
         dateProvider,
         new InMemoryCacheProvider(),
@@ -1434,6 +1499,37 @@ describe('GetAvailableToSpendService', () => {
         expect(warn).toHaveBeenCalledWith(
           expect.stringContaining('InsightSourceTimeoutError'),
         );
+      });
+    });
+
+    describe('spendable block', () => {
+      it('carries the spendable payload beside the untouched figure', async () => {
+        givenBudget(makeBudget({ totalTargetCents: 1_500, totalSpent: 500 }));
+        givenProjection(200, 3);
+
+        const response = await run();
+
+        expect(response.spendable).toEqual(SPENDABLE);
+        expect(response.spendableCents).toBe(800);
+        expect(response.daysRemaining).toBe(3);
+        expect(response.budget).toMatchObject({ totalTargetCents: 1_500 });
+      });
+
+      it('degrades the response when the spendable read fails', async () => {
+        getSpendable.execute.mockRejectedValue(new Error('ledger down'));
+        givenBudget(makeBudget({ totalTargetCents: 1_500, totalSpent: 500 }));
+        givenProjection(200, 3);
+
+        const response = await run();
+
+        expect(response.spendable).toBeNull();
+        expect(response.spendableCents).toBe(800);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('spendable failed'),
+        );
+        expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+          extra: { workspaceId: 'ws-1' },
+        });
       });
     });
   });

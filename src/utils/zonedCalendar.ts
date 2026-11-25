@@ -1,3 +1,5 @@
+import { UnresolvableLocalTimeError } from './errors/UnresolvableLocalTimeError';
+
 export type ZonedFormat = 'YYYY-MM-DD' | 'YYYY-MM' | 'D';
 export type ZonedUnit = 'day' | 'month' | 'year';
 
@@ -35,6 +37,8 @@ type LocalFields = {
   second: number;
 };
 
+type WallClock = LocalFields & { millisecond: number };
+
 const localFields = (epochMs: number, timezone: string): LocalFields => {
   const fields: Record<string, number> = {};
   for (const part of formatterFor(timezone).formatToParts(epochMs)) {
@@ -43,16 +47,78 @@ const localFields = (epochMs: number, timezone: string): LocalFields => {
   return fields as LocalFields;
 };
 
+const positiveModulo = (value: number, modulus: number): number =>
+  ((value % modulus) + modulus) % modulus;
+
+const wallClockOf = (epochMs: number, timezone: string): WallClock => {
+  const { year, month, day, hour, minute, second } = localFields(
+    epochMs,
+    timezone,
+  );
+  return {
+    year,
+    month,
+    day,
+    hour: hour % 24,
+    minute,
+    second,
+    millisecond: positiveModulo(epochMs, 1000),
+  };
+};
+
+const naiveMsOf = (clock: WallClock): number =>
+  Date.UTC(
+    clock.year,
+    clock.month - 1,
+    clock.day,
+    clock.hour,
+    clock.minute,
+    clock.second,
+    clock.millisecond,
+  );
+
 const offsetMs = (epochMs: number, timezone: string): number => {
   const { year, month, day, hour, minute, second } = localFields(
     epochMs,
     timezone,
   );
-  const wholeSecondEpoch = epochMs - (((epochMs % 1000) + 1000) % 1000);
+  const wholeSecondEpoch = epochMs - positiveModulo(epochMs, 1000);
   const localAsUtc = Date.UTC(year, month - 1, day, hour % 24, minute, second);
   return (
     Math.round((localAsUtc - wholeSecondEpoch) / MS_PER_MINUTE) * MS_PER_MINUTE
   );
+};
+
+const matchesWallClock = (
+  epochMs: number,
+  naiveMs: number,
+  timezone: string,
+): boolean => naiveMsOf(wallClockOf(epochMs, timezone)) === naiveMs;
+
+const resolveInstant = (naiveMs: number, timezone: string): Date => {
+  const beforeOffset = offsetMs(naiveMs - MS_PER_DAY, timezone);
+  const afterOffset = offsetMs(naiveMs + MS_PER_DAY, timezone);
+  const candidates = [naiveMs - beforeOffset, naiveMs - afterOffset].filter(
+    (candidate) => matchesWallClock(candidate, naiveMs, timezone),
+  );
+  if (candidates.length > 0) return new Date(Math.min(...candidates));
+
+  const shiftedMs = naiveMs + (afterOffset - beforeOffset);
+  const shifted = shiftedMs - afterOffset;
+  if (matchesWallClock(shifted, shiftedMs, timezone)) return new Date(shifted);
+
+  throw new UnresolvableLocalTimeError({
+    timezone,
+    wallClock: new Date(naiveMs).toISOString(),
+  });
+};
+
+const shiftedMonth = (clock: WallClock, months: number): WallClock => {
+  const monthIndex = clock.month - 1 + months;
+  const year = clock.year + Math.floor(monthIndex / MONTHS_PER_YEAR);
+  const month = positiveModulo(monthIndex, MONTHS_PER_YEAR) + 1;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return { ...clock, year, month, day: Math.min(clock.day, lastDay) };
 };
 
 const pad = (value: number, size: number): string =>
@@ -72,27 +138,14 @@ export const formatZoned = (
   return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
 };
 
-const addMonthsZoned = (date: Date, months: number, timezone: string): Date => {
-  const epochMs = date.getTime();
-  const offset = offsetMs(epochMs, timezone);
-  const local = new Date(epochMs + offset);
-  const targetMonth = local.getUTCMonth() + months;
-  const lastDay = new Date(
-    Date.UTC(local.getUTCFullYear(), targetMonth + 1, 0),
-  ).getUTCDate();
-  const day = Math.min(local.getUTCDate(), lastDay);
+const addDaysZoned = (date: Date, days: number, timezone: string): Date => {
+  const naiveMs = naiveMsOf(wallClockOf(date.getTime(), timezone));
+  return resolveInstant(naiveMs + days * MS_PER_DAY, timezone);
+};
 
-  return new Date(
-    Date.UTC(
-      local.getUTCFullYear(),
-      targetMonth,
-      day,
-      local.getUTCHours(),
-      local.getUTCMinutes(),
-      local.getUTCSeconds(),
-      local.getUTCMilliseconds(),
-    ) - offset,
-  );
+const addMonthsZoned = (date: Date, months: number, timezone: string): Date => {
+  const clock = wallClockOf(date.getTime(), timezone);
+  return resolveInstant(naiveMsOf(shiftedMonth(clock, months)), timezone);
 };
 
 export const addZoned = (
@@ -101,7 +154,7 @@ export const addZoned = (
   unit: ZonedUnit,
   timezone: string,
 ): Date => {
-  if (unit === 'day') return new Date(date.getTime() + amount * MS_PER_DAY);
+  if (unit === 'day') return addDaysZoned(date, amount, timezone);
   const months = unit === 'year' ? amount * MONTHS_PER_YEAR : amount;
   return addMonthsZoned(date, months, timezone);
 };

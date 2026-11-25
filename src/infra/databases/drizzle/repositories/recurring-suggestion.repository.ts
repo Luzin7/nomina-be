@@ -15,6 +15,7 @@ import {
   DismissSuggestionOutcome,
   FindSuggestionById,
   PersistDetectionInput,
+  PersistDetectionOutcome,
   RecurringSuggestionRepository,
   RecurringSuggestionView,
 } from '@modules/transaction/repositories/contracts/RecurringSuggestionRepository';
@@ -32,6 +33,7 @@ import {
   and,
   asc,
   eq,
+  gt,
   gte,
   inArray,
   isNotNull,
@@ -47,6 +49,12 @@ import { localMonthKey } from '@utils/localMonth';
 import { randomUUID } from 'node:crypto';
 
 const SYSTEM_CATEGORY_IDS = SYSTEM_CATEGORY_LIST.map((category) => category.id);
+
+const STATEMENT_TIMEOUT_MS = 5_000;
+const BATCH_STATEMENT_TIMEOUT_MS = 10_000;
+
+const statementTimeout = (milliseconds: number) =>
+  sql.raw(`SET LOCAL statement_timeout = ${milliseconds}`);
 
 type SuggestionRow = typeof schema.recurringSuggestions.$inferSelect;
 type DbTransaction = Parameters<
@@ -87,13 +95,45 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
   ) {}
 
   async findDetectionState(workspaceId: string): Promise<BillDetectionState> {
-    const [workspace] = await this.drizzle.db
-      .select({ lastBillDetectionAt: schema.workspaces.lastBillDetectionAt })
-      .from(schema.workspaces)
-      .where(eq(schema.workspaces.id, workspaceId))
-      .limit(1);
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      const [workspace] = await tx
+        .select({ lastBillDetectionAt: schema.workspaces.lastBillDetectionAt })
+        .from(schema.workspaces)
+        .where(eq(schema.workspaces.id, workspaceId))
+        .limit(1);
 
-    return { lastBillDetectionAt: workspace?.lastBillDetectionAt ?? null };
+      return { lastBillDetectionAt: workspace?.lastBillDetectionAt ?? null };
+    });
+  }
+
+  async findDueWorkspaceBatch(
+    cursorId: string | null,
+    limit: number,
+    now: Date,
+  ): Promise<string[]> {
+    return this.drizzle.db.transaction(async (tx) => {
+      await tx.execute(statementTimeout(BATCH_STATEMENT_TIMEOUT_MS));
+
+      const rows = await tx
+        .select({ id: schema.workspaces.id })
+        .from(schema.workspaces)
+        .where(
+          and(
+            sql`CASE
+              WHEN ${schema.workspaces.lastBillDetectionAt} IS NULL THEN true
+              WHEN ${schema.workspaces.timezone} IN (SELECT name FROM pg_timezone_names) THEN
+                date_trunc('month', ${schema.workspaces.lastBillDetectionAt} AT TIME ZONE ${schema.workspaces.timezone})
+                  <> date_trunc('month', ${now.toISOString()}::timestamptz AT TIME ZONE ${schema.workspaces.timezone})
+              ELSE true
+            END`,
+            cursorId === null ? undefined : gt(schema.workspaces.id, cursorId),
+          ),
+        )
+        .orderBy(asc(schema.workspaces.id))
+        .limit(limit);
+
+      return rows.map((row) => row.id);
+    });
   }
 
   async findBillCandidates({
@@ -102,42 +142,53 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
     from,
     to,
   }: BillCandidateQuery): Promise<BillDetectionTransaction[]> {
-    const localDay = localDayIn(
-      instantOf(schema.transactions.date),
-      sql`${timezone}`,
-    );
+    return this.drizzle.db.transaction(async (tx) => {
+      await tx.execute(statementTimeout(STATEMENT_TIMEOUT_MS));
 
-    return this.drizzle.db
-      .select({
-        id: schema.transactions.id,
-        categoryId: schema.transactions.categoryId,
-        categoryName: schema.categories.name,
-        accountId: schema.transactions.accountId,
-        amount: schema.transactions.amount,
-        day: sql<number>`EXTRACT(DAY FROM ${localDay})::int`.mapWith(Number),
-        month: sql<string>`to_char(${localDay}, 'YYYY-MM')`,
-      })
-      .from(schema.transactions)
-      .innerJoin(
-        schema.categories,
-        eq(schema.categories.id, schema.transactions.categoryId),
-      )
-      .where(
-        and(
-          eq(schema.transactions.workspaceId, workspaceId),
-          eq(schema.transactions.type, 'EXPENSE'),
-          eq(schema.transactions.status, 'COMPLETED'),
-          isNull(schema.transactions.installmentGroupId),
-          isNull(schema.transactions.recurringId),
-          notInArray(schema.transactions.categoryId, SYSTEM_CATEGORY_IDS),
-          gte(schema.transactions.date, from),
-          lt(schema.transactions.date, to),
-        ),
+      const localDay = localDayIn(
+        instantOf(schema.transactions.date),
+        sql`${timezone}`,
       );
+
+      const rows = await tx
+        .select({
+          id: schema.transactions.id,
+          categoryId: schema.transactions.categoryId,
+          categoryName: schema.categories.name,
+          accountId: schema.transactions.accountId,
+          amount: schema.transactions.amount,
+          day: sql<number>`EXTRACT(DAY FROM ${localDay})::int`.mapWith(Number),
+          month: sql<string>`to_char(${localDay}, 'YYYY-MM')`,
+        })
+        .from(schema.transactions)
+        .innerJoin(
+          schema.categories,
+          eq(schema.categories.id, schema.transactions.categoryId),
+        )
+        .where(
+          and(
+            eq(schema.transactions.workspaceId, workspaceId),
+            eq(schema.transactions.type, 'EXPENSE'),
+            eq(schema.transactions.status, 'COMPLETED'),
+            isNull(schema.transactions.installmentGroupId),
+            isNull(schema.transactions.recurringId),
+            isNull(schema.transactions.recurringDetachedAt),
+            notInArray(schema.transactions.categoryId, SYSTEM_CATEGORY_IDS),
+            gte(schema.transactions.date, from),
+            lt(schema.transactions.date, to),
+          ),
+        );
+
+      return rows;
+    });
   }
 
   async findActiveExpenseRules(workspaceId: string): Promise<ActiveBillRule[]> {
-    return this.loadActiveExpenseRules(this.drizzle.db, workspaceId);
+    return this.drizzle.db.transaction(async (tx) => {
+      await tx.execute(statementTimeout(STATEMENT_TIMEOUT_MS));
+
+      return this.loadActiveExpenseRules(tx, workspaceId);
+    });
   }
 
   private async loadActiveExpenseRules(
@@ -185,72 +236,80 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
     timezone,
     now,
     patterns,
-  }: PersistDetectionInput): Promise<void> {
-    const persisted = await this.drizzle.db.transaction(async (tx) => {
-      await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
-      await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
+  }: PersistDetectionInput): Promise<PersistDetectionOutcome> {
+    const outcome = await this.drizzle.db.transaction(
+      async (tx): Promise<PersistDetectionOutcome> => {
+        await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+        await tx.execute(statementTimeout(STATEMENT_TIMEOUT_MS));
 
-      const [workspace] = await tx
-        .select({ lastBillDetectionAt: schema.workspaces.lastBillDetectionAt })
-        .from(schema.workspaces)
-        .where(eq(schema.workspaces.id, workspaceId))
-        .for('update');
+        const [workspace] = await tx
+          .select({
+            lastBillDetectionAt: schema.workspaces.lastBillDetectionAt,
+          })
+          .from(schema.workspaces)
+          .where(eq(schema.workspaces.id, workspaceId))
+          .for('update');
 
-      if (!workspace) return false;
-      if (
-        workspace.lastBillDetectionAt &&
-        localMonthKey(workspace.lastBillDetectionAt, timezone) ===
-          localMonthKey(now, timezone)
-      ) {
-        return false;
-      }
-
-      const existing = await tx
-        .select()
-        .from(schema.recurringSuggestions)
-        .where(eq(schema.recurringSuggestions.workspaceId, workspaceId))
-        .orderBy(asc(schema.recurringSuggestions.createdAt));
-
-      const claimed = new Set<string>();
-      const toInsert: DetectedBillSuggestion[] = [];
-      const toUpdate: MatchedPattern[] = [];
-      const links: LinkRow[] = [];
-
-      for (const pattern of patterns) {
-        const match = existing.find(
-          (row) => !claimed.has(row.id) && isSamePattern(row, pattern),
-        );
-        if (match) claimed.add(match.id);
-        if (isSettled(match)) continue;
-
-        if (match) {
-          toUpdate.push({ id: match.id, pattern });
-          links.push(...toLinkRows(match.id, pattern.transactionIds));
-          continue;
+        if (!workspace) return 'not-due';
+        if (
+          workspace.lastBillDetectionAt &&
+          localMonthKey(workspace.lastBillDetectionAt, timezone) ===
+            localMonthKey(now, timezone)
+        ) {
+          return 'not-due';
         }
-        toInsert.push(pattern);
-      }
 
-      await this.updatePatterns(tx, workspaceId, toUpdate, now);
-      const inserted = await this.insertPatterns(tx, workspaceId, toInsert);
-      for (const { id, pattern } of inserted) {
-        links.push(...toLinkRows(id, pattern.transactionIds));
-      }
-      await this.insertLinks(tx, links);
+        const existing = await tx
+          .select()
+          .from(schema.recurringSuggestions)
+          .where(eq(schema.recurringSuggestions.workspaceId, workspaceId))
+          .orderBy(asc(schema.recurringSuggestions.createdAt));
 
-      await tx
-        .update(schema.workspaces)
-        .set({ lastBillDetectionAt: now })
-        .where(eq(schema.workspaces.id, workspaceId));
+        const claimed = new Set<string>();
+        const toInsert: DetectedBillSuggestion[] = [];
+        const toUpdate: MatchedPattern[] = [];
+        const links: LinkRow[] = [];
 
-      return true;
-    });
+        for (const pattern of patterns) {
+          const match = existing.find(
+            (row) => !claimed.has(row.id) && isSamePattern(row, pattern),
+          );
+          if (match) claimed.add(match.id);
+          if (isSettled(match)) continue;
 
-    if (!persisted) return;
+          if (match) {
+            toUpdate.push({ id: match.id, pattern });
+            links.push(...toLinkRows(match.id, pattern.transactionIds));
+            continue;
+          }
+          toInsert.push(pattern);
+        }
+
+        await this.updatePatterns(tx, workspaceId, toUpdate, now);
+        const inserted = await this.insertPatterns(tx, workspaceId, toInsert);
+        for (const { id, pattern } of inserted) {
+          links.push(...toLinkRows(id, pattern.transactionIds));
+        }
+        await this.insertLinks(tx, links);
+
+        await tx
+          .update(schema.workspaces)
+          .set({ lastBillDetectionAt: now })
+          .where(eq(schema.workspaces.id, workspaceId));
+
+        return toInsert.length + toUpdate.length > 0
+          ? 'persisted'
+          : 'unchanged';
+      },
+    );
+
+    if (outcome !== 'persisted') return outcome;
 
     this.logger.log(
       `Persisted ${patterns.length} recurring suggestion patterns for workspace ${workspaceId}`,
     );
+
+    return outcome;
   }
 
   private async updatePatterns(

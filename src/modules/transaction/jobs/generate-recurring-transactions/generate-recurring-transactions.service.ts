@@ -1,5 +1,4 @@
 import { RecurrenceFrequency, TransactionStatus } from '@constants/enums';
-import { RECURRING_GENERATION_TIMEZONE } from '@constants/timezone';
 import {
   CacheProvider,
   LockHandle,
@@ -10,7 +9,11 @@ import {
   RecurringGenerationFailedError,
   UnknownRecurrenceFrequencyError,
 } from '@modules/transaction/errors';
-import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
+import {
+  CreateGeneratedTransactionsResult,
+  RecurringRuleSchedule,
+  RecurringTransactionRepository,
+} from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -18,11 +21,24 @@ import { captureException } from '@sentry/nestjs';
 import { invalidateLedgerReads } from '@shared/cache/report-cache';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { getErrorDetails } from '@shared/utils/error-details';
+import { isPlanExhaustedBefore } from '@utils/installmentSchedule';
 
 const BATCH_SIZE = 50;
 const LOCK_TTL_SECONDS = 300;
 const CACHE_TTL_SECONDS = 86400;
 const LOOK_AHEAD_DAYS = 7;
+const RUN_CLOCK_TIMEZONE = 'UTC';
+const FOREIGN_KEY_VIOLATION = '23503';
+const RECURRING_RULE_FK =
+  /transactions_recurring_transaction_id_(recurring_transactions_id|fkey)/;
+
+function isMissingRecurringRuleViolation(error: unknown): boolean {
+  const { sqlState, messageChain } = getErrorDetails(error);
+
+  return (
+    sqlState === FOREIGN_KEY_VIOLATION && RECURRING_RULE_FK.test(messageChain)
+  );
+}
 
 function getMaxGenerations(frequency: RecurrenceFrequency): number {
   switch (frequency) {
@@ -48,21 +64,28 @@ export type RecurringGenerationOutcome =
 export interface GenerateRecurringTransactionsSummary {
   outcome: RecurringGenerationOutcome;
   generatedCount: number;
+  skippedCount: number;
   failedCount: number;
   processedCount: number;
 }
 
 interface GenerationCounters {
   generatedCount: number;
+  skippedCount: number;
   failedCount: number;
   processedCount: number;
 }
 
 interface RecurrenceOutcome {
   generatedCount: number;
+  skipped: boolean;
   failed: boolean;
   persisted: boolean;
 }
+
+type GeneratedWriteResult =
+  | CreateGeneratedTransactionsResult
+  | { outcome: 'skipped-rule-gone' };
 
 function skippedSummary(
   outcome: Extract<
@@ -70,7 +93,13 @@ function skippedSummary(
     'skipped-already-processed' | 'skipped-lock-held'
   >,
 ): GenerateRecurringTransactionsSummary {
-  return { outcome, generatedCount: 0, failedCount: 0, processedCount: 0 };
+  return {
+    outcome,
+    generatedCount: 0,
+    skippedCount: 0,
+    failedCount: 0,
+    processedCount: 0,
+  };
 }
 
 function classifyOutcome(
@@ -106,7 +135,7 @@ export class GenerateRecurringTransactionsJobService {
       const day = this.dateProvider.format(
         now,
         'YYYY-MM-DD',
-        RECURRING_GENERATION_TIMEZONE,
+        RUN_CLOCK_TIMEZONE,
       );
 
       const cacheKey = `processed:recurring:${day}`;
@@ -137,7 +166,7 @@ export class GenerateRecurringTransactionsJobService {
         now,
         LOOK_AHEAD_DAYS,
         'day',
-        RECURRING_GENERATION_TIMEZONE,
+        RUN_CLOCK_TIMEZONE,
       );
 
       const counters = await this.generateAll(lookAheadDate);
@@ -164,12 +193,13 @@ export class GenerateRecurringTransactionsJobService {
   private async generateAll(lookAheadDate: Date): Promise<GenerationCounters> {
     const counters: GenerationCounters = {
       generatedCount: 0,
+      skippedCount: 0,
       failedCount: 0,
       processedCount: 0,
     };
     const persistedWorkspaceIds = new Set<string>();
     let afterId: string | null = null;
-    let batch: RecurringTransaction[];
+    let batch: RecurringRuleSchedule[];
 
     try {
       do {
@@ -179,22 +209,23 @@ export class GenerateRecurringTransactionsJobService {
           afterId,
         );
 
-        for (const recurring of batch) {
+        for (const schedule of batch) {
           counters.processedCount++;
 
           const outcome = await this.generateForRecurring(
-            recurring,
+            schedule,
             lookAheadDate,
           );
           counters.generatedCount += outcome.generatedCount;
 
+          if (outcome.skipped) counters.skippedCount++;
           if (outcome.failed) counters.failedCount++;
           if (outcome.persisted) {
-            persistedWorkspaceIds.add(recurring.workspaceId);
+            persistedWorkspaceIds.add(schedule.recurring.workspaceId);
           }
         }
 
-        afterId = batch.at(-1)?.id ?? null;
+        afterId = batch.at(-1)?.recurring.id ?? null;
       } while (batch.length === BATCH_SIZE);
     } finally {
       await this.invalidateReports(persistedWorkspaceIds);
@@ -214,17 +245,22 @@ export class GenerateRecurringTransactionsJobService {
   }
 
   private async generateForRecurring(
-    recurring: RecurringTransaction,
+    schedule: RecurringRuleSchedule,
     thresholdDate: Date,
   ): Promise<RecurrenceOutcome> {
     try {
       return await this.generateTransactionsForRecurring(
-        recurring,
+        schedule,
         thresholdDate,
       );
     } catch (error: unknown) {
-      this.reportRecurringFailure(recurring.id, error);
-      return { generatedCount: 0, failed: true, persisted: false };
+      this.reportRecurringFailure(schedule.recurring.id, error);
+      return {
+        generatedCount: 0,
+        skipped: false,
+        failed: true,
+        persisted: false,
+      };
     }
   }
 
@@ -238,10 +274,31 @@ export class GenerateRecurringTransactionsJobService {
     );
   }
 
+  private planIsExhaustedBefore(
+    schedule: RecurringRuleSchedule,
+    targetDate: Date,
+  ): boolean {
+    const { recurring, timezone } = schedule;
+
+    return isPlanExhaustedBefore(
+      {
+        startDate: recurring.startDate,
+        frequency: recurring.frequency,
+        interval: recurring.interval,
+        installmentCount: recurring.installmentCount,
+        endDate: recurring.endDate,
+        timezone,
+      },
+      targetDate,
+      this.dateProvider,
+    );
+  }
+
   private async generateTransactionsForRecurring(
-    recurring: RecurringTransaction,
+    schedule: RecurringRuleSchedule,
     thresholdDate: Date,
   ): Promise<RecurrenceOutcome> {
+    const { recurring, timezone } = schedule;
     const transactionsToCreate: Array<Transaction> = [];
     let failed = false;
 
@@ -251,7 +308,7 @@ export class GenerateRecurringTransactionsJobService {
           baseDate: recurring.lastGenerated,
           frequency: recurring.frequency,
           interval: recurring.interval,
-          timezone: RECURRING_GENERATION_TIMEZONE,
+          timezone,
         })
       : recurring.startDate;
 
@@ -265,7 +322,10 @@ export class GenerateRecurringTransactionsJobService {
         break;
       }
 
-      if (recurring.endDate && targetDate > recurring.endDate) {
+      if (this.planIsExhaustedBefore(schedule, targetDate)) {
+        this.logger.warn(
+          `Job: plano esgotado ${recurring.endDate ? 'pela data final' : 'pela contagem de parcelas'}; recorrência ${recurring.id} (workspace ${recurring.workspaceId}) na última geração ${this.dateProvider.format(recurring.lastGenerated ?? recurring.startDate, 'YYYY-MM-DD', timezone)}, data alvo ${this.dateProvider.format(targetDate, 'YYYY-MM-DD', timezone)}.`,
+        );
         recurring.deactivate();
         break;
       }
@@ -299,7 +359,7 @@ export class GenerateRecurringTransactionsJobService {
         baseDate: targetDate,
         frequency: recurring.frequency,
         interval: recurring.interval,
-        timezone: RECURRING_GENERATION_TIMEZONE,
+        timezone,
       });
       generationCount++;
     }
@@ -307,15 +367,54 @@ export class GenerateRecurringTransactionsJobService {
     const shouldPersist = transactionsToCreate.length > 0 || !recurring.active;
 
     if (!shouldPersist) {
-      return { generatedCount: 0, failed, persisted: false };
+      return { generatedCount: 0, skipped: false, failed, persisted: false };
     }
 
-    const generatedCount =
-      await this.recurringRepository.createGeneratedTransactions(
-        transactionsToCreate,
+    const write = await this.writeGeneratedTransactions(
+      recurring,
+      transactionsToCreate,
+    );
+
+    if (write.outcome === 'skipped-rule-locked') {
+      this.logger.warn(
+        `Job: recorrência ${recurring.id} em exclusão (skipped-rule-locked); geração ignorada.`,
+      );
+      return { generatedCount: 0, skipped: true, failed, persisted: false };
+    }
+
+    if (write.outcome === 'skipped-rule-gone') {
+      this.logger.warn(
+        `Job: recorrência ${recurring.id} foi excluída (skipped-rule-gone); geração ignorada.`,
+      );
+      return {
+        generatedCount: 0,
+        skipped: true,
+        failed: false,
+        persisted: false,
+      };
+    }
+
+    return {
+      generatedCount: write.createdCount,
+      skipped: false,
+      failed,
+      persisted: true,
+    };
+  }
+
+  private async writeGeneratedTransactions(
+    recurring: RecurringTransaction,
+    transactions: Transaction[],
+  ): Promise<GeneratedWriteResult> {
+    try {
+      return await this.recurringRepository.createGeneratedTransactions(
+        transactions,
         recurring,
       );
+    } catch (error: unknown) {
+      if (!isMissingRecurringRuleViolation(error)) throw error;
 
-    return { generatedCount, failed, persisted: true };
+      return { outcome: 'skipped-rule-gone' };
+    }
   }
 }
