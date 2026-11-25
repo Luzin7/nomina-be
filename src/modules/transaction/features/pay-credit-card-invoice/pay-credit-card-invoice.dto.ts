@@ -3,7 +3,10 @@ import { z } from 'zod';
 
 const payCreditCardInvoiceSchema = z.object({
   sourceAccountId: z.string().uuid('ID da conta origem inválido'),
-  amount: z.coerce.number().positive('Valor deve ser positivo'),
+  amount: z.coerce
+    .number()
+    .int('Valor deve ser um valor inteiro')
+    .positive('Valor deve ser positivo'),
   description: z.string().optional().nullable(),
   // Opcional: quando o cliente não informa, o service resolve a categoria de
   // sistema `Cartão de Crédito` pelo nome. Um UUID fixo aqui só funcionaria no

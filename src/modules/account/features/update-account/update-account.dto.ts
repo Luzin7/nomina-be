@@ -30,6 +30,7 @@ export const updateAccountSchema = z.object({
     .nullable(),
   creditLimit: z.coerce
     .number()
+    .int('Limite deve ser um valor inteiro')
     .positive('Limite deve ser positivo')
     .optional(),
 });
