@@ -797,9 +797,9 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
     it.each([
       ['2026-01-31', 'MONTHLY', 1, '2026-02-28', '2026-03-31'],
-      ['2026-01-31', 'MONTHLY', 1, '2026-03-28', '2026-04-30'],
+      ['2026-01-31', 'MONTHLY', 1, '2026-03-28', '2026-03-31'],
       ['2024-02-29', 'YEARLY', 1, '2025-02-28', '2026-02-28'],
-      ['2026-01-31', 'MONTHLY', 2, '2026-03-28', '2026-05-31'],
+      ['2026-01-31', 'MONTHLY', 2, '2026-03-28', '2026-03-31'],
     ])(
       'anchor %s %s every %i after %s generates %s',
       async (start, frequency, interval, last, expected) => {

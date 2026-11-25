@@ -868,6 +868,34 @@ describe('GetSpendableService', () => {
     expect(result.spendableCents).toBe(100000);
   });
 
+  it('edge: a half-month window bills a monthly rule later in its month', async () => {
+    given.cycle = 'half_month';
+    given.accounts = [checking(100000n)];
+    given.recurrences = [
+      recurrence({ startDate: new Date('2026-06-20T12:00:00.000Z') }),
+    ];
+
+    now = new Date('2026-12-20T12:00:00.000Z');
+    const result = await run();
+
+    expect(result.cycleStartDate).toBe('2026-12-16');
+    expect(result.obligationsCents).toBe(50000);
+  });
+
+  it('edge: a Tokyo rule later in the anchor month still bills', async () => {
+    given.accounts = [checking(100000n)];
+    given.recurrences = [
+      recurrence({
+        timezone: 'Asia/Tokyo',
+        startDate: new Date('2025-06-10T15:00:00.000Z'),
+      }),
+    ];
+
+    const result = await run();
+
+    expect(result.obligationsCents).toBe(50000);
+  });
+
   it('serves the second read from the cache', async () => {
     given.accounts = [checking(100000n)];
 

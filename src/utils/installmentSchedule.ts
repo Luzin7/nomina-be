@@ -131,9 +131,15 @@ export function nextOccurrenceAfter(
     return weeklyOccurrenceAfter(schedule, after, dateProvider);
   }
 
-  const period = calendarPeriodIndex(schedule, after, dateProvider);
+  let index = calendarPeriodIndex(schedule, after, dateProvider);
+  let candidate = addOccurrences(schedule, index, dateProvider);
 
-  return addOccurrences(schedule, period + 1, dateProvider);
+  while (candidate.getTime() <= after.getTime()) {
+    index++;
+    candidate = addOccurrences(schedule, index, dateProvider);
+  }
+
+  return candidate;
 }
 
 export function calculateInstallmentEndDate(

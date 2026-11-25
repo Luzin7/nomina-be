@@ -310,6 +310,18 @@ describe('nextOccurrence parity with CalculateNextGenerationDateService', () => 
   });
 });
 
+describe('nextOccurrenceAfter', () => {
+  it('should return the occurrence later in the anchor month', () => {
+    expect(
+      nextOccurrenceAfter(
+        schedule({ startDate: new Date('2026-06-20T12:00:00Z') }),
+        new Date('2026-12-15T23:59:59.999Z'),
+        dateProvider,
+      ),
+    ).toEqual(new Date('2026-12-20T12:00:00Z'));
+  });
+});
+
 describe('isPlanExhaustedBefore', () => {
   const realDateProvider = new DayJsDateProvider();
   const startDate = realDateProvider.startOfDay('2026-01-10', DEFAULT_TIMEZONE);
