@@ -733,6 +733,109 @@ describe('GetSpendableService', () => {
     });
   });
 
+  it('edge: a Tokyo bill belongs to the cycle holding its instant, not its Tokyo date', async () => {
+    const tokyoMidnight = new Date('2026-11-30T15:00:00.000Z');
+    given.accounts = [checking(100000n)];
+    given.recurrences = [
+      recurrence({
+        timezone: 'Asia/Tokyo',
+        amount: 50000,
+        startDate: tokyoMidnight,
+        endDate: tokyoMidnight,
+      }),
+    ];
+
+    const november = await run();
+    expect(november.cycleStartDate).toBe('2026-11-01');
+    expect(november.obligationsCents).toBe(50000);
+    expect(november.spendableCents).toBe(50000);
+
+    now = new Date('2026-12-15T12:00:00.000Z');
+    const december = await run();
+    expect(december.cycleStartDate).toBe('2026-12-01');
+    expect(december.obligationsCents).toBe(0);
+    expect(december.spendableCents).toBe(100000);
+  });
+
+  it('edge: a Los Angeles bill on the last workspace day counts in that cycle', async () => {
+    const losAngelesMidnight = new Date('2026-11-30T08:00:00.000Z');
+    given.accounts = [checking(100000n)];
+    given.recurrences = [
+      recurrence({
+        timezone: 'America/Los_Angeles',
+        amount: 50000,
+        startDate: losAngelesMidnight,
+        endDate: new Date('2026-12-30T08:00:00.000Z'),
+      }),
+    ];
+
+    const november = await run();
+    expect(november.obligationsCents).toBe(50000);
+
+    now = new Date('2026-12-15T12:00:00.000Z');
+    const december = await run();
+    expect(december.obligationsCents).toBe(50000);
+  });
+
+  it('edge: a Los Angeles bill at 21:00 already falls in the next workspace day', async () => {
+    const losAngelesNight = new Date('2026-12-01T05:00:00.000Z');
+    given.accounts = [checking(100000n)];
+    given.recurrences = [
+      recurrence({
+        timezone: 'America/Los_Angeles',
+        amount: 50000,
+        startDate: losAngelesNight,
+        endDate: losAngelesNight,
+      }),
+    ];
+
+    const november = await run();
+    expect(november.obligationsCents).toBe(0);
+
+    now = new Date('2026-12-15T12:00:00.000Z');
+    const december = await run();
+    expect(december.obligationsCents).toBe(50000);
+  });
+
+  it('edge: a New York bill across the spring DST change keeps one occurrence per cycle', async () => {
+    given.accounts = [checking(100000n)];
+    given.recurrences = [
+      recurrence({
+        timezone: 'America/New_York',
+        amount: 50000,
+        startDate: new Date('2026-02-08T05:00:00.000Z'),
+        endDate: new Date('2026-04-08T04:00:00.000Z'),
+      }),
+    ];
+
+    now = new Date('2026-03-15T12:00:00.000Z');
+    const march = await run();
+    expect(march.obligationsCents).toBe(50000);
+
+    now = new Date('2026-02-15T12:00:00.000Z');
+    const february = await run();
+    expect(february.obligationsCents).toBe(50000);
+
+    now = new Date('2026-04-15T12:00:00.000Z');
+    const april = await run();
+    expect(april.obligationsCents).toBe(50000);
+  });
+
+  it('edge: a same-timezone workspace keeps a long-lived rule unchanged', async () => {
+    given.accounts = [checking(100000n)];
+    given.recurrences = [
+      recurrence({
+        amount: 50000,
+        startDate: new Date('2025-06-05T12:00:00.000Z'),
+      }),
+    ];
+
+    const result = await run();
+
+    expect(result.obligationsCents).toBe(50000);
+    expect(result.spendableCents).toBe(50000);
+  });
+
   it('serves the second read from the cache', async () => {
     given.accounts = [checking(100000n)];
 
