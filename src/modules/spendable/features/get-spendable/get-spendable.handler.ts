@@ -116,7 +116,6 @@ type CardResolutionInput = {
   workspaceId: string;
   accounts: AnyAccount[];
   cashAccountIds: ReadonlySet<string>;
-  window: CycleWindow;
 };
 
 type ScheduledTotals = {
@@ -346,7 +345,6 @@ export class GetSpendableService implements Service<
           workspaceId,
           accounts,
           cashAccountIds,
-          window,
         }),
       ),
     );
@@ -391,7 +389,6 @@ export class GetSpendableService implements Service<
     workspaceId,
     accounts,
     cashAccountIds,
-    window,
   }: CardResolutionInput): Promise<CardResolution> {
     if ('undated' in draft)
       return { card: null, undated: draft.undated, invoiceCents: 0 };
@@ -423,10 +420,9 @@ export class GetSpendableService implements Service<
             limitCents: budget.limitCents,
             spendCents,
           });
-    const owedInCycle =
-      payable.key === candidate.key || window.contains(payable.dueDate);
+    const stillOwed = payable.key === candidate.key;
     const invoiceCents =
-      owedInCycle && this.fundsFromCash(card, accounts, cashAccountIds)
+      stillOwed && this.fundsFromCash(card, accounts, cashAccountIds)
         ? Number(statementOf(payable.key).remaining)
         : 0;
 
