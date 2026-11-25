@@ -42,6 +42,7 @@ type Given = {
   accounts: AnyAccount[];
   cashBalances?: { accountId: string; balanceCents: number }[];
   budgets: Record<string, number>;
+  budgetEffectiveFrom?: string;
   spends: Record<string, number>;
   invoices: Record<string, InvoiceOverride>;
   pendingCents: number;
@@ -146,17 +147,21 @@ describe('GetSpendableService', () => {
     } as unknown as jest.Mocked<AccountRepository>;
 
     cardCycleRepository = {
-      findApplicableBudget: jest.fn(async (_workspaceId, accountId) => {
-        const limitCents = given.budgets[accountId];
-        if (limitCents === undefined) return null;
-        return {
-          id: `budget-${accountId}`,
-          workspaceId: WORKSPACE_ID,
-          accountId,
-          effectiveFrom: '2026-01-01',
-          limitCents,
-        };
-      }),
+      findApplicableBudget: jest.fn(
+        async (_workspaceId, accountId, dueDate) => {
+          const limitCents = given.budgets[accountId];
+          if (limitCents === undefined) return null;
+          const effectiveFrom = given.budgetEffectiveFrom ?? '2026-01-01';
+          if (effectiveFrom > dueDate) return null;
+          return {
+            id: `budget-${accountId}`,
+            workspaceId: WORKSPACE_ID,
+            accountId,
+            effectiveFrom,
+            limitCents,
+          };
+        },
+      ),
       sumCycleSpend: jest.fn(
         async ({ accountId, periodStart }: CardCycleSpendInput) =>
           given.spends[`${accountId}|${periodStart}`] ??
@@ -265,7 +270,7 @@ describe('GetSpendableService', () => {
       makeCreditCard({ id: 'card-1', name: 'Nubank', dueDay: 25 }),
     ];
     given.budgets['card-1'] = 50000;
-    given.spends['card-1'] = 10000;
+    given.spends['card-1|2026-10-21'] = 10000;
 
     const result = await run();
 
@@ -278,8 +283,7 @@ describe('GetSpendableService', () => {
       headroomCents: 40000,
     });
     expect(result.cardsHeadroomCents).toBe(40000);
-    expect(result.obligationsCents).toBe(10000);
-    expect(result.spendableCents).toBe(230000);
+    expect(result.spendableCents).toBe(240000);
   });
 
   it('row 5: three declared cards sum their headrooms', async () => {
@@ -291,14 +295,17 @@ describe('GetSpendableService', () => {
       makeCreditCard({ id: 'card-3', name: 'Three', dueDay: 27 }),
     ];
     given.budgets = { 'card-1': 50000, 'card-2': 30000, 'card-3': 20000 };
-    given.spends = { 'card-1': 10000, 'card-2': 10000, 'card-3': 5000 };
+    given.spends = {
+      'card-1|2026-10-21': 10000,
+      'card-2|2026-10-22': 10000,
+      'card-3|2026-10-23': 5000,
+    };
 
     const result = await run();
 
     expect(result.cards).toHaveLength(3);
     expect(result.cardsHeadroomCents).toBe(75000);
-    expect(result.obligationsCents).toBe(25000);
-    expect(result.spendableCents).toBe(250000);
+    expect(result.spendableCents).toBe(275000);
   });
 
   it('row 6: a card without a declared budget does not appear', async () => {
@@ -307,26 +314,26 @@ describe('GetSpendableService', () => {
       checking(200000n),
       makeCreditCard({ id: 'card-1', name: 'Visa', dueDay: 25 }),
     ];
-    given.spends['card-1'] = 80000;
+    given.spends['card-1|2026-10-21'] = 80000;
 
     const result = await run();
 
     expect(result.cards).toEqual([]);
-    expect(result.obligationsCents).toBe(80000);
-    expect(result.spendableCents).toBe(120000);
+    expect(result.obligationsCents).toBe(0);
+    expect(result.spendableCents).toBe(200000);
   });
 
   it('row 7: a card budget with empty cash spends from the card only', async () => {
     given.cycle = 'half_month';
     given.accounts = [makeCreditCard({ id: 'card-1', dueDay: 25 })];
     given.budgets['card-1'] = 60000;
-    given.spends['card-1'] = 10000;
+    given.spends['card-1|2026-10-21'] = 10000;
 
     const result = await run();
 
     expect(result.cashFreeCents).toBe(0);
     expect(result.spendableCents).toBe(50000);
-    expect(result.state).toBe('obligations_above_cash');
+    expect(result.state).toBe('cards_only');
   });
 
   it('row 8: overdrawn cash stays negative and never nets the card', async () => {
@@ -453,7 +460,7 @@ describe('GetSpendableService', () => {
       makeCreditCard({ id: 'card-1', dueDay: 25 }),
     ];
     given.budgets['card-1'] = 150000;
-    given.spends['card-1'] = 100000;
+    given.spends['card-1|2026-10-21'] = 100000;
 
     const result = await run();
 
@@ -461,12 +468,51 @@ describe('GetSpendableService', () => {
     expect(cardCycleRepository.sumCycleSpend).toHaveBeenCalledWith(
       expect.objectContaining({
         accountId: 'card-1',
-        periodStart: '2026-09-21',
-        periodEnd: '2026-10-20',
+        periodStart: '2026-10-21',
+        periodEnd: '2026-11-20',
       }),
     );
-    expect(result.obligationsCents).toBe(100000);
-    expect(result.spendableCents).toBe(50000);
+    expect(result.obligationsCents).toBe(0);
+    expect(result.spendableCents).toBe(150000);
+  });
+
+  it('edge: a settled previous invoice does not pull the next bill into the cycle', async () => {
+    given.cycle = 'half_month';
+    given.accounts = [
+      checking(200000n),
+      makeCreditCard({ id: 'card-1', dueDay: 25 }),
+    ];
+    given.spends['card-1|2026-09-21'] = 80000;
+    given.invoices['card-1|2026-09-21'] = { paymentsInPeriod: 80000 };
+    given.spends['card-1|2026-10-21'] = 30000;
+
+    const result = await run();
+
+    expect(result.obligationsCents).toBe(0);
+    expect(result.cashFreeCents).toBe(200000);
+  });
+
+  it('edge: an unpaid previous bill keeps the current-cycle budget and headroom', async () => {
+    given.cycle = 'half_month';
+    given.accounts = [
+      checking(200000n),
+      makeCreditCard({ id: 'card-1', dueDay: 25 }),
+    ];
+    given.budgets['card-1'] = 50000;
+    given.budgetEffectiveFrom = '2026-11-25';
+    given.spends['card-1|2026-09-21'] = 40000;
+    given.spends['card-1|2026-10-21'] = 10000;
+
+    const result = await run();
+
+    expect(result.cards[0]).toMatchObject({
+      dueDate: '2026-10-25',
+      limitCents: 50000,
+      spendCents: 10000,
+      headroomCents: 40000,
+    });
+    expect(result.cardsHeadroomCents).toBe(40000);
+    expect(result.obligationsCents).toBe(40000);
   });
 
   it('edge: the budget of the current invoice cycle is the one applied', async () => {

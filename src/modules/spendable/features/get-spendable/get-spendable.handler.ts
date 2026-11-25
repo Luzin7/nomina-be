@@ -116,6 +116,7 @@ type CardResolutionInput = {
   workspaceId: string;
   accounts: AnyAccount[];
   cashAccountIds: ReadonlySet<string>;
+  window: CycleWindow;
 };
 
 type ScheduledTotals = {
@@ -345,6 +346,7 @@ export class GetSpendableService implements Service<
           workspaceId,
           accounts,
           cashAccountIds,
+          window,
         }),
       ),
     );
@@ -389,6 +391,7 @@ export class GetSpendableService implements Service<
     workspaceId,
     accounts,
     cashAccountIds,
+    window,
   }: CardResolutionInput): Promise<CardResolution> {
     if ('undated' in draft)
       return { card: null, undated: draft.undated, invoiceCents: 0 };
@@ -397,7 +400,7 @@ export class GetSpendableService implements Service<
 
     const statementOf = (key: InvoiceKey) =>
       buildInvoiceStatementFromTotals(totals[keys.indexOf(key)]);
-    const bounds = payableInvoiceOf(
+    const payable = payableInvoiceOf(
       current,
       candidate,
       (key) => statementOf(key).remaining,
@@ -406,9 +409,9 @@ export class GetSpendableService implements Service<
       this.cardCycleRepository.findApplicableBudget(
         workspaceId,
         card.id,
-        bounds.dueDate,
+        current.dueDate,
       ),
-      this.spendOn(workspaceId, card, bounds),
+      this.spendOn(workspaceId, card, current),
     ]);
     const headroom =
       budget === null
@@ -416,13 +419,16 @@ export class GetSpendableService implements Service<
         : CardHeadroom.of({
             accountId: card.id,
             name: card.name,
-            dueDate: bounds.dueDate,
+            dueDate: payable.dueDate,
             limitCents: budget.limitCents,
             spendCents,
           });
-    const invoiceCents = this.fundsFromCash(card, accounts, cashAccountIds)
-      ? Number(statementOf(bounds.key).remaining)
-      : 0;
+    const owedInCycle =
+      payable.key === candidate.key || window.contains(payable.dueDate);
+    const invoiceCents =
+      owedInCycle && this.fundsFromCash(card, accounts, cashAccountIds)
+        ? Number(statementOf(payable.key).remaining)
+        : 0;
 
     return { card: headroom, undated: null, invoiceCents };
   }
