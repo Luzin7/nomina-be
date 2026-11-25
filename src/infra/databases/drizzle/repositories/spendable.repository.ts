@@ -75,19 +75,22 @@ export class SpendableRepositoryImplementation implements SpendableRepository {
           WHERE a.workspace_id = ${input.workspaceId}
             AND a.type IN ${cashTypesIn}
         ),
+        debited AS (
+          SELECT m.transaction_id, m.account_id, SUM(m.delta) AS delta
+          FROM balance_movements m
+          WHERE m.account_id IN (SELECT c.id FROM cash_accounts c)
+          GROUP BY m.transaction_id, m.account_id
+        ),
         pending AS (
           SELECT COALESCE(
-            SUM(GREATEST(0, t.amount + LEAST(COALESCE(d.debited, 0), 0))),
+            SUM(GREATEST(0, t.amount + LEAST(COALESCE(d.delta, 0), 0))),
             0
           )::text AS "pendingCents"
           FROM transactions t
           INNER JOIN cash_accounts a ON a.id = t.account_id
-          LEFT JOIN LATERAL (
-            SELECT SUM(m.delta) AS debited
-            FROM balance_movements m
-            WHERE m.account_id = t.account_id
-              AND m.transaction_id = t.id
-          ) d ON true
+          LEFT JOIN debited d
+            ON d.transaction_id = t.id
+            AND d.account_id = t.account_id
           WHERE t.workspace_id = ${input.workspaceId}
             AND t.type = ${TransactionType.EXPENSE}
             AND t.status = ${TransactionStatus.PENDING}

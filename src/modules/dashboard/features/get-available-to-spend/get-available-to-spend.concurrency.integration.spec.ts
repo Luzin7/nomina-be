@@ -6,6 +6,7 @@ import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetR
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
+import type { SpendablePayload } from '@modules/spendable/presenters/Spendable.presenter';
 import { CreateTransactionService } from '@modules/transaction/features/create-transaction/create-transaction.service';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
@@ -16,6 +17,7 @@ import {
   startPostgres,
 } from '@shared/cache/test-helpers/freshness-harness';
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
+import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { GetAvailableToSpendService } from './get-available-to-spend.handler';
 
@@ -36,6 +38,7 @@ type Hero = {
     provisional?: boolean;
     totalSpentCents: number;
   };
+  spendable: SpendablePayload | null;
   state: string;
 };
 
@@ -146,6 +149,35 @@ describe('available to spend without a budget snapshot against a real database',
 
     expect(hero.state).toBe('no-budget');
     expect(hero.budget.exists).toBe(false);
+  });
+
+  it('degrades to a null spendable payload when the snapshot hits the statement timeout', async () => {
+    const seed = await seedWorkspace();
+    let releaseLock!: () => void;
+    const lockReleased = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    let releaseLocked!: () => void;
+    const lockHeld = new Promise<void>((resolve) => {
+      releaseLocked = resolve;
+    });
+    const holder = postgres.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`LOCK TABLE balance_movements IN ACCESS EXCLUSIVE MODE`,
+      );
+      releaseLocked();
+      await lockReleased;
+    });
+    await lockHeld;
+
+    const startedAt = Date.now();
+    const hero = await readHero(seed).finally(releaseLock);
+    const elapsedMs = Date.now() - startedAt;
+    await holder;
+
+    expect(elapsedMs).toBeGreaterThanOrEqual(1_000);
+    expect(hero.spendable).toBeNull();
+    expect(hero.state).toBe('no-budget');
   });
 
   it('reads the repositories a fixed number of times on a cold provisional read', async () => {
