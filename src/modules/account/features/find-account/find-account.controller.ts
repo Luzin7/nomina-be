@@ -1,7 +1,7 @@
 import { UserRole } from '@constants/enums';
 import { ErrorPresenter } from '@infra/presenters/ErrorPresenter';
 import { AccountPresenter } from '@modules/account/presenters/Account.presenter';
-import { Controller, Get, HttpCode, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentLoggedUser } from '@providers/auth/decorators/CurrentLoggedUser.decorator';
 import { Roles } from '@providers/auth/decorators/Roles.decorator';
@@ -12,12 +12,11 @@ import { FindAccountByIdService } from './find-account.handler';
 
 @ApiTags('Account')
 @Controller('account')
-@UseGuards(UseGuards)
 @Roles(UserRole.OWNER, UserRole.ADMIN, UserRole.USER, UserRole.VIEWER)
 export class FindAccountController {
   constructor(private readonly service: FindAccountByIdService) {}
 
-  @Get(':id')
+  @Get(':accountId')
   @HttpCode(statusCode.OK)
   async handle(
     @CurrentLoggedUser() { workspaceId }: TokenPayloadSchema,
