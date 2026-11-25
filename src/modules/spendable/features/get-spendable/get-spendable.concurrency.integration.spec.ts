@@ -779,6 +779,25 @@ describe('spendable reads against a real postgres', () => {
     });
   });
 
+  describe('pending bill probe index', () => {
+    it('keeps balance_movements_transaction_id_account_id_idx in place', async () => {
+      const rows = await db.execute<{
+        indexname: string;
+        indexdef: string;
+      }>(sql`
+        SELECT indexname, indexdef FROM pg_indexes
+        WHERE tablename = 'balance_movements'
+          AND indexname = 'balance_movements_transaction_id_account_id_idx'
+      `);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].indexname).toBe(
+        'balance_movements_transaction_id_account_id_idx',
+      );
+      expect(rows[0].indexdef).toContain('(transaction_id, account_id)');
+    });
+  });
+
   describe('determinism', () => {
     it('returns the same numbers when the same reads run twice', async () => {
       await insertAccount('checking', {

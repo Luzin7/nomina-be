@@ -103,6 +103,7 @@ describe('available to spend without a budget snapshot against a real database',
   const spend = async (
     seed: Awaited<ReturnType<typeof seedWorkspace>>,
     amount: bigint,
+    status: TransactionStatus = TransactionStatus.COMPLETED,
   ) =>
     unwrap(
       await app.get(CreateTransactionService).execute({
@@ -114,7 +115,7 @@ describe('available to spend without a budget snapshot against a real database',
         amount,
         date: new Date().toISOString().slice(0, 10),
         type: TransactionType.EXPENSE,
-        status: TransactionStatus.COMPLETED,
+        status,
       } as never),
     );
 
@@ -153,6 +154,7 @@ describe('available to spend without a budget snapshot against a real database',
 
   it('degrades to a null spendable payload when the snapshot hits the statement timeout', async () => {
     const seed = await seedWorkspace();
+    await spend(seed, FIRST_AMOUNT, TransactionStatus.PENDING);
     let releaseLock!: () => void;
     const lockReleased = new Promise<void>((resolve) => {
       releaseLock = resolve;
@@ -175,9 +177,13 @@ describe('available to spend without a budget snapshot against a real database',
     const elapsedMs = Date.now() - startedAt;
     await holder;
 
+    await spend(seed, SECOND_AMOUNT);
+    const recovered = await readHero(seed);
+
     expect(elapsedMs).toBeGreaterThanOrEqual(1_000);
     expect(hero.spendable).toBeNull();
     expect(hero.state).toBe('no-budget');
+    expect(recovered.spendable?.obligationsCents).toBe(Number(FIRST_AMOUNT));
   });
 
   it('reads the repositories a fixed number of times on a cold provisional read', async () => {
