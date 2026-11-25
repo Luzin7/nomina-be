@@ -3,6 +3,15 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.7.1](https://github.com/Luzin7/nomina-be/compare/v2.7.0...v2.7.1) (2026-11-25)
+
+### Bug Fixes
+
+* **account:** return the previous card invoice when the current one is not due ([2d2de20](https://github.com/Luzin7/nomina-be/commit/2d2de202fd09c81f32e240b5b81278e90e34c2a9))
+* **spendable:** keep the cycle window and the current budget basis for card bills ([4389ed8](https://github.com/Luzin7/nomina-be/commit/4389ed8ff10dd1684f7e9d8a2fa9e10854a02ba8))
+* **spendable:** read card headroom due date from the bill inside the cycle ([1caaae2](https://github.com/Luzin7/nomina-be/commit/1caaae2d993edf42bc5a5cdf7ce2fd48d3565110))
+* **spendable:** serve the corrected payloads under a new cache version ([beb126d](https://github.com/Luzin7/nomina-be/commit/beb126d812029731fd9104c9639a4ce0c990ce95))
+
 ## [2.7.0](https://github.com/Luzin7/nomina-be/compare/v2.6.0...v2.7.0) (2026-11-25)
 
 ### Features
