@@ -172,7 +172,7 @@ export class GetSpendableService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'spendable:get',
-        version: 'v1',
+        version: 'v2',
         workspaceId,
         generations: { ledger },
         parts: [cycle, today],
