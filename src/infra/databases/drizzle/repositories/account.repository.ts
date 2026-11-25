@@ -17,7 +17,6 @@ import * as schema from '../schema';
 import { applyBalanceMovement, DrizzleTransaction } from './balance-movement';
 import { ensureEntityId } from './ensure-entity-id';
 import { insertOpeningMovement } from './opening-movement';
-
 type BalanceAdjustmentRow = typeof schema.balanceAdjustments.$inferSelect;
 
 function toAdjustmentRecord(
@@ -316,12 +315,14 @@ export class AccountRepositoryImplementation implements AccountRepository {
   }
 
   async findAllByWorkspaceId(workspaceId: string): Promise<AnyAccount[]> {
-    const accounts = await this.drizzle.db
-      .select()
-      .from(schema.accounts)
-      .where(eq(schema.accounts.workspaceId, workspaceId));
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      const accounts = await tx
+        .select()
+        .from(schema.accounts)
+        .where(eq(schema.accounts.workspaceId, workspaceId));
 
-    return accounts.map(AccountMapper.toDomain);
+      return accounts.map(AccountMapper.toDomain);
+    });
   }
 
   async countByWorkspaceId(workspaceId: string): Promise<number> {

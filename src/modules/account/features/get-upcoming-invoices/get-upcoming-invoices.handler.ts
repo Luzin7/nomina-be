@@ -204,7 +204,7 @@ export class GetUpcomingInvoicesService implements Service<
 
     for (const rule of recurrences) {
       const dates = walkOccurrences({
-        rule,
+        rule: { ...rule, timezone: account.timezone },
         from,
         until,
         nextOccurrence: (date) =>

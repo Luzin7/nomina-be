@@ -23,6 +23,7 @@ export class UpdateWorkspaceService implements Service<
     name,
     workspaceId,
     currency = 'BRL',
+    cycle,
   }: Request): Promise<Either<Error, Response>> {
     const workspace = await this.workspaceRepository.findById(workspaceId);
 
@@ -30,7 +31,12 @@ export class UpdateWorkspaceService implements Service<
       return left(new WorkspaceNotFoundError());
     }
 
-    workspace.updateDetails(name, currency, workspace.timezone);
+    workspace.updateDetails(
+      name,
+      currency,
+      workspace.timezone,
+      cycle ?? workspace.cycle,
+    );
 
     await this.workspaceRepository.update(workspace);
 

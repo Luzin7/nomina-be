@@ -5,6 +5,7 @@ import { CategoryModule } from '@modules/category/Category.module';
 import { DashboardModule } from '@modules/dashboard/Dashboard.module';
 import { GoalModule } from '@modules/goal/Goal.module';
 import { ReportModule } from '@modules/report/Report.module';
+import { SpendableModule } from '@modules/spendable/Spendable.module';
 import { SubscriptionModule } from '@modules/subscription/Subscription.module';
 import { TransactionModule } from '@modules/transaction/Transaction.module';
 import { UserModule } from '@modules/user/User.module';
@@ -51,6 +52,7 @@ import { buildRateLimitOptions } from './throttling/rate-limit.options';
     CardCycleModule,
     SubscriptionModule,
     GoalModule,
+    SpendableModule,
     DashboardModule,
   ],
   providers: [

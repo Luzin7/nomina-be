@@ -2,6 +2,7 @@ import { DatabaseModule } from '@infra/databases/Database.module';
 import { AccountModule } from '@modules/account/Account.module';
 import { BudgetModule } from '@modules/budget/Budget.module';
 import { ReportModule } from '@modules/report/Report.module';
+import { SpendableModule } from '@modules/spendable/Spendable.module';
 import { WorkspaceModule } from '@modules/workspace/Workspace.module';
 import { Module } from '@nestjs/common';
 import { DateModule } from '@providers/date/Date.module';
@@ -17,6 +18,7 @@ import { ProjectionShortfallInsightService } from './services/projection-shortfa
     BudgetModule,
     DatabaseModule,
     ReportModule,
+    SpendableModule,
     WorkspaceModule,
     DateModule,
   ],

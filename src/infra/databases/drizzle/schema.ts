@@ -3,6 +3,7 @@ import {
   BUDGET_MODE_DEFAULT,
   GoalProgressSource,
   type BudgetMode,
+  type WorkspaceCycle,
 } from '@constants/enums';
 import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import { sql } from 'drizzle-orm';
@@ -111,21 +112,31 @@ export const refreshTokens = pgTable(
 // WORKSPACE & COLABORAÇÃO
 // --------------------------------------------------------
 
-export const workspaces = pgTable('workspaces', {
-  id: text('id')
-    .primaryKey()
-    .$default(() => crypto.randomUUID()),
-  name: text('name').notNull(),
-  currency: text('currency').default('BRL').notNull(),
-  timezone: text('time_zone').default(DEFAULT_TIMEZONE).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
-    .defaultNow()
-    .notNull(),
-  lastBillDetectionAt: timestamp('last_bill_detection_at', {
-    withTimezone: true,
-    mode: 'date',
-  }),
-});
+export const workspaces = pgTable(
+  'workspaces',
+  {
+    id: text('id')
+      .primaryKey()
+      .$default(() => crypto.randomUUID()),
+    name: text('name').notNull(),
+    currency: text('currency').default('BRL').notNull(),
+    timezone: text('time_zone').default(DEFAULT_TIMEZONE).notNull(),
+    cycle: text('cycle').$type<WorkspaceCycle>().default('monthly').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+    lastBillDetectionAt: timestamp('last_bill_detection_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+  },
+  (table) => [
+    check(
+      'chk_workspaces_cycle',
+      sql`${table.cycle} IN ('monthly', 'half_month', 'weekly')`,
+    ),
+  ],
+);
 
 export const workspaceUsers = pgTable(
   'workspace_users',
@@ -654,6 +665,10 @@ export const balanceMovements = pgTable(
   },
   (table) => [
     index('idx_balance_movements_account_seq').on(table.accountId, table.seq),
+    index('balance_movements_transaction_id_account_id_idx').on(
+      table.transactionId,
+      table.accountId,
+    ),
     uniqueIndex('ux_balance_movements_opening')
       .on(table.accountId)
       .where(sql`${table.cause} = ${sql.raw(OPENING_CAUSE_LITERAL)}`),

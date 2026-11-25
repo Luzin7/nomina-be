@@ -64,7 +64,7 @@ describe('RecurringSuggestionRepositoryImplementation against a real postgres', 
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 
     repository = new RecurringSuggestionRepositoryImplementation(
-      { db } as unknown as DrizzleService,
+      new DrizzleService(db),
       dateProvider,
     );
   });

@@ -70,7 +70,7 @@ describe('Recurring suggestion detection against a real postgres', () => {
 
     const dateProvider = new FixedDateProvider(NOW);
     repository = new RecurringSuggestionRepositoryImplementation(
-      { db } as unknown as DrizzleService,
+      new DrizzleService(db),
       dateProvider,
     );
     cache = new InMemoryCacheProvider();

@@ -51,7 +51,6 @@ import { randomUUID } from 'node:crypto';
 const SYSTEM_CATEGORY_IDS = SYSTEM_CATEGORY_LIST.map((category) => category.id);
 
 const STATEMENT_TIMEOUT_MS = 5_000;
-const READ_STATEMENT_TIMEOUT_MS = 1_000;
 const BATCH_STATEMENT_TIMEOUT_MS = 10_000;
 
 const statementTimeout = (milliseconds: number) =>
@@ -96,9 +95,7 @@ export class RecurringSuggestionRepositoryImplementation implements RecurringSug
   ) {}
 
   async findDetectionState(workspaceId: string): Promise<BillDetectionState> {
-    return this.drizzle.db.transaction(async (tx) => {
-      await tx.execute(statementTimeout(READ_STATEMENT_TIMEOUT_MS));
-
+    return this.drizzle.withStatementTimeout(async (tx) => {
       const [workspace] = await tx
         .select({ lastBillDetectionAt: schema.workspaces.lastBillDetectionAt })
         .from(schema.workspaces)

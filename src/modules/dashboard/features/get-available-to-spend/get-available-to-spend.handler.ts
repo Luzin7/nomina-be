@@ -10,8 +10,12 @@ import type { MonthProjection } from '@modules/report/valueObjects/MonthProjecti
 import { readGoalGeneration } from '@modules/goal/services/goal-cache';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
+import { GetSpendableService } from '@modules/spendable/features/get-spendable/get-spendable.handler';
+import type { SpendablePayload } from '@modules/spendable/presenters/Spendable.presenter';
+import { SpendableRepository } from '@modules/spendable/repositories/contracts/SpendableRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable, Logger } from '@nestjs/common';
+import { captureException } from '@sentry/nestjs';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { buildCacheKey } from '@shared/cache/cache-key';
@@ -55,6 +59,11 @@ type RankedInsight = {
   degraded: boolean;
 };
 
+type SpendableOutcome = {
+  spendable: SpendablePayload | null;
+  failed: boolean;
+};
+
 type Request = Pick<TokenPayloadSchema, 'workspaceId' | 'sub'>;
 
 type InsightContext = Request & {
@@ -87,6 +96,8 @@ export class GetAvailableToSpendService implements Service<
     private readonly cardBillDueInsight: CardBillDueInsightService,
     private readonly projectionShortfallInsight: ProjectionShortfallInsightService,
     private readonly budgetSuggestionInsight: BudgetSuggestionInsightService,
+    private readonly getSpendable: GetSpendableService,
+    private readonly spendableRepository: SpendableRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly dateProvider: DateProvider,
     private readonly cache: CacheProvider,
@@ -96,10 +107,11 @@ export class GetAvailableToSpendService implements Service<
     request: Request,
   ): Promise<Either<Error, AvailableToSpendResponse>> {
     const { workspaceId } = request;
-    const [ledger, goal, category] = await Promise.all([
+    const [ledger, goal, category, cycle] = await Promise.all([
       readLedgerGeneration(this.cache, workspaceId),
       readGoalGeneration(this.cache, workspaceId),
       readCategoryGeneration(this.cache, workspaceId),
+      this.spendableRepository.findCycle(workspaceId),
     ]);
     const timezone = await this.workspaceTimezone.execute(workspaceId);
     const today = this.dateProvider.format(
@@ -112,10 +124,10 @@ export class GetAvailableToSpendService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'dashboard:available-to-spend',
-        version: 'v7',
+        version: 'v9',
         workspaceId,
         generations: { ledger, goal, category },
-        parts: [today],
+        parts: [today, cycle ?? 'unset'],
       }),
       ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
       load: () => this.compute(request, today),
@@ -133,10 +145,11 @@ export class GetAvailableToSpendService implements Service<
   ): Promise<Either<Error, ComputedAvailableToSpend>> {
     const [year, month] = today.split('-').map(Number);
 
-    const [budget, plan, goalAportesCents] = await Promise.all([
+    const [budget, plan, goalAportesCents, spendable] = await Promise.all([
       this.getBudgetStatus.execute({ workspaceId, sub, month, year }),
       this.resolveMonthPlan.execute({ workspaceId, month, year, today }),
       this.goalRepository.sumMonthlyAporteCents(workspaceId),
+      this.spendableOf(workspaceId),
     ]);
     if (budget.isLeft()) return left(budget.value);
     if (plan.isLeft()) return left(plan.value);
@@ -165,7 +178,8 @@ export class GetAvailableToSpendService implements Service<
     });
 
     return right({
-      degraded: ranked.degraded || isDegradedPlan(plan.value),
+      degraded:
+        ranked.degraded || isDegradedPlan(plan.value) || spendable.failed,
       response: {
         month: today.slice(0, 7),
         daysRemaining: projection.daysRemaining,
@@ -175,8 +189,24 @@ export class GetAvailableToSpendService implements Service<
           ? budget.value.unbudgetedCategories
           : [],
         insight: ranked.insight,
+        spendable: spendable.spendable,
       },
     });
+  }
+
+  private async spendableOf(workspaceId: string): Promise<SpendableOutcome> {
+    try {
+      const result = await this.getSpendable.execute({ workspaceId });
+      if (result.isLeft()) return { spendable: null, failed: true };
+
+      return { spendable: result.value, failed: false };
+    } catch (error) {
+      this.logger.warn(
+        `spendable failed workspaceId=${workspaceId} error=${describeError(error)}`,
+      );
+      captureException(error, { extra: { workspaceId } });
+      return { spendable: null, failed: true };
+    }
   }
 
   private async currentProjectionOf(

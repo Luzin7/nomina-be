@@ -64,4 +64,27 @@ describe('UpdateWorkspaceService', () => {
     if (result.isRight()) expect(result.value.name).toBe('New Name');
     expect(workspaceRepository.update).toHaveBeenCalledTimes(1);
   });
+
+  it('should set the cycle when the request carries one', async () => {
+    const workspace = makeWorkspace();
+    workspaceRepository.findById.mockResolvedValue(workspace);
+    workspaceRepository.update.mockImplementation(async (w) => w);
+
+    const result = await service.execute(makeRequest({ cycle: 'half_month' }));
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.cycle).toBe('half_month');
+  });
+
+  it('should preserve the current cycle when the request omits it', async () => {
+    const workspace = makeWorkspace();
+    workspace.updateDetails('Original Name', 'BRL', 'UTC', 'weekly');
+    workspaceRepository.findById.mockResolvedValue(workspace);
+    workspaceRepository.update.mockImplementation(async (w) => w);
+
+    const result = await service.execute(makeRequest());
+
+    expect(result.isRight()).toBe(true);
+    if (result.isRight()) expect(result.value.cycle).toBe('weekly');
+  });
 });
