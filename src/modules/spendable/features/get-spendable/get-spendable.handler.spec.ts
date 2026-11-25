@@ -896,6 +896,74 @@ describe('GetSpendableService', () => {
     expect(result.obligationsCents).toBe(50000);
   });
 
+  it('edge: the card reports the bill due inside the cycle, not the next open invoice', async () => {
+    given.accounts = [
+      checking(500000n),
+      makeCreditCard({ id: 'card-1', name: 'Nubank', dueDay: 28 }),
+    ];
+    given.budgets['card-1'] = 700000;
+    given.spends['card-1|2026-10-24'] = 12345;
+    now = new Date('2026-11-25T12:00:00.000Z');
+
+    const result = await run();
+
+    expect(result.cycleEndDate).toBe('2026-11-30');
+    expect(result.cards[0].dueDate).toBe('2026-11-28');
+    expect(result.obligationsCents).toBe(12345);
+  });
+
+  it('edge: a bill due on the last day of the cycle is still inside the cycle', async () => {
+    given.accounts = [
+      checking(500000n),
+      makeCreditCard({
+        id: 'card-1',
+        name: 'Nubank',
+        dueDay: 28,
+        closingDaysBeforeDue: 10,
+      }),
+    ];
+    given.budgets['card-1'] = 700000;
+    given.spends['card-1|2027-01-19'] = 8000;
+    now = new Date('2027-02-25T12:00:00.000Z');
+
+    const result = await run();
+
+    expect(result.cycleEndDate).toBe('2027-02-28');
+    expect(result.cards[0].dueDate).toBe('2027-02-28');
+    expect(result.obligationsCents).toBe(8000);
+  });
+
+  it('edge: a bill whose due day already passed still belongs to this cycle', async () => {
+    given.accounts = [
+      checking(500000n),
+      makeCreditCard({ id: 'card-1', name: 'Nubank', dueDay: 20 }),
+    ];
+    given.budgets['card-1'] = 700000;
+    given.spends['card-1|2026-10-16'] = 6000;
+    now = new Date('2026-11-25T12:00:00.000Z');
+
+    const result = await run();
+
+    expect(result.cards[0].dueDate).toBe('2026-11-20');
+    expect(result.obligationsCents).toBe(6000);
+  });
+
+  it('edge: the bill due inside the cycle is read on the workspace day, not the server day', async () => {
+    given.accounts = [
+      checking(500000n),
+      makeCreditCard({ id: 'card-1', name: 'Nubank', dueDay: 28 }),
+    ];
+    given.budgets['card-1'] = 700000;
+    given.spends['card-1|2026-10-24'] = 12345;
+    now = new Date('2026-12-01T02:00:00.000Z');
+
+    const result = await run();
+
+    expect(result.cycleEndDate).toBe('2026-11-30');
+    expect(result.cards[0].dueDate).toBe('2026-11-28');
+    expect(result.obligationsCents).toBe(12345);
+  });
+
   it('serves the second read from the cache', async () => {
     given.accounts = [checking(100000n)];
 

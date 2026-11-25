@@ -111,8 +111,7 @@ type InvoicePlanInput = {
   accounts: AnyAccount[];
   cashAccountIds: ReadonlySet<string>;
   calendar: InvoiceCalendar;
-  current: InvoiceBounds;
-  window: CycleWindow;
+  bill: InvoiceBounds | null;
   today: PlainDate;
 };
 
@@ -375,6 +374,7 @@ export class GetSpendableService implements Service<
       closingDaysBeforeDue: card.closingDaysBeforeDue,
     });
     const current = calendar.bounds(calendar.invoiceKeyFor(today));
+    const bill = this.billInWindowOf(calendar, current, window);
     const [budget, currentSpendCents] = await Promise.all([
       this.cardCycleRepository.findApplicableBudget(
         workspaceId,
@@ -392,7 +392,7 @@ export class GetSpendableService implements Service<
           : CardHeadroom.of({
               accountId: card.id,
               name: card.name,
-              dueDate: current.dueDate,
+              dueDate: bill?.dueDate ?? current.dueDate,
               limitCents: budget.limitCents,
               spendCents: currentSpendCents,
             }),
@@ -402,8 +402,7 @@ export class GetSpendableService implements Service<
         accounts,
         cashAccountIds,
         calendar,
-        current,
-        window,
+        bill,
         today,
       }),
     };
@@ -422,17 +421,15 @@ export class GetSpendableService implements Service<
     accounts,
     cashAccountIds,
     calendar,
-    current,
-    window,
+    bill,
     today,
   }: InvoicePlanInput): InvoicePlan | null {
-    const bounds = this.billInWindowOf(calendar, current, window);
-    if (bounds === null) return null;
+    if (bill === null) return null;
     if (!this.fundsFromCash(card, accounts, cashAccountIds)) return null;
 
     return {
       card,
-      window: cardInvoiceWindowOf(card, calendar, bounds.key, today),
+      window: cardInvoiceWindowOf(card, calendar, bill.key, today),
     };
   }
 
