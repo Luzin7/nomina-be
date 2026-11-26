@@ -95,6 +95,24 @@ describe('FindMonthSummaryService', () => {
     expect(result.value.rate.previousMonthCompareSaving).toBe(100);
   });
 
+  it('keeps the sign of the comparison when previous savings are negative', async () => {
+    reportRepository.findMonthSummaryMetrics.mockResolvedValue({
+      currentMonthData: { totalIncome: 0, totalExpense: 50 },
+      previousMonthData: { totalIncome: 0, totalExpense: 100 },
+      previousMonthToDateData: { totalIncome: 0, totalExpense: 0 },
+    });
+
+    const result = await service.execute({
+      sub: 'user-1',
+      workspaceId: 'ws-1',
+    });
+
+    expect(result.isRight()).toBe(true);
+    if (!result.isRight()) return;
+
+    expect(result.value.rate.previousMonthCompareSaving).toBe(50);
+  });
+
   describe('previousMonthToDate', () => {
     async function executeAt(
       now: Date,
