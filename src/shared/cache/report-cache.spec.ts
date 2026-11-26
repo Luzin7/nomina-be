@@ -4,11 +4,14 @@ import {
   LEDGER_LIVE_CACHE_TTL_SECONDS,
   invalidateLedgerReads,
   invalidateMonthReads,
+  invalidateStructureReads,
   ledgerGenerationKey,
   monthGenerationKey,
   monthKeyOf,
   readLedgerGeneration,
   readMonthGeneration,
+  readStructureGeneration,
+  structureGenerationKey,
 } from './report-cache';
 
 const NOW_MS = 1_700_000_000_000;
@@ -53,6 +56,30 @@ describe('report-cache', () => {
     await invalidateLedgerReads(cache, 'ws-1', 'test-write');
 
     expect(cache.counters.get('cache-gen:report:ws-1')).toBe(6);
+    expect(scan).not.toHaveBeenCalled();
+  });
+
+  it('composes the structure generation key', () => {
+    expect(structureGenerationKey('ws-1')).toBe(
+      'cache-gen:report:structure:ws-1',
+    );
+  });
+
+  it('initialises a missing structure generation with the current time', async () => {
+    const cache = new InMemoryCacheProvider();
+
+    await expect(readStructureGeneration(cache, 'ws-1')).resolves.toBe(NOW_MS);
+    expect(cache.counters.get('cache-gen:report:structure:ws-1')).toBe(NOW_MS);
+  });
+
+  it('bumps the structure generation without scanning the keyspace', async () => {
+    const cache = new InMemoryCacheProvider();
+    const scan = jest.spyOn(cache, 'delByPattern');
+    cache.counters.set('cache-gen:report:structure:ws-1', 5);
+
+    await invalidateStructureReads(cache, 'ws-1', 'test-write');
+
+    expect(cache.counters.get('cache-gen:report:structure:ws-1')).toBe(6);
     expect(scan).not.toHaveBeenCalled();
   });
 

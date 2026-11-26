@@ -34,6 +34,10 @@ import * as schema from '@infra/databases/drizzle/schema';
 import { GetExpensesByCategoryService } from '@modules/report/features/get-expenses-by-category/get-expenses-by-category.handler';
 import { GetMonthPaceService } from '@modules/report/features/get-month-pace/get-month-pace.handler';
 import { Transaction } from '@modules/transaction/entities/Transaction';
+import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { FRESHNESS_READS } from './test-helpers/freshness-reads';
@@ -178,7 +182,12 @@ defineFreshnessSuite({
     },
     {
       name: 'delete-account',
-      changes: ['list-accounts', 'list-goals', 'goal-contributions'],
+      changes: [
+        'list-accounts',
+        'list-goals',
+        'goal-contributions',
+        'expenses-by-category',
+      ],
       prepare: async (context) => {
         unwrap(
           await context.app.get(CreateGoalContributionService).execute({
@@ -188,6 +197,19 @@ defineFreshnessSuite({
             amountCents: 5_000,
             sourceAccountId: context.seed.otherAccountId,
           }),
+        );
+        unwrap(
+          await context.app.get(CreateTransactionService).execute({
+            workspaceId: context.seed.workspaceId,
+            sub: context.seed.userId,
+            accountId: context.seed.otherAccountId,
+            categoryId: context.seed.categoryId,
+            title: 'Deleted account expense',
+            amount: AMOUNT,
+            date: context.seed.today,
+            type: TransactionType.EXPENSE,
+            status: TransactionStatus.COMPLETED,
+          } as never),
         );
       },
       run: async (context) => {
@@ -629,6 +651,52 @@ describe('month scoped report generation', () => {
 
     expect(afterWrite).toBe(warmValue);
     expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toEqual([warmKey]);
+  });
+
+  it('re-reads the month entries after the workspace time zone changes', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const current = monthAt(seed, 0);
+    await createExpense(seed, current.date);
+
+    const warm = snapshot(await readExpenses(seed.workspaceId, current));
+    const warmKeys = missesFor(log, EXPENSES_ROUTE, seed.workspaceId);
+    expect(warmKeys).toHaveLength(1);
+
+    const workspace = await app
+      .get(WorkspaceRepository)
+      .findById(seed.workspaceId);
+    if (!workspace) throw new Error('workspace missing');
+    workspace.updateDetails(
+      workspace.name,
+      workspace.currency,
+      'America/Manaus',
+      workspace.cycle,
+    );
+    await app.get(WorkspaceRepository).update(workspace);
+    await valkey.cache.del(`workspace:timezone:${seed.workspaceId}`);
+
+    const afterService = new GetExpensesByCategoryService(
+      app.get(TransactionRepository),
+      new GetWorkspaceTimezoneService(
+        app.get(WorkspaceRepository),
+        valkey.cache,
+      ),
+      app.get(DateProvider),
+      valkey.cache,
+    );
+    const afterChange = snapshot(
+      await afterService.execute({
+        workspaceId: seed.workspaceId,
+        year: current.year,
+        month: current.month,
+        limit: 5,
+      }),
+    );
+    const afterKeys = missesFor(log, EXPENSES_ROUTE, seed.workspaceId);
+
+    expect(afterKeys).toHaveLength(2);
+    expect(afterKeys[1]).not.toBe(afterKeys[0]);
+    expect(afterChange).toBe(warm);
   });
 
   it('re-reads the global month-pace entry after a write in the current month', async () => {

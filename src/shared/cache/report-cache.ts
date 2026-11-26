@@ -12,6 +12,9 @@ export const monthGenerationKey = (
   month: string,
 ): string => `cache-gen:report:month:${workspaceId}:${month}`;
 
+export const structureGenerationKey = (workspaceId: string): string =>
+  `cache-gen:report:structure:${workspaceId}`;
+
 export const monthKeyOf = (year: number, month: number): string =>
   `${year}-${String(month).padStart(2, '0')}`;
 
@@ -28,6 +31,12 @@ export const readMonthGeneration = (
 ): Promise<number | null> =>
   cache.readCounter(monthGenerationKey(workspaceId, month), Date.now());
 
+export const readStructureGeneration = (
+  cache: CacheProvider,
+  workspaceId: string,
+): Promise<number | null> =>
+  cache.readCounter(structureGenerationKey(workspaceId), Date.now());
+
 export const invalidateLedgerReads = (
   cache: CacheProvider,
   workspaceId: string,
@@ -36,6 +45,18 @@ export const invalidateLedgerReads = (
   bumpGeneration({
     cache,
     counterKey: ledgerGenerationKey(workspaceId),
+    workspaceId,
+    operation,
+  });
+
+export const invalidateStructureReads = (
+  cache: CacheProvider,
+  workspaceId: string,
+  operation: string,
+): Promise<void> =>
+  bumpGeneration({
+    cache,
+    counterKey: structureGenerationKey(workspaceId),
     workspaceId,
     operation,
   });

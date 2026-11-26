@@ -98,6 +98,10 @@ describe('DeleteAccountService', () => {
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
+    expect(redisService.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:structure:ws-1',
+      expect.any(Number),
+    );
     expect(redisService.delByPattern).not.toHaveBeenCalled();
   });
 });

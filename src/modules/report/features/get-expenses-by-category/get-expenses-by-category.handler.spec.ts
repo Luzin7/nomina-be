@@ -118,7 +118,7 @@ describe('GetExpensesByCategoryService', () => {
     await service.execute(makeRequest({ limit: 50 }));
 
     expect(cache.get).toHaveBeenCalledWith(
-      'report:expenses-by-category:v6:ws-1:c7:m2026-097:2026-9:2026-09:50',
+      'report:expenses-by-category:v6:ws-1:c7:s7:m2026-097:America/Sao_Paulo:2026-9:2026-09:50',
     );
   });
 
@@ -150,7 +150,7 @@ describe('GetExpensesByCategoryService', () => {
       totalExpense: 10000,
     });
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v6:ws-1:c7:m2026-097:2026-9:2026-09:5',
+      'report:expenses-by-category:v6:ws-1:c7:s7:m2026-097:America/Sao_Paulo:2026-9:2026-09:5',
       JSON.stringify(result),
       LEDGER_CACHE_TTL_SECONDS,
     );
@@ -174,8 +174,10 @@ describe('GetExpensesByCategoryService', () => {
     cache.readCounter
       .mockResolvedValueOnce(7)
       .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(7)
       .mockResolvedValueOnce(8)
-      .mockResolvedValueOnce(8);
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(7);
     transactionRepository.getTopExpensesByCategory.mockResolvedValue({
       expenses: [],
       totalExpense: 0,
@@ -185,13 +187,49 @@ describe('GetExpensesByCategoryService', () => {
     await service.execute(makeRequest());
 
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v6:ws-1:c7:m2026-097:2026-9:2026-09:5',
+      'report:expenses-by-category:v6:ws-1:c7:s7:m2026-097:America/Sao_Paulo:2026-9:2026-09:5',
       expect.any(String),
       LEDGER_CACHE_TTL_SECONDS,
     );
     expect(cache.get).toHaveBeenLastCalledWith(
-      'report:expenses-by-category:v6:ws-1:c8:m2026-098:2026-9:2026-09:5',
+      'report:expenses-by-category:v6:ws-1:c7:s7:m2026-098:America/Sao_Paulo:2026-9:2026-09:5',
     );
+  });
+});
+
+describe('GetExpensesByCategoryService workspace time zone', () => {
+  it('re-reads the month after the workspace time zone changes', async () => {
+    const transactionRepository = {
+      getTopExpensesByCategory: jest
+        .fn()
+        .mockResolvedValue({ expenses: [], totalExpense: 0 }),
+    } as unknown as jest.Mocked<TransactionRepository>;
+    const workspaceTimezone = {
+      execute: jest
+        .fn()
+        .mockResolvedValueOnce('UTC')
+        .mockResolvedValueOnce('America/Manaus'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
+    const dateProvider = new DayJsDateProvider();
+    jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
+    const cache = new InMemoryCacheProvider();
+    const service = new GetExpensesByCategoryService(
+      transactionRepository,
+      workspaceTimezone,
+      dateProvider,
+      cache,
+    );
+
+    await service.execute(makeRequest());
+    await service.execute(makeRequest());
+
+    expect(
+      transactionRepository.getTopExpensesByCategory,
+    ).toHaveBeenCalledTimes(2);
+    expect([...cache.values.keys()]).toEqual([
+      expect.stringContaining(':UTC:'),
+      expect.stringContaining(':America/Manaus:'),
+    ]);
   });
 });
 

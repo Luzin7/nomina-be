@@ -11,6 +11,7 @@ import {
   LEDGER_CACHE_TTL_SECONDS,
   monthKeyOf,
   readMonthGeneration,
+  readStructureGeneration,
 } from '@shared/cache/report-cache';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { GetExpensesByCategoryRequest } from './get-expenses-by-category.dto';
@@ -35,9 +36,10 @@ export class GetExpensesByCategoryService {
     limit,
   }: Request): Promise<TopExpensesByCategoryResult> {
     const monthKey = monthKeyOf(year, month);
-    const [monthGeneration, category, timezone] = await Promise.all([
+    const [monthGeneration, category, structure, timezone] = await Promise.all([
       readMonthGeneration(this.cache, workspaceId, monthKey),
       readCategoryGeneration(this.cache, workspaceId),
+      readStructureGeneration(this.cache, workspaceId),
       this.workspaceTimezone.execute(workspaceId),
     ]);
     const localDay = this.dateProvider.format(
@@ -52,8 +54,12 @@ export class GetExpensesByCategoryService {
         route: 'report:expenses-by-category',
         version: 'v6',
         workspaceId,
-        generations: { months: { [monthKey]: monthGeneration }, category },
-        parts: [`${year}-${month}`, localDay, limit],
+        generations: {
+          months: { [monthKey]: monthGeneration },
+          category,
+          structure,
+        },
+        parts: [timezone, `${year}-${month}`, localDay, limit],
       }),
       ttlSeconds: LEDGER_CACHE_TTL_SECONDS,
       load: async () =>

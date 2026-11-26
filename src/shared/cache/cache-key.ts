@@ -2,6 +2,7 @@ export interface CacheGenerations {
   ledger?: number | null;
   category?: number | null;
   goal?: number | null;
+  structure?: number | null;
   months?: Record<string, number | null>;
 }
 
@@ -19,6 +20,7 @@ const GENERATION_PREFIXES: Array<[keyof CacheGenerations, string]> = [
   ['ledger', 'g'],
   ['category', 'c'],
   ['goal', 'o'],
+  ['structure', 's'],
 ];
 
 export function buildCacheKey({

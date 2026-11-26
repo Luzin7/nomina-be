@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
-type Kind = 'ledger' | 'category' | 'goal' | 'month';
+type Kind = 'ledger' | 'category' | 'goal' | 'month' | 'structure';
 
 const SRC_ROOT = resolve(__dirname, '../..');
 const MODULES_ROOT = join(SRC_ROOT, 'modules');
@@ -16,7 +16,10 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
     kinds: ['ledger'],
   },
   'report/features/get-expenses-by-category/get-expenses-by-category.handler.ts':
-    { route: 'report:expenses-by-category', kinds: ['category', 'month'] },
+    {
+      route: 'report:expenses-by-category',
+      kinds: ['category', 'month', 'structure'],
+    },
   'report/features/get-cash-flow-evolution/cash-flow-evolution.handler.ts': {
     route: 'report:cash-flow-evolution',
     kinds: ['ledger'],
@@ -132,7 +135,10 @@ const WRITES: Record<string, Kind[]> = {
     ['ledger', 'month'],
   'account/features/create-account/create-account.service.ts': ['ledger'],
   'account/features/update-account/update-account.service.ts': ['ledger'],
-  'account/features/delete-account/delete-account.handler.ts': ['ledger'],
+  'account/features/delete-account/delete-account.handler.ts': [
+    'ledger',
+    'structure',
+  ],
   'account/features/set-autopay/set-autopay.service.ts': ['ledger'],
   'account/features/adjust-account-balance/adjust-account-balance.service.ts': [
     'goal',
@@ -163,9 +169,14 @@ const WRITES: Record<string, Kind[]> = {
     ['goal'],
 };
 
-type MonthClass = 'date' | 'effective-from' | 'installments' | 'none';
+type WriteClass =
+  | 'date'
+  | 'effective-from'
+  | 'installments'
+  | 'structure'
+  | 'none';
 
-const MONTH_WRITES: Record<string, MonthClass> = {
+const WRITE_CLASSES: Record<string, WriteClass> = {
   'transaction/features/create-transaction/create-transaction.service.ts':
     'date',
   'transaction/features/update-transaction/update-transaction.service.ts':
@@ -200,7 +211,7 @@ const MONTH_WRITES: Record<string, MonthClass> = {
     'date',
   'account/features/create-account/create-account.service.ts': 'none',
   'account/features/update-account/update-account.service.ts': 'none',
-  'account/features/delete-account/delete-account.handler.ts': 'none',
+  'account/features/delete-account/delete-account.handler.ts': 'structure',
   'account/features/set-autopay/set-autopay.service.ts': 'none',
   'account/features/adjust-account-balance/adjust-account-balance.service.ts':
     'none',
@@ -231,6 +242,7 @@ const INVALIDATORS: Record<string, Kind> = {
   invalidateMonthReads: 'month',
   invalidateCategoryReads: 'category',
   invalidateGoalReads: 'goal',
+  invalidateStructureReads: 'structure',
 };
 
 const GENERATION_READERS: Record<string, Kind> = {
@@ -238,6 +250,7 @@ const GENERATION_READERS: Record<string, Kind> = {
   readMonthGeneration: 'month',
   readCategoryGeneration: 'category',
   readGoalGeneration: 'goal',
+  readStructureGeneration: 'structure',
 };
 
 function sourceFilesUnder(directory: string): string[] {
@@ -264,7 +277,7 @@ function bumpedKinds(source: string): Kind[] {
   const kinds = kindsInvoked(source, INVALIDATORS);
 
   return kinds.includes('month')
-    ? [...new Set([...kinds, 'ledger'])].sort()
+    ? [...new Set<Kind>([...kinds, 'ledger'])].sort()
     : kinds;
 }
 
@@ -294,19 +307,22 @@ describe('cache invalidation coverage', () => {
     expect(bumpedKinds(source)).toEqual([...kinds].sort());
   });
 
-  it('classifies every write by how it derives the touched month', () => {
-    expect(Object.keys(MONTH_WRITES).sort()).toEqual(
+  it('classifies every write by how it touches month history', () => {
+    expect(Object.keys(WRITE_CLASSES).sort()).toEqual(
       Object.keys(WRITES).sort(),
     );
   });
 
-  it.each(Object.entries(MONTH_WRITES))(
-    '%s derives its month class as %s',
-    (file, monthClass) => {
+  it.each(Object.entries(WRITE_CLASSES))(
+    '%s has the write class %s',
+    (file, writeClass) => {
       const source = MODULE_FILES.find(({ key }) => key === file)?.source ?? '';
-      const bumpsMonth = kindsInvoked(source, INVALIDATORS).includes('month');
+      const kinds = kindsInvoked(source, INVALIDATORS);
 
-      expect(bumpsMonth).toBe(monthClass !== 'none');
+      expect(kinds.includes('month')).toBe(
+        ['date', 'effective-from', 'installments'].includes(writeClass),
+      );
+      expect(kinds.includes('structure')).toBe(writeClass === 'structure');
     },
   );
 
@@ -322,6 +338,7 @@ describe('cache invalidation coverage', () => {
     expect(kindsInvoked(source, GENERATION_READERS)).toEqual([
       'category',
       'month',
+      'structure',
     ]);
   });
 
