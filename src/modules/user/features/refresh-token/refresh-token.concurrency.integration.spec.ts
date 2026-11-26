@@ -38,6 +38,7 @@ import { RefreshTokenService } from './refresh-token.service';
 
 const MIGRATIONS_FOLDER = resolve(__dirname, '../../../../../drizzle');
 const JWT_SECRET = 'refresh-concurrency-secret';
+const INSIDE_GRACE_WINDOW_IN_SECONDS = 30;
 const PAST_GRACE_WINDOW_IN_SECONDS = 61;
 const WORKSPACE_NAME = 'Espaço Pessoal';
 const DEFAULT_WORKSPACE_ID = 'claim-only-workspace';
@@ -267,6 +268,20 @@ describe('refresh token rotation against a real postgres', () => {
     ]);
 
     expect(issued.map((result) => result.isRight())).toEqual([true, true]);
+  });
+
+  it('should return the successor when a rotated token is presented again inside the grace window', async () => {
+    const refreshToken = await seedIssuedRefreshToken();
+    const sessionId = await sessionIdOf(refreshToken);
+    const successor = await refreshOutcome(refreshToken);
+    clock.advanceSeconds(INSIDE_GRACE_WINDOW_IN_SECONDS);
+
+    const presentedAgain = await refreshOutcome(refreshToken);
+
+    expect(successor).toMatch(REFRESH_TOKEN_PATTERN);
+    expect(presentedAgain).toBe(successor);
+    expect(await isSessionRevoked(sessionId)).toBe(false);
+    expect(await activeTokenCountOf(sessionId)).toBe(1);
   });
 
   it('should revoke the session when a token is reused after the grace window', async () => {
