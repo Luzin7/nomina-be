@@ -811,6 +811,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
         new CalculateNextGenerationDateService(new DayJsDateProvider()),
         redis,
         dateProvider,
+        workspaceTimezone,
       );
     });
 

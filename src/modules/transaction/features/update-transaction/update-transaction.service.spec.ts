@@ -5,6 +5,7 @@ import { AccountRepository } from '@modules/account/repositories/contracts/Accou
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { TransactionNotFoundError } from '@modules/transaction/errors';
+import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import {
   makeTransaction,

@@ -9,6 +9,7 @@ import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { RecurringTransactionRepositoryImplementation } from '@infra/databases/drizzle/repositories/recurring-transaction.repository';
 import * as schema from '@infra/databases/drizzle/schema';
 import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
   PostgreSqlContainer,
@@ -83,6 +84,9 @@ describe('recurring generation against a real postgres', () => {
       new CalculateNextGenerationDateService(dateProvider),
       makeCache(),
       dateProvider,
+      {
+        execute: jest.fn().mockResolvedValue(DEFAULT_TIMEZONE),
+      } as unknown as GetWorkspaceTimezoneService,
     );
   });
 
