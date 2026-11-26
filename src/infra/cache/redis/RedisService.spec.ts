@@ -102,6 +102,18 @@ function loadRedisUnavailableError(): new (message: string) => Error {
   return module.RedisUnavailableError;
 }
 
+function loadRedisReadFailedError(): new (
+  key: string,
+  cause?: unknown,
+) => Error {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- must come from the same module registry as the service
+  const module = require('./errors/RedisReadFailedError') as {
+    RedisReadFailedError: new (key: string, cause?: unknown) => Error;
+  };
+
+  return module.RedisReadFailedError;
+}
+
 interface RedisOptionsUnderTest {
   commandTimeout?: number;
   connectTimeout?: number;
@@ -179,6 +191,17 @@ describe('RedisService', () => {
     await expect(service.del('key')).resolves.toBe(false);
     await expect(service.exists('key')).resolves.toBe(false);
     await expect(service.delByPattern('key:*')).resolves.toBe(0);
+  });
+
+  it('rejects reads with RedisReadFailedError when GET fails', async () => {
+    const service = loadRedisService();
+    const RedisReadFailedError = loadRedisReadFailedError();
+    mockClient.get.mockRejectedValue(new Error('connection reset'));
+
+    const error = await service.get('key').catch((reason) => reason);
+
+    expect(error).toBeInstanceOf(RedisReadFailedError);
+    expect((error as Error).message).toBe('Redis GET failed for key key');
   });
 
   it('does not throw on release while redis is enabled but unavailable', async () => {

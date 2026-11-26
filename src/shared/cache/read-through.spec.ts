@@ -17,9 +17,9 @@ describe('readThrough', () => {
     logSpy.mockRestore();
   });
 
-  const missPattern = (key: string, outcome: string) =>
+  const missPattern = (key: string, outcome: string, cache = 'miss') =>
     new RegExp(
-      `^read-through miss key=${key} outcome=${outcome} elapsedMs=\\d+ elu=\\d\\.\\d{2}$`,
+      `^read-through miss key=${key} cache=${cache} outcome=${outcome} elapsedMs=\\d+ elu=\\d\\.\\d{2}$`,
     );
 
   it('logs one line on a miss whose load succeeds', async () => {
@@ -81,6 +81,20 @@ describe('readThrough', () => {
     });
 
     expect(cache.ttls.get('k')).toBe(900);
+  });
+
+  it('logs cache=error when the cache read fails', async () => {
+    jest.spyOn(cache, 'get').mockRejectedValue(new Error('connection reset'));
+
+    await readThrough({
+      cache,
+      key: 'k',
+      ttlSeconds: 900,
+      load: async () => right({ ok: true }),
+    });
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(logSpy.mock.calls[0][0]).toMatch(missPattern('k', 'ok', 'error'));
   });
 
   it('stores with the ttl returned by ttlFor for the loaded value', async () => {

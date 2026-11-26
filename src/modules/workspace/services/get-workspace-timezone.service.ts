@@ -22,7 +22,7 @@ export class GetWorkspaceTimezoneService {
     if (memoized) return memoized;
 
     const key = workspaceTimezoneCacheKey(workspaceId);
-    const cached = await this.cache.get(key);
+    const cached = await this.readCached(key);
     if (cached) {
       this.memo.set(workspaceId, cached);
       return cached;
@@ -35,5 +35,13 @@ export class GetWorkspaceTimezoneService {
     await this.cache.set(key, stored, WORKSPACE_TIMEZONE_CACHE_TTL_SECONDS);
 
     return stored;
+  }
+
+  private async readCached(key: string): Promise<string | null> {
+    try {
+      return await this.cache.get(key);
+    } catch {
+      return null;
+    }
   }
 }

@@ -476,6 +476,7 @@ defineFreshnessSuite({
 const EXPENSES_ROUTE = 'report:expenses-by-category';
 const PACE_ROUTE = 'report:month-pace';
 const MISS_PREFIX = 'read-through miss key=';
+const BOUNDARY_TIMEZONE = 'America/Sao_Paulo';
 
 interface MonthAt {
   year: number;
@@ -495,6 +496,16 @@ function monthAt(seed: FreshnessSeed, offset: number): MonthAt {
     month,
     date: reference.toISOString().slice(0, 10),
   };
+}
+
+function monthStartOf({ year, month }: MonthAt): string {
+  return `${year}-${String(month).padStart(2, '0')}-01`;
+}
+
+interface BoundaryExpense {
+  id: string;
+  title: string;
+  date: Date;
 }
 
 function missedKeys(spy: jest.SpyInstance): string[] {
@@ -554,6 +565,74 @@ describe('month scoped report generation', () => {
         year: at.year,
       }),
     );
+
+  const boundaryInstants = (seed: FreshnessSeed, offset: number) => {
+    const dateProvider = app.get(DateProvider);
+
+    return {
+      late: new Date(
+        dateProvider
+          .endOfMonth(monthStartOf(monthAt(seed, offset)), BOUNDARY_TIMEZONE)
+          .getTime() -
+          (30 * 60 * 1000 - 1),
+      ),
+      early: new Date(
+        dateProvider
+          .startOfMonth(
+            monthStartOf(monthAt(seed, offset + 1)),
+            BOUNDARY_TIMEZONE,
+          )
+          .getTime() +
+          30 * 60 * 1000,
+      ),
+    };
+  };
+
+  const insertExpenseAt = async (
+    seed: FreshnessSeed,
+    date: Date,
+    amount: bigint,
+    title: string,
+  ): Promise<BoundaryExpense> => {
+    const [row] = await postgres.db
+      .insert(schema.transactions)
+      .values({
+        workspaceId: seed.workspaceId,
+        accountId: seed.accountId,
+        categoryId: seed.categoryId,
+        title,
+        amount: Number(amount),
+        date,
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      })
+      .returning();
+
+    return { id: row.id, title: row.title, date: row.date };
+  };
+
+  const updateExpenseAmount = async (
+    seed: FreshnessSeed,
+    expense: BoundaryExpense,
+    amount: bigint,
+  ): Promise<void> => {
+    unwrap(
+      await app.get(UpdateTransactionService).execute({
+        workspaceId: seed.workspaceId,
+        sub: seed.userId,
+        transactionId: expense.id,
+        accountId: seed.accountId,
+        categoryId: seed.categoryId,
+        title: expense.title,
+        amount,
+        date: app
+          .get(DateProvider)
+          .format(expense.date, 'YYYY-MM-DD', BOUNDARY_TIMEZONE),
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      }),
+    );
+  };
 
   const createExpense = async (seed: FreshnessSeed, date: string) =>
     unwrap<Transaction>(
@@ -697,6 +776,71 @@ describe('month scoped report generation', () => {
     expect(afterKeys).toHaveLength(2);
     expect(afterKeys[1]).not.toBe(afterKeys[0]);
     expect(afterChange).toBe(warm);
+  });
+
+  it('buckets expenses that cross midnight in the workspace time zone into their local month', async () => {
+    const seed = await seedWorkspace(app, postgres.db, {
+      timezone: BOUNDARY_TIMEZONE,
+    });
+    const current = monthAt(seed, -2);
+    const next = monthAt(seed, -1);
+    const { late, early } = boundaryInstants(seed, -2);
+
+    await insertExpenseAt(seed, late, AMOUNT * 7n, 'Ultimo dia 23:30');
+    await insertExpenseAt(seed, early, AMOUNT * 3n, 'Primeiro dia 00:30');
+
+    const currentRead = await readExpenses(seed.workspaceId, current);
+    const nextRead = await readExpenses(seed.workspaceId, next);
+
+    expect(currentRead.totalExpense).toBe(Number(AMOUNT * 7n));
+    expect(nextRead.totalExpense).toBe(Number(AMOUNT * 3n));
+  });
+
+  it('keeps the other boundary month warm when a write lands in one of them', async () => {
+    const seed = await seedWorkspace(app, postgres.db, {
+      timezone: BOUNDARY_TIMEZONE,
+    });
+    const current = monthAt(seed, -2);
+    const next = monthAt(seed, -1);
+    const { late, early } = boundaryInstants(seed, -2);
+    const lateExpense = await insertExpenseAt(
+      seed,
+      late,
+      AMOUNT * 7n,
+      'Ultimo dia',
+    );
+    const earlyExpense = await insertExpenseAt(
+      seed,
+      early,
+      AMOUNT * 3n,
+      'Primeiro dia',
+    );
+
+    log.mockClear();
+    await readExpenses(seed.workspaceId, current);
+    await readExpenses(seed.workspaceId, next);
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toHaveLength(2);
+
+    log.mockClear();
+    await updateExpenseAmount(seed, lateExpense, AMOUNT * 9n);
+    const currentAfterLateWrite = await readExpenses(seed.workspaceId, current);
+    const nextAfterLateWrite = await readExpenses(seed.workspaceId, next);
+
+    expect(currentAfterLateWrite.totalExpense).toBe(Number(AMOUNT * 9n));
+    expect(nextAfterLateWrite.totalExpense).toBe(Number(AMOUNT * 3n));
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toHaveLength(1);
+
+    log.mockClear();
+    await updateExpenseAmount(seed, earlyExpense, AMOUNT * 5n);
+    const nextAfterEarlyWrite = await readExpenses(seed.workspaceId, next);
+    const currentAfterEarlyWrite = await readExpenses(
+      seed.workspaceId,
+      current,
+    );
+
+    expect(nextAfterEarlyWrite.totalExpense).toBe(Number(AMOUNT * 5n));
+    expect(currentAfterEarlyWrite.totalExpense).toBe(Number(AMOUNT * 9n));
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toHaveLength(1);
   });
 
   it('re-reads the global month-pace entry after a write in the current month', async () => {

@@ -1,5 +1,7 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Logger } from '@nestjs/common';
+import { captureException } from '@sentry/nestjs';
+import { CacheGenerationBumpError } from './errors/CacheGenerationBumpError';
 
 const logger = new Logger('CacheGeneration');
 
@@ -16,14 +18,21 @@ export async function bumpGeneration({
   workspaceId,
   operation,
 }: BumpGenerationInput): Promise<void> {
-  const failureMessage = `cache generation ${counterKey} bump failed for workspace ${workspaceId} during ${operation}`;
+  const failure = new CacheGenerationBumpError(
+    workspaceId,
+    counterKey,
+    operation,
+  );
 
   try {
     const generation = await cache.incrementCounter(counterKey, Date.now());
     if (generation !== null) return;
 
-    logger.error(failureMessage);
+    logger.error(failure.message);
   } catch (error) {
-    logger.error(failureMessage, error);
+    failure.cause = error;
+    logger.error(failure.message, error);
   }
+
+  captureException(failure, { extra: { workspaceId, counterKey, operation } });
 }

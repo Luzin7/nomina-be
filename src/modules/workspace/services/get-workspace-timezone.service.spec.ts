@@ -74,6 +74,15 @@ describe('GetWorkspaceTimezoneService', () => {
     expect(workspaceRepository.findTimezoneById).toHaveBeenCalledTimes(1);
   });
 
+  it('falls back to the repository when the cache read fails', async () => {
+    cache.get.mockRejectedValue(new Error('connection reset'));
+
+    const timezone = await service.execute('ws-1');
+
+    expect(timezone).toBe('America/Recife');
+    expect(workspaceRepository.findTimezoneById).toHaveBeenCalledTimes(1);
+  });
+
   it('returns the default timezone without persisting it when the workspace has none', async () => {
     workspaceRepository.findTimezoneById.mockResolvedValue(null);
 

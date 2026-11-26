@@ -1,3 +1,5 @@
+import { captureException } from '@sentry/nestjs';
+import { CacheGenerationBumpError } from './errors/CacheGenerationBumpError';
 import { InMemoryCacheProvider } from './test-helpers/in-memory-cache';
 import {
   LEDGER_CACHE_TTL_SECONDS,
@@ -16,8 +18,17 @@ import {
 
 const NOW_MS = 1_700_000_000_000;
 
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
+
+const mockCaptureException = captureException as jest.MockedFunction<
+  typeof captureException
+>;
+
 describe('report-cache', () => {
-  beforeEach(() => jest.spyOn(Date, 'now').mockReturnValue(NOW_MS));
+  beforeEach(() => {
+    jest.spyOn(Date, 'now').mockReturnValue(NOW_MS);
+    mockCaptureException.mockClear();
+  });
   afterEach(() => jest.restoreAllMocks());
 
   it('uses a thirty minute TTL for ledger reads', () => {
@@ -125,6 +136,70 @@ describe('report-cache', () => {
     expect(cache.counters.get('cache-gen:report:month:ws-1:2026-10')).toBe(
       undefined,
     );
+  });
+
+  it('captures a bump that returns no generation', async () => {
+    const cache = new InMemoryCacheProvider();
+    jest
+      .spyOn(cache, 'incrementCounter')
+      .mockResolvedValue(null as unknown as number);
+
+    await expect(
+      invalidateStructureReads(cache, 'ws-1', 'delete-account'),
+    ).resolves.toBeUndefined();
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    const [error, context] = mockCaptureException.mock.calls[0];
+    expect(error).toBeInstanceOf(CacheGenerationBumpError);
+    expect(error).toMatchObject({
+      workspaceId: 'ws-1',
+      counterKey: 'cache-gen:report:structure:ws-1',
+      operation: 'delete-account',
+    });
+    expect(context).toEqual({
+      extra: {
+        workspaceId: 'ws-1',
+        counterKey: 'cache-gen:report:structure:ws-1',
+        operation: 'delete-account',
+      },
+    });
+  });
+
+  it('captures the cause of a bump that throws', async () => {
+    const cache = new InMemoryCacheProvider();
+    const cause = new Error('redis down');
+    jest.spyOn(cache, 'incrementCounter').mockRejectedValue(cause);
+
+    await invalidateLedgerReads(cache, 'ws-1', 'create-transaction');
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+    const [error] = mockCaptureException.mock.calls[0];
+    expect(error).toBeInstanceOf(CacheGenerationBumpError);
+    expect((error as CacheGenerationBumpError).cause).toBe(cause);
+  });
+
+  it('captures every failed bump in a month invalidation', async () => {
+    const cache = new InMemoryCacheProvider();
+    jest
+      .spyOn(cache, 'incrementCounter')
+      .mockResolvedValue(null as unknown as number);
+
+    await invalidateMonthReads(
+      cache,
+      'ws-1',
+      ['2026-11'],
+      'create-transaction',
+    );
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(2);
+    const keys = mockCaptureException.mock.calls.map(
+      ([, context]) =>
+        (context as { extra: { counterKey: string } }).extra.counterKey,
+    );
+    expect(keys).toEqual([
+      'cache-gen:report:ws-1',
+      'cache-gen:report:month:ws-1:2026-11',
+    ]);
   });
 
   it('keeps a late set from being served after a concurrent write', async () => {
