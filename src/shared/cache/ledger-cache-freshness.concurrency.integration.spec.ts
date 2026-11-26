@@ -31,13 +31,28 @@ import { UpdateRecurringTransactionService } from '@modules/transaction/features
 import { GenerateRecurringTransactionsJobService } from '@modules/transaction/jobs/generate-recurring-transactions/generate-recurring-transactions.service';
 import { SettleCardInstallmentsJobService } from '@modules/transaction/jobs/settle-card-installments/settle-card-installments.service';
 import * as schema from '@infra/databases/drizzle/schema';
+import { GetExpensesByCategoryService } from '@modules/report/features/get-expenses-by-category/get-expenses-by-category.handler';
+import { GetMonthPaceService } from '@modules/report/features/get-month-pace/get-month-pace.handler';
+import { Transaction } from '@modules/transaction/entities/Transaction';
+import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { FRESHNESS_READS } from './test-helpers/freshness-reads';
+import {
+  ApplicationHandle,
+  createApplication,
+  PostgresHandle,
+  startPostgres,
+  startValkey,
+  ValkeyHandle,
+} from './test-helpers/freshness-harness';
 import {
   AMOUNT,
   DAY_MS,
   defineFreshnessSuite,
   FreshnessContext,
+  FreshnessSeed,
+  seedWorkspace,
+  snapshot,
   unwrap,
 } from './test-helpers/freshness-suite';
 
@@ -434,4 +449,201 @@ defineFreshnessSuite({
       },
     },
   ],
+});
+
+const EXPENSES_ROUTE = 'report:expenses-by-category';
+const PACE_ROUTE = 'report:month-pace';
+const MISS_PREFIX = 'read-through miss key=';
+
+interface MonthAt {
+  year: number;
+  month: number;
+  date: string;
+}
+
+function monthAt(seed: FreshnessSeed, offset: number): MonthAt {
+  const reference = new Date(
+    Date.UTC(seed.year, seed.month - 1 + offset, 15, 12),
+  );
+  const year = reference.getUTCFullYear();
+  const month = reference.getUTCMonth() + 1;
+
+  return {
+    year,
+    month,
+    date: reference.toISOString().slice(0, 10),
+  };
+}
+
+function missedKeys(spy: jest.SpyInstance): string[] {
+  return spy.mock.calls
+    .map(([message]) => String(message))
+    .filter((message) => message.startsWith(MISS_PREFIX))
+    .map((message) => message.slice(MISS_PREFIX.length).split(' ')[0]);
+}
+
+function missesFor(
+  spy: jest.SpyInstance,
+  route: string,
+  workspaceId: string,
+): string[] {
+  return missedKeys(spy).filter(
+    (key) => key.startsWith(`${route}:`) && key.includes(`:${workspaceId}:`),
+  );
+}
+
+describe('month scoped report generation', () => {
+  let postgres: PostgresHandle;
+  let valkey: ValkeyHandle;
+  let app: ApplicationHandle;
+  let log: jest.SpyInstance;
+
+  beforeAll(async () => {
+    log = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    postgres = await startPostgres();
+    valkey = await startValkey();
+    app = await createApplication(postgres.db, valkey.cache);
+  });
+
+  afterAll(async () => {
+    await app?.close();
+    await valkey?.stop();
+    await postgres?.stop();
+    log.mockRestore();
+  });
+
+  beforeEach(() => log.mockClear());
+
+  const readExpenses = async (workspaceId: string, at: MonthAt) =>
+    app.get(GetExpensesByCategoryService).execute({
+      workspaceId,
+      year: at.year,
+      month: at.month,
+      limit: 5,
+    });
+
+  const readPace = async (workspaceId: string, at: MonthAt) =>
+    unwrap(
+      await app.get(GetMonthPaceService).execute({
+        workspaceId,
+        month: at.month,
+        year: at.year,
+      }),
+    );
+
+  const createExpense = async (seed: FreshnessSeed, date: string) =>
+    unwrap<Transaction>(
+      await app.get(CreateTransactionService).execute({
+        workspaceId: seed.workspaceId,
+        sub: seed.userId,
+        accountId: seed.accountId,
+        categoryId: seed.categoryId,
+        title: 'Gasto do mês',
+        amount: AMOUNT,
+        date,
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      }),
+    );
+
+  it('serves the previous month from the same cache entry after a write in the current month', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const previous = monthAt(seed, -1);
+
+    await readExpenses(seed.workspaceId, previous);
+    const warmKeys = missesFor(log, EXPENSES_ROUTE, seed.workspaceId);
+    expect(warmKeys).toHaveLength(1);
+    const [warmKey] = warmKeys;
+    const warmPayload = await valkey.cache.get(warmKey);
+    const warmValue = snapshot(await readExpenses(seed.workspaceId, previous));
+
+    await createExpense(seed, seed.today);
+
+    const afterWrite = snapshot(await readExpenses(seed.workspaceId, previous));
+
+    expect(warmPayload).not.toBeNull();
+    expect(afterWrite).toBe(warmValue);
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toEqual([warmKey]);
+    await expect(valkey.cache.get(warmKey)).resolves.toBe(warmPayload);
+  });
+
+  it('re-reads the old and the new month after a date move', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const current = monthAt(seed, -2);
+    const next = monthAt(seed, -1);
+    const expense = await createExpense(seed, current.date);
+
+    await readExpenses(seed.workspaceId, current);
+    const warmCurrent = snapshot(await readExpenses(seed.workspaceId, current));
+    await readExpenses(seed.workspaceId, next);
+    const warmNext = snapshot(await readExpenses(seed.workspaceId, next));
+
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toHaveLength(2);
+
+    unwrap(
+      await app.get(UpdateTransactionService).execute({
+        workspaceId: seed.workspaceId,
+        sub: seed.userId,
+        transactionId: expense.id,
+        accountId: seed.accountId,
+        categoryId: seed.categoryId,
+        title: expense.title,
+        amount: expense.amount,
+        date: next.date,
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      }),
+    );
+
+    const afterCurrent = snapshot(
+      await readExpenses(seed.workspaceId, current),
+    );
+    const afterNext = snapshot(await readExpenses(seed.workspaceId, next));
+
+    const afterUpdate = missesFor(log, EXPENSES_ROUTE, seed.workspaceId).slice(
+      2,
+    );
+    expect(afterUpdate).toHaveLength(2);
+    expect(new Set(afterUpdate).size).toBe(2);
+    expect(afterCurrent).not.toBe(warmCurrent);
+    expect(afterNext).not.toBe(warmNext);
+  });
+
+  it('serves an unrelated month from the same cache entry after a write in the current month', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const unrelated = monthAt(seed, -3);
+
+    await readExpenses(seed.workspaceId, unrelated);
+    const warmKeys = missesFor(log, EXPENSES_ROUTE, seed.workspaceId);
+    expect(warmKeys).toHaveLength(1);
+    const [warmKey] = warmKeys;
+    const warmValue = snapshot(await readExpenses(seed.workspaceId, unrelated));
+
+    await createExpense(seed, seed.today);
+
+    const afterWrite = snapshot(
+      await readExpenses(seed.workspaceId, unrelated),
+    );
+
+    expect(afterWrite).toBe(warmValue);
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toEqual([warmKey]);
+  });
+
+  it('re-reads the global month-pace entry after a write in the current month', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const current = monthAt(seed, 0);
+
+    const warm = snapshot(await readPace(seed.workspaceId, current));
+    expect(snapshot(await readPace(seed.workspaceId, current))).toBe(warm);
+    expect(missesFor(log, PACE_ROUTE, seed.workspaceId)).toHaveLength(1);
+
+    await createExpense(seed, seed.today);
+
+    const afterWrite = snapshot(await readPace(seed.workspaceId, current));
+
+    expect(missesFor(log, PACE_ROUTE, seed.workspaceId)).toHaveLength(2);
+    expect(afterWrite).not.toBe(warm);
+  });
 });

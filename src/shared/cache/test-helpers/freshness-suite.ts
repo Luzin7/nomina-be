@@ -100,7 +100,7 @@ export function snapshot(value: unknown): string {
   );
 }
 
-async function seedWorkspace(
+export async function seedWorkspace(
   app: ApplicationHandle,
   db: TestDatabase,
 ): Promise<FreshnessSeed> {
