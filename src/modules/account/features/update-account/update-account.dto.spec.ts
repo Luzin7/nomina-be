@@ -1,5 +1,6 @@
 import { CLOSING_DAYS_BEFORE_DUE_OPTIONS } from '@constants/enums';
-import { updateAccountSchema } from './update-account.dto';
+import { BadRequestException } from '@nestjs/common';
+import { UpdateAccountPipe, updateAccountSchema } from './update-account.dto';
 
 // Este spec importa o schema real. Antes ele redefinia uma cópia local do Zod
 // (com campos que o schema real nem tem e faixas antigas de 1–31), então
@@ -116,6 +117,12 @@ describe('UpdateAccountRequest DTO', () => {
         updateAccountSchema.safeParse(makeRequest({ creditLimit: limit }))
           .success,
       ).toBe(false);
+    });
+
+    it('should reject a fractional limit as a validation error', () => {
+      expect(() =>
+        UpdateAccountPipe.transform(makeRequest({ creditLimit: 1.5 })),
+      ).toThrow(BadRequestException);
     });
   });
 });
