@@ -13,7 +13,7 @@ import {
   type SplitSuggestionState,
   type SuggestedPlan,
 } from '@modules/budget/services/resolve-budget-suggestion.service';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
 import { right } from '@shared/core/errors/Either';
 import { captureException } from '@sentry/nestjs';
@@ -26,7 +26,7 @@ jest.mock('@shared/cache/report-cache', () => {
 
   return {
     ...actual,
-    invalidateLedgerReads: jest.fn(actual.invalidateLedgerReads),
+    invalidateMonthReads: jest.fn(actual.invalidateMonthReads),
   };
 });
 
@@ -256,7 +256,7 @@ describe('ResetBudgetService', () => {
     const result = await reset();
 
     expect(result.value).toBeInstanceOf(BudgetSuggestionChangedError);
-    expect(invalidateLedgerReads).not.toHaveBeenCalled();
+    expect(invalidateMonthReads).not.toHaveBeenCalled();
   });
 
   it('captures the drifted exit', async () => {
@@ -309,9 +309,10 @@ describe('ResetBudgetService', () => {
   it('invalidates the ledger reads under the reset reason', async () => {
     await reset();
 
-    expect(invalidateLedgerReads).toHaveBeenCalledWith(
+    expect(invalidateMonthReads).toHaveBeenCalledWith(
       cache,
       WORKSPACE_ID,
+      ['2026-11'],
       'reset-budget',
     );
   });

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
-type Kind = 'ledger' | 'category' | 'goal';
+type Kind = 'ledger' | 'category' | 'goal' | 'month';
 
 const SRC_ROOT = resolve(__dirname, '../..');
 const MODULES_ROOT = join(SRC_ROOT, 'modules');
@@ -16,7 +16,7 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
     kinds: ['ledger'],
   },
   'report/features/get-expenses-by-category/get-expenses-by-category.handler.ts':
-    { route: 'report:expenses-by-category', kinds: ['ledger', 'category'] },
+    { route: 'report:expenses-by-category', kinds: ['category', 'month'] },
   'report/features/get-cash-flow-evolution/cash-flow-evolution.handler.ts': {
     route: 'report:cash-flow-evolution',
     kinds: ['ledger'],
@@ -94,19 +94,22 @@ const CATEGORY_LIST_READ =
 const WRITES: Record<string, Kind[]> = {
   'transaction/features/create-transaction/create-transaction.service.ts': [
     'ledger',
+    'month',
   ],
   'transaction/features/update-transaction/update-transaction.service.ts': [
     'ledger',
+    'month',
   ],
   'transaction/features/delete-transaction/delete-transaction.service.ts': [
     'ledger',
+    'month',
   ],
   'transaction/features/set-transaction-status/set-transaction-status.service.ts':
-    ['ledger'],
+    ['ledger', 'month'],
   'transaction/features/create-installment-purchase/create-installment-purchase.service.ts':
-    ['ledger'],
+    ['ledger', 'month'],
   'transaction/features/pay-credit-card-invoice/pay-credit-card-invoice.service.ts':
-    ['ledger'],
+    ['ledger', 'month'],
   'transaction/features/create-recurring-transaction/create-recurring-transaction.service.ts':
     ['ledger'],
   'transaction/features/update-recurring-transaction/update-recurring-transaction.service.ts':
@@ -124,9 +127,9 @@ const WRITES: Record<string, Kind[]> = {
   'transaction/features/recurring-suggestions/detect-recurring-suggestions.service.ts':
     ['ledger'],
   'transaction/jobs/generate-recurring-transactions/generate-recurring-transactions.service.ts':
-    ['ledger'],
+    ['ledger', 'month'],
   'transaction/jobs/settle-card-installments/settle-card-installments.service.ts':
-    ['ledger'],
+    ['ledger', 'month'],
   'account/features/create-account/create-account.service.ts': ['ledger'],
   'account/features/update-account/update-account.service.ts': ['ledger'],
   'account/features/delete-account/delete-account.handler.ts': ['ledger'],
@@ -136,13 +139,13 @@ const WRITES: Record<string, Kind[]> = {
     'ledger',
   ],
   'budget/features/accept-income-suggestion/accept-income-suggestion.handler.ts':
-    ['ledger'],
+    ['ledger', 'month'],
   'budget/features/accept-split-suggestion/accept-split-suggestion.handler.ts':
-    ['ledger'],
+    ['ledger', 'month'],
   'budget/features/reject-budget-suggestion/reject-budget-suggestion.handler.ts':
-    ['ledger'],
-  'budget/features/save-config/save-config.handler.ts': ['ledger'],
-  'budget/features/reset-budget/reset-budget.handler.ts': ['ledger'],
+    ['ledger', 'month'],
+  'budget/features/save-config/save-config.handler.ts': ['ledger', 'month'],
+  'budget/features/reset-budget/reset-budget.handler.ts': ['ledger', 'month'],
   'card-cycle/features/save-card-cycle-budget/save-card-cycle-budget.handler.ts':
     ['ledger'],
   'category/features/create-category/create-category.handler.ts': ['category'],
@@ -160,14 +163,79 @@ const WRITES: Record<string, Kind[]> = {
     ['goal'],
 };
 
+type MonthClass = 'date' | 'effective-from' | 'installments' | 'none';
+
+const MONTH_WRITES: Record<string, MonthClass> = {
+  'transaction/features/create-transaction/create-transaction.service.ts':
+    'date',
+  'transaction/features/update-transaction/update-transaction.service.ts':
+    'date',
+  'transaction/features/delete-transaction/delete-transaction.service.ts':
+    'date',
+  'transaction/features/set-transaction-status/set-transaction-status.service.ts':
+    'date',
+  'transaction/features/create-installment-purchase/create-installment-purchase.service.ts':
+    'installments',
+  'transaction/features/pay-credit-card-invoice/pay-credit-card-invoice.service.ts':
+    'date',
+  'transaction/features/create-recurring-transaction/create-recurring-transaction.service.ts':
+    'none',
+  'transaction/features/update-recurring-transaction/update-recurring-transaction.service.ts':
+    'none',
+  'transaction/features/delete-recurring-transaction/delete-recurring-transaction.service.ts':
+    'none',
+  'transaction/features/toggle-active-recurring-transaction/toggle-active-recurring-transaction.service.ts':
+    'none',
+  'transaction/features/recurring-suggestions/accept-recurring-suggestion.service.ts':
+    'none',
+  'transaction/features/recurring-suggestions/dismiss-recurring-suggestion.service.ts':
+    'none',
+  'transaction/features/recurring-suggestions/mark-recurring-suggestions-shown.service.ts':
+    'none',
+  'transaction/features/recurring-suggestions/detect-recurring-suggestions.service.ts':
+    'none',
+  'transaction/jobs/generate-recurring-transactions/generate-recurring-transactions.service.ts':
+    'date',
+  'transaction/jobs/settle-card-installments/settle-card-installments.service.ts':
+    'date',
+  'account/features/create-account/create-account.service.ts': 'none',
+  'account/features/update-account/update-account.service.ts': 'none',
+  'account/features/delete-account/delete-account.handler.ts': 'none',
+  'account/features/set-autopay/set-autopay.service.ts': 'none',
+  'account/features/adjust-account-balance/adjust-account-balance.service.ts':
+    'none',
+  'budget/features/accept-income-suggestion/accept-income-suggestion.handler.ts':
+    'date',
+  'budget/features/accept-split-suggestion/accept-split-suggestion.handler.ts':
+    'date',
+  'budget/features/reject-budget-suggestion/reject-budget-suggestion.handler.ts':
+    'date',
+  'budget/features/save-config/save-config.handler.ts': 'effective-from',
+  'budget/features/reset-budget/reset-budget.handler.ts': 'date',
+  'card-cycle/features/save-card-cycle-budget/save-card-cycle-budget.handler.ts':
+    'none',
+  'category/features/create-category/create-category.handler.ts': 'none',
+  'category/features/update-category/update-category.handler.ts': 'none',
+  'category/features/delete-category/delete-category.handler.ts': 'none',
+  'goal/features/create-goal/create-goal.service.ts': 'none',
+  'goal/features/update-goal/update-goal.service.ts': 'none',
+  'goal/features/delete-goal/delete-goal.service.ts': 'none',
+  'goal/features/create-goal-contribution/create-goal-contribution.service.ts':
+    'none',
+  'goal/features/delete-goal-contribution/delete-goal-contribution.service.ts':
+    'none',
+};
+
 const INVALIDATORS: Record<string, Kind> = {
   invalidateLedgerReads: 'ledger',
+  invalidateMonthReads: 'month',
   invalidateCategoryReads: 'category',
   invalidateGoalReads: 'goal',
 };
 
 const GENERATION_READERS: Record<string, Kind> = {
   readLedgerGeneration: 'ledger',
+  readMonthGeneration: 'month',
   readCategoryGeneration: 'category',
   readGoalGeneration: 'goal',
 };
@@ -190,6 +258,14 @@ function kindsInvoked(source: string, names: Record<string, Kind>): Kind[] {
     .filter(([name]) => new RegExp(`\\b${name}\\(`).test(source))
     .map(([, kind]) => kind);
   return kinds.sort();
+}
+
+function bumpedKinds(source: string): Kind[] {
+  const kinds = kindsInvoked(source, INVALIDATORS);
+
+  return kinds.includes('month')
+    ? [...new Set([...kinds, 'ledger'])].sort()
+    : kinds;
 }
 
 const scannedWrites = MODULE_FILES.filter(
@@ -215,7 +291,38 @@ describe('cache invalidation coverage', () => {
   it.each(Object.entries(WRITES))('%s bumps %j', (file, kinds) => {
     const source = MODULE_FILES.find(({ key }) => key === file)?.source ?? '';
 
-    expect(kindsInvoked(source, INVALIDATORS)).toEqual([...kinds].sort());
+    expect(bumpedKinds(source)).toEqual([...kinds].sort());
+  });
+
+  it('classifies every write by how it derives the touched month', () => {
+    expect(Object.keys(MONTH_WRITES).sort()).toEqual(
+      Object.keys(WRITES).sort(),
+    );
+  });
+
+  it.each(Object.entries(MONTH_WRITES))(
+    '%s derives its month class as %s',
+    (file, monthClass) => {
+      const source = MODULE_FILES.find(({ key }) => key === file)?.source ?? '';
+      const bumpsMonth = kindsInvoked(source, INVALIDATORS).includes('month');
+
+      expect(bumpsMonth).toBe(monthClass !== 'none');
+    },
+  );
+
+  it('keeps the narrowed route off the ledger generation', () => {
+    const source =
+      MODULE_FILES.find(
+        ({ key }) =>
+          key ===
+          'report/features/get-expenses-by-category/get-expenses-by-category.handler.ts',
+      )?.source ?? '';
+
+    expect(source).not.toMatch(/\breadLedgerGeneration\(/);
+    expect(kindsInvoked(source, GENERATION_READERS)).toEqual([
+      'category',
+      'month',
+    ]);
   });
 
   it.each(Object.entries(READS))('%s keys by %j', (file, expected) => {
@@ -244,7 +351,7 @@ describe('cache invalidation coverage', () => {
       (writeFile) => {
         const source =
           MODULE_FILES.find(({ key }) => key === writeFile)?.source ?? '';
-        const bumped = kindsInvoked(source, INVALIDATORS);
+        const bumped = bumpedKinds(source);
 
         expect(bumped.some((kind) => read.kinds.includes(kind))).toBe(true);
       },

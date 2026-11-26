@@ -4,6 +4,7 @@ import { TransactionRepository } from '@modules/transaction/repositories/contrac
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { makeTransaction } from '@modules/transaction/test-helpers/mock-factories';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { captureException } from '@sentry/nestjs';
 import { left, right } from '@shared/core/errors/Either';
 import { TransactionStatus } from '@constants/enums';
@@ -36,6 +37,7 @@ describe('SettleCardInstallmentsJobService', () => {
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let cache: jest.Mocked<CacheProvider>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
 
   beforeEach(() => {
     transactionRepository = {
@@ -50,12 +52,17 @@ describe('SettleCardInstallmentsJobService', () => {
     } as unknown as jest.Mocked<CacheProvider>;
     dateProvider = {
       now: jest.fn().mockReturnValue(NOW),
+      format: jest.fn().mockReturnValue('2024-01'),
     } as unknown as jest.Mocked<DateProvider>;
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
 
     service = new SettleCardInstallmentsJobService(
       transactionRepository,
       cache,
       dateProvider,
+      workspaceTimezone,
     );
   });
 

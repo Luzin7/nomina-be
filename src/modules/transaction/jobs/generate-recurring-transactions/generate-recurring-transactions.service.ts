@@ -18,7 +18,8 @@ import { NextGenerationDateCalculator } from '@modules/transaction/services/cont
 import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { captureException } from '@sentry/nestjs';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { getErrorDetails } from '@shared/utils/error-details';
 import { isPlanExhaustedBefore } from '@utils/installmentSchedule';
@@ -81,6 +82,7 @@ interface RecurrenceOutcome {
   skipped: boolean;
   failed: boolean;
   persisted: boolean;
+  generatedDates: Date[];
 }
 
 type GeneratedWriteResult =
@@ -123,6 +125,7 @@ export class GenerateRecurringTransactionsJobService {
     private readonly calculateNextDateService: NextGenerationDateCalculator,
     private readonly redis: CacheProvider,
     private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
   ) {}
 
   async execute(): Promise<
@@ -197,7 +200,7 @@ export class GenerateRecurringTransactionsJobService {
       failedCount: 0,
       processedCount: 0,
     };
-    const persistedWorkspaceIds = new Set<string>();
+    const generatedDatesByWorkspace = new Map<string, Date[]>();
     let afterId: string | null = null;
     let batch: RecurringRuleSchedule[];
 
@@ -221,24 +224,47 @@ export class GenerateRecurringTransactionsJobService {
           if (outcome.skipped) counters.skippedCount++;
           if (outcome.failed) counters.failedCount++;
           if (outcome.persisted) {
-            persistedWorkspaceIds.add(schedule.recurring.workspaceId);
+            this.trackGeneratedDates(
+              generatedDatesByWorkspace,
+              schedule.recurring.workspaceId,
+              outcome.generatedDates,
+            );
           }
         }
 
         afterId = batch.at(-1)?.recurring.id ?? null;
       } while (batch.length === BATCH_SIZE);
     } finally {
-      await this.invalidateReports(persistedWorkspaceIds);
+      await this.invalidateReports(generatedDatesByWorkspace);
     }
 
     return counters;
   }
 
-  private async invalidateReports(workspaceIds: Set<string>): Promise<void> {
-    for (const workspaceId of workspaceIds) {
-      await invalidateLedgerReads(
+  private trackGeneratedDates(
+    datesByWorkspace: Map<string, Date[]>,
+    workspaceId: string,
+    dates: Date[],
+  ): void {
+    datesByWorkspace.set(workspaceId, [
+      ...(datesByWorkspace.get(workspaceId) ?? []),
+      ...dates,
+    ]);
+  }
+
+  private async invalidateReports(
+    datesByWorkspace: Map<string, Date[]>,
+  ): Promise<void> {
+    for (const [workspaceId, dates] of datesByWorkspace) {
+      const timezone = await this.workspaceTimezone.execute(workspaceId);
+      const months = dates.map((date) =>
+        this.dateProvider.format(date, 'YYYY-MM', timezone),
+      );
+
+      await invalidateMonthReads(
         this.redis,
         workspaceId,
+        months,
         'generate-recurring-transactions',
       );
     }
@@ -260,6 +286,7 @@ export class GenerateRecurringTransactionsJobService {
         skipped: false,
         failed: true,
         persisted: false,
+        generatedDates: [],
       };
     }
   }
@@ -367,7 +394,13 @@ export class GenerateRecurringTransactionsJobService {
     const shouldPersist = transactionsToCreate.length > 0 || !recurring.active;
 
     if (!shouldPersist) {
-      return { generatedCount: 0, skipped: false, failed, persisted: false };
+      return {
+        generatedCount: 0,
+        skipped: false,
+        failed,
+        persisted: false,
+        generatedDates: [],
+      };
     }
 
     const write = await this.writeGeneratedTransactions(
@@ -379,7 +412,13 @@ export class GenerateRecurringTransactionsJobService {
       this.logger.warn(
         `Job: recorrência ${recurring.id} em exclusão (skipped-rule-locked); geração ignorada.`,
       );
-      return { generatedCount: 0, skipped: true, failed, persisted: false };
+      return {
+        generatedCount: 0,
+        skipped: true,
+        failed,
+        persisted: false,
+        generatedDates: [],
+      };
     }
 
     if (write.outcome === 'skipped-rule-gone') {
@@ -391,6 +430,7 @@ export class GenerateRecurringTransactionsJobService {
         skipped: true,
         failed: false,
         persisted: false,
+        generatedDates: [],
       };
     }
 
@@ -399,6 +439,9 @@ export class GenerateRecurringTransactionsJobService {
       skipped: false,
       failed,
       persisted: true,
+      generatedDates: transactionsToCreate.map(
+        (transaction) => transaction.date,
+      ),
     };
   }
 

@@ -2,6 +2,7 @@ export interface CacheGenerations {
   ledger?: number | null;
   category?: number | null;
   goal?: number | null;
+  months?: Record<string, number | null>;
 }
 
 type KeyPart = string | number | null | undefined;
@@ -34,6 +35,14 @@ export function buildCacheKey({
     if (generation === undefined) continue;
     if (generation === null) return null;
     segments.push(`${prefix}${generation}`);
+  }
+
+  const monthEntries = Object.entries(generations.months ?? {}).sort(
+    ([left], [right]) => left.localeCompare(right),
+  );
+  for (const [month, generation] of monthEntries) {
+    if (generation === null) return null;
+    segments.push(`m${month}${generation}`);
   }
 
   const tail = parts.map((part) => String(part ?? ''));

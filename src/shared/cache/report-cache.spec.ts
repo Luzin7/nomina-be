@@ -3,8 +3,12 @@ import {
   LEDGER_CACHE_TTL_SECONDS,
   LEDGER_LIVE_CACHE_TTL_SECONDS,
   invalidateLedgerReads,
+  invalidateMonthReads,
   ledgerGenerationKey,
+  monthGenerationKey,
+  monthKeyOf,
   readLedgerGeneration,
+  readMonthGeneration,
 } from './report-cache';
 
 const NOW_MS = 1_700_000_000_000;
@@ -50,6 +54,50 @@ describe('report-cache', () => {
 
     expect(cache.counters.get('cache-gen:report:ws-1')).toBe(6);
     expect(scan).not.toHaveBeenCalled();
+  });
+
+  it('composes the month generation key', () => {
+    expect(monthGenerationKey('ws-1', '2026-11')).toBe(
+      'cache-gen:report:month:ws-1:2026-11',
+    );
+  });
+
+  it('formats a padded month key', () => {
+    expect(monthKeyOf(2026, 3)).toBe('2026-03');
+    expect(monthKeyOf(2026, 11)).toBe('2026-11');
+  });
+
+  it('initialises a missing month generation with the current time', async () => {
+    const cache = new InMemoryCacheProvider();
+
+    await expect(readMonthGeneration(cache, 'ws-1', '2026-11')).resolves.toBe(
+      NOW_MS,
+    );
+    expect(cache.counters.get('cache-gen:report:month:ws-1:2026-11')).toBe(
+      NOW_MS,
+    );
+  });
+
+  it('bumps the global generation and every touched month', async () => {
+    const cache = new InMemoryCacheProvider();
+    cache.counters.set('cache-gen:report:ws-1', 5);
+    cache.counters.set('cache-gen:report:month:ws-1:2026-11', 8);
+
+    await invalidateMonthReads(
+      cache,
+      'ws-1',
+      ['2026-11', '2026-12', '2026-11'],
+      'test-write',
+    );
+
+    expect(cache.counters.get('cache-gen:report:ws-1')).toBe(6);
+    expect(cache.counters.get('cache-gen:report:month:ws-1:2026-11')).toBe(9);
+    expect(cache.counters.get('cache-gen:report:month:ws-1:2026-12')).toBe(
+      NOW_MS + 1,
+    );
+    expect(cache.counters.get('cache-gen:report:month:ws-1:2026-10')).toBe(
+      undefined,
+    );
   });
 
   it('keeps a late set from being served after a concurrent write', async () => {

@@ -118,7 +118,7 @@ describe('GetExpensesByCategoryService', () => {
     await service.execute(makeRequest({ limit: 50 }));
 
     expect(cache.get).toHaveBeenCalledWith(
-      'report:expenses-by-category:v6:ws-1:g7:c7:2026-9:2026-09:50',
+      'report:expenses-by-category:v6:ws-1:c7:m2026-097:2026-9:2026-09:50',
     );
   });
 
@@ -150,7 +150,7 @@ describe('GetExpensesByCategoryService', () => {
       totalExpense: 10000,
     });
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v6:ws-1:g7:c7:2026-9:2026-09:5',
+      'report:expenses-by-category:v6:ws-1:c7:m2026-097:2026-9:2026-09:5',
       JSON.stringify(result),
       LEDGER_CACHE_TTL_SECONDS,
     );
@@ -170,7 +170,7 @@ describe('GetExpensesByCategoryService', () => {
     expect(transactionRepository.getTopExpensesByCategory).toHaveBeenCalled();
   });
 
-  it('misses on the next read when a write bumped the generation during compute', async () => {
+  it('misses on the next read when a write bumped the month generation during compute', async () => {
     cache.readCounter
       .mockResolvedValueOnce(7)
       .mockResolvedValueOnce(7)
@@ -185,12 +185,12 @@ describe('GetExpensesByCategoryService', () => {
     await service.execute(makeRequest());
 
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v6:ws-1:g7:c7:2026-9:2026-09:5',
+      'report:expenses-by-category:v6:ws-1:c7:m2026-097:2026-9:2026-09:5',
       expect.any(String),
       LEDGER_CACHE_TTL_SECONDS,
     );
     expect(cache.get).toHaveBeenLastCalledWith(
-      'report:expenses-by-category:v6:ws-1:g8:c8:2026-9:2026-09:5',
+      'report:expenses-by-category:v6:ws-1:c8:m2026-098:2026-9:2026-09:5',
     );
   });
 });

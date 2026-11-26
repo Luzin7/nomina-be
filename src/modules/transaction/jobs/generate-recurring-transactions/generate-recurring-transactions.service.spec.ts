@@ -12,6 +12,7 @@ import {
   RecurringTransactionRepository,
 } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { makeRecurring } from '@modules/transaction/test-helpers/mock-factories';
 import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
 import { Logger } from '@nestjs/common';
@@ -59,6 +60,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
   let nextGenerationDateCalculator: jest.Mocked<NextGenerationDateCalculator>;
   let redis: jest.Mocked<CacheProvider>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
 
   const NOW = new Date('2024-01-15T00:00:00.000Z');
   const LOOK_AHEAD = new Date('2024-01-22');
@@ -134,11 +136,16 @@ describe('GenerateRecurringTransactionsJobService', () => {
       endOfMonth: jest.fn(),
     } as unknown as jest.Mocked<DateProvider>;
 
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
+
     service = new GenerateRecurringTransactionsJobService(
       recurringRepository,
       nextGenerationDateCalculator,
       redis,
       dateProvider,
+      workspaceTimezone,
     );
   });
 
@@ -306,7 +313,7 @@ describe('GenerateRecurringTransactionsJobService', () => {
     if (result.isRight()) expect(result.value.generatedCount).toBe(1);
   });
 
-  it('invalidates the report cache once per workspace that persisted', async () => {
+  it('invalidates the global and month report cache per workspace that persisted', async () => {
     recurringRepository.listNeedingGeneration.mockResolvedValue([
       schedule({
         id: 'r-a1',
@@ -330,13 +337,21 @@ describe('GenerateRecurringTransactionsJobService', () => {
 
     await service.execute();
 
-    expect(redis.incrementCounter).toHaveBeenCalledTimes(2);
+    expect(redis.incrementCounter).toHaveBeenCalledTimes(4);
     expect(redis.incrementCounter).toHaveBeenCalledWith(
       'cache-gen:report:ws-a',
       expect.any(Number),
     );
     expect(redis.incrementCounter).toHaveBeenCalledWith(
       'cache-gen:report:ws-b',
+      expect.any(Number),
+    );
+    expect(redis.incrementCounter).toHaveBeenCalledWith(
+      expect.stringMatching(/^cache-gen:report:month:ws-a:\d{4}-\d{2}$/),
+      expect.any(Number),
+    );
+    expect(redis.incrementCounter).toHaveBeenCalledWith(
+      expect.stringMatching(/^cache-gen:report:month:ws-b:\d{4}-\d{2}$/),
       expect.any(Number),
     );
   });
@@ -368,9 +383,13 @@ describe('GenerateRecurringTransactionsJobService', () => {
     expect(result.value).toMatchObject({
       message: expect.stringContaining('db down'),
     });
-    expect(redis.incrementCounter).toHaveBeenCalledTimes(1);
+    expect(redis.incrementCounter).toHaveBeenCalledTimes(2);
     expect(redis.incrementCounter).toHaveBeenCalledWith(
       'cache-gen:report:ws-a',
+      expect.any(Number),
+    );
+    expect(redis.incrementCounter).toHaveBeenCalledWith(
+      expect.stringMatching(/^cache-gen:report:month:ws-a:\d{4}-\d{2}$/),
       expect.any(Number),
     );
   });

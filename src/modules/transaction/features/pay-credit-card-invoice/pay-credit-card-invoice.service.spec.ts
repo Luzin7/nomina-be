@@ -20,6 +20,7 @@ import {
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { left, right } from '@shared/core/errors/Either';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { PayCreditCardInvoiceService } from './pay-credit-card-invoice.service';
 
 type ServiceRequest = Parameters<
@@ -46,6 +47,7 @@ describe('PayCreditCardInvoiceService', () => {
   let accountRepository: jest.Mocked<AccountRepository>;
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
   let cacheProvider: jest.Mocked<CacheProvider>;
 
   beforeEach(() => {
@@ -83,7 +85,9 @@ describe('PayCreditCardInvoiceService', () => {
       now: jest.fn().mockReturnValue(new Date()),
       startOfDay: jest.fn().mockReturnValue(new Date()),
       add: jest.fn(),
-      format: jest.fn().mockReturnValue('2024-08-05'),
+      format: jest.fn((_date: Date, pattern: string) =>
+        pattern === 'YYYY-MM' ? '2024-08' : '2024-08-05',
+      ),
       toTimezone: jest.fn(),
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
@@ -91,6 +95,9 @@ describe('PayCreditCardInvoiceService', () => {
       startOfMonth: jest.fn(),
     } as unknown as jest.Mocked<DateProvider>;
 
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('UTC'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
     cacheProvider = {
       delByPattern: jest.fn().mockResolvedValue(0),
       incrementCounter: jest.fn().mockResolvedValue(1),
@@ -100,6 +107,7 @@ describe('PayCreditCardInvoiceService', () => {
       accountRepository,
       transactionRepository,
       dateProvider,
+      workspaceTimezone,
       cacheProvider,
     );
   });
@@ -234,7 +242,39 @@ describe('PayCreditCardInvoiceService', () => {
       'cache-gen:report:ws-1',
       expect.any(Number),
     );
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-08',
+      expect.any(Number),
+    );
     expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
+  });
+
+  it('should bump the payment month and the invoice month', async () => {
+    const today = new Date('2024-08-05T12:00:00.000Z');
+    dateProvider.now.mockReturnValue(today);
+    dateProvider.startOfDay.mockReturnValue(today);
+    dateProvider.format.mockImplementation((date: Date, pattern: string) =>
+      pattern === 'YYYY-MM' ? date.toISOString().slice(0, 7) : '2024-08-05',
+    );
+    accountRepository.findById
+      .mockResolvedValueOnce(
+        makeCreditCard({ id: 'acc-cc', timezone: 'UTC', balance: 100000n }),
+      )
+      .mockResolvedValueOnce(makeCheckingAccount({ id: 'acc-src' }));
+    transactionRepository.createWithBalanceUpdate.mockResolvedValue(
+      right(undefined),
+    );
+
+    await service.execute(makeRequest({ month: 7, year: 2024 }));
+
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-07',
+      expect.any(Number),
+    );
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-08',
+      expect.any(Number),
+    );
   });
 
   it('should not clear the report cache when persisting fails', async () => {

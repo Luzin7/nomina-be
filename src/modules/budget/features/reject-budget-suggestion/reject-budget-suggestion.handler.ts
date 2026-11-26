@@ -11,7 +11,7 @@ import {
 } from '@modules/budget/valueObjects/SuggestionDecisions';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { RejectBudgetSuggestionRequest } from './reject-budget-suggestion.dto';
@@ -87,9 +87,10 @@ export class RejectBudgetSuggestionService implements Service<
       return this.settleConcurrentDecision(workspaceId, kind);
     }
 
-    await invalidateLedgerReads(
+    await invalidateMonthReads(
       this.cache,
       workspaceId,
+      [month],
       'reject-budget-suggestion',
     );
 
