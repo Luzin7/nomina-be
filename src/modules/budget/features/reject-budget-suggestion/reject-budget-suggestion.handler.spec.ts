@@ -35,6 +35,7 @@ const makeSuggestion = (
     bracket: { position: 1, version: 3 },
     allocations: [],
     unmappedCategoryIds: [],
+    unallocatedCents: 0,
     fingerprint: 'split-fingerprint',
   },
   plan: null,

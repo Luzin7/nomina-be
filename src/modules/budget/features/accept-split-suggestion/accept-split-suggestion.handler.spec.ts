@@ -43,6 +43,7 @@ const makePendingSplit = (
       },
     ],
     unmappedCategoryIds: [],
+    unallocatedCents: 0,
     fingerprint: FINGERPRINT,
     ...overrides,
   }) as SplitSuggestionState;
