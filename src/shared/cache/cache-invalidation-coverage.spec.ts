@@ -50,6 +50,10 @@ const READS: Record<string, { route: string; kinds: Kind[] }> = {
     route: 'account:list',
     kinds: ['ledger'],
   },
+  'account/features/list-last-movements/list-last-movements.handler.ts': {
+    route: 'account:last-movements',
+    kinds: ['ledger'],
+  },
   'account/features/get-upcoming-invoices/get-upcoming-invoices.handler.ts': {
     route: 'account:upcoming-invoices',
     kinds: ['ledger'],

@@ -1,9 +1,15 @@
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
-import { BalanceMovementCause, GoalProgressSource } from '@constants/enums';
+import {
+  BalanceMovementCause,
+  GoalProgressSource,
+  TransactionStatus,
+  TransactionType,
+} from '@constants/enums';
 import { IdempotencyKeyReusedError } from '@modules/account/errors';
 import {
+  AccountLastMovement,
   AccountListItem,
   AccountRepository,
   AdjustBalanceInput,
@@ -18,6 +24,26 @@ import { applyBalanceMovement, DrizzleTransaction } from './balance-movement';
 import { ensureEntityId } from './ensure-entity-id';
 import { insertOpeningMovement } from './opening-movement';
 type BalanceAdjustmentRow = typeof schema.balanceAdjustments.$inferSelect;
+
+type LastMovementRow = {
+  accountId: string;
+  transactionId: string;
+  title: string;
+  date: Date;
+  amount: string;
+  type: string;
+};
+
+function toLastMovement(row: LastMovementRow): AccountLastMovement {
+  return {
+    accountId: row.accountId,
+    transactionId: row.transactionId,
+    title: row.title,
+    date: row.date,
+    amountCents: Number(row.amount),
+    type: row.type as TransactionType,
+  };
+}
 
 function toAdjustmentRecord(
   row: BalanceAdjustmentRow,
@@ -312,6 +338,55 @@ export class AccountRepositoryImplementation implements AccountRepository {
       })),
       total: totalCount,
     };
+  }
+
+  async findLastMovementsByWorkspaceId(
+    workspaceId: string,
+  ): Promise<AccountLastMovement[]> {
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      const rows = await tx.execute<LastMovementRow>(sql`
+      SELECT DISTINCT ON (movements.account_id)
+        movements.account_id AS "accountId",
+        movements.transaction_id AS "transactionId",
+        movements.title,
+        movements.date,
+        movements.amount,
+        movements.type
+      FROM (
+        SELECT
+          account_id,
+          id AS transaction_id,
+          title,
+          date,
+          amount,
+          type,
+          created_at
+        FROM transactions
+        WHERE workspace_id = ${workspaceId}
+          AND status = ${TransactionStatus.COMPLETED}
+        UNION ALL
+        SELECT
+          destination_account_id AS account_id,
+          id AS transaction_id,
+          title,
+          date,
+          amount,
+          type,
+          created_at
+        FROM transactions
+        WHERE workspace_id = ${workspaceId}
+          AND status = ${TransactionStatus.COMPLETED}
+          AND destination_account_id IS NOT NULL
+      ) AS movements
+      ORDER BY
+        movements.account_id,
+        movements.date DESC,
+        movements.created_at DESC,
+        movements.transaction_id DESC
+    `);
+
+      return rows.map(toLastMovement);
+    });
   }
 
   async findAllByWorkspaceId(workspaceId: string): Promise<AnyAccount[]> {
