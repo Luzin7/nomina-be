@@ -67,6 +67,7 @@ export type SplitSuggestionState =
       bracket: { position: number; version: number } | null;
       allocations: SuggestedAllocation[];
       unmappedCategoryIds: string[];
+      unallocatedCents: number;
       fingerprint: string;
     }
   | { status: 'accepted' | 'rejected' | 'complete' | 'unavailable' };
@@ -161,7 +162,7 @@ export class ResolveBudgetSuggestionService implements Service<
     const now = this.dateProvider.now();
     const key = buildCacheKey({
       route: 'budget:suggestion',
-      version: 'v4',
+      version: 'v5',
       workspaceId,
       generations: { ledger, category },
       parts: [this.dateProvider.format(now, 'YYYY-MM-DD', timezone)],
@@ -343,16 +344,17 @@ export class ResolveBudgetSuggestionService implements Service<
       return { split: unavailableOf(progress), plan: null };
 
     const bracket = this.bracketOf(workspaceId, incomeBasisCents, parameters);
-    const { allocations, unmappedCategoryIds } = buildSplitSuggestion({
-      categories,
-      spendByMonth: basis,
-      groupByCategoryName: parameters.groupByCategoryName,
-      incomeBasisCents,
-      bracket,
-      currentTargets: input.targets,
-      step: progress.step,
-      steps: SPLIT_STEPS,
-    });
+    const { allocations, unmappedCategoryIds, unallocatedCents } =
+      buildSplitSuggestion({
+        categories,
+        spendByMonth: basis,
+        groupByCategoryName: parameters.groupByCategoryName,
+        incomeBasisCents,
+        bracket,
+        currentTargets: input.targets,
+        step: progress.step,
+        steps: SPLIT_STEPS,
+      });
     if (allocations.length === 0) {
       return { split: unavailableOf(progress), plan: null };
     }
@@ -381,6 +383,7 @@ export class ResolveBudgetSuggestionService implements Service<
             : null,
         allocations,
         unmappedCategoryIds,
+        unallocatedCents,
         fingerprint: fingerprintOf({
           kind: 'split',
           step: progress.step,

@@ -15,6 +15,11 @@ import {
   type BudgetSuggestion,
   ResolveBudgetSuggestionService,
 } from '@modules/budget/services/resolve-budget-suggestion.service';
+import {
+  buildSplitSuggestion,
+  type SuggestedAllocation,
+  type SuggestionCategory,
+} from '@modules/budget/valueObjects/SplitSuggestion';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import { MonthProjection } from '@modules/report/valueObjects/MonthProjection';
 import { MonthSummary } from '@modules/report/valueObjects/MonthSummary';
@@ -1296,6 +1301,91 @@ describe('GetBudgetStatusService', () => {
     expect(result.value.mode).toBe('percentage');
     expect(result.value.unallocatedIncomeCents).toBe(0);
     expect(result.value.allocationState).toBe('balanced');
+  });
+
+  it('reports a capped accepted split as under by the cents left out of whole reais', async () => {
+    const incomeCents = 465_867;
+    const categories: SuggestionCategory[] = [
+      { id: 'cat-1', name: 'Moradia', parentId: null, hidden: false },
+      { id: 'cat-2', name: 'Lazer', parentId: null, hidden: false },
+      {
+        id: INVESTMENTS_ROOT,
+        name: INVESTMENTS_CATEGORY_NAME,
+        parentId: null,
+        hidden: false,
+      },
+    ];
+    const spend = { 'cat-1': 416_000, [INVESTMENTS_ROOT]: 49_800 };
+    const suggestionAt = (
+      step: number,
+      currentTargets: Record<string, number>,
+    ): SuggestedAllocation[] =>
+      buildSplitSuggestion({
+        categories,
+        spendByMonth: [spend, spend, spend],
+        groupByCategoryName: {
+          Moradia: 'essentials',
+          Lazer: 'lifestyle',
+          [INVESTMENTS_CATEGORY_NAME]: 'savings',
+        },
+        incomeBasisCents: incomeCents,
+        bracket: {
+          position: 3,
+          shares: { essentials: 5000, lifestyle: 3000, savings: 2000 },
+        },
+        currentTargets,
+        step,
+        steps: 6,
+      }).allocations;
+    const targetsOf = (allocations: SuggestedAllocation[]) =>
+      Object.fromEntries(
+        allocations.map((allocation) => [
+          allocation.categoryId,
+          allocation.suggestedCents,
+        ]),
+      );
+    const first = suggestionAt(1, {});
+    const second = suggestionAt(2, targetsOf(first));
+    const capped = suggestionAt(3, targetsOf(second));
+    const cappedTotal = capped.reduce(
+      (total, allocation) => total + allocation.suggestedCents,
+      0,
+    );
+
+    expect(cappedTotal).toBe(incomeCents - 67);
+
+    repository.resolveSnapshot.mockResolvedValueOnce(
+      makeSnapshot({
+        mode: 'fixed',
+        monthlyIncome: incomeCents,
+        allocations: capped.map((allocation, index) => ({
+          id: `allocation-${index + 1}`,
+          categoryId: allocation.categoryId,
+          categoryName:
+            categoryMapOf()[allocation.categoryId]?.name ??
+            allocation.categoryId,
+          groupName: allocation.categoryId,
+          groupOrder: index,
+          categoryOrder: 0,
+          percentageOfIncome: null,
+          targetCents: allocation.suggestedCents,
+        })),
+      }),
+    );
+
+    const result = await service.execute({
+      workspaceId: 'ws-1',
+      sub: 'user-1',
+      month: 11,
+      year: 2026,
+    });
+
+    if (!result.isRight()) throw new Error('expected a right result');
+    expect(result.value.exists).toBe(true);
+    if (!result.value.exists) throw new Error('expected an existing status');
+    expect(result.value.totalTargetCents).toBe(cappedTotal);
+    expect(result.value.unallocatedIncomeCents).toBe(67);
+    expect(result.value.allocationState).toBe('under');
   });
 
   it('sums the plan before dropping allocations whose category is gone', async () => {
