@@ -323,21 +323,16 @@ describe('GetCreditCardInvoiceService', () => {
     }
   });
 
-  it('should not let availableLimit go negative when pending exceeds remaining limit', async () => {
+  it('should return a signed availableLimit for an over-limit card', async () => {
     accountRepository.findById.mockResolvedValue(
-      makeCreditCard({ creditLimit: 10000n }),
+      makeCreditCard({ creditLimit: 10000n, balance: 14000n }),
     );
-    cardInvoiceRepository.findTotals.mockResolvedValue([
-      makeTotals({ chargesInPeriod: 8000n, pendingCharges: 6000n }),
-      makeTotals(),
-    ]);
 
     const result = await service.execute(makeRequest());
 
     expect(result.isRight()).toBe(true);
     if (result.isRight()) {
-      expect(result.value.pendingAmount).toBe(6000n);
-      expect(result.value.availableLimit).toBe(0n);
+      expect(result.value.availableLimit).toBe(-4000n);
     }
   });
 });
