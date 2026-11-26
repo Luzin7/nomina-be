@@ -1,5 +1,9 @@
 import { BUDGET_MODE_DEFAULT, type BudgetMode } from '@constants/enums';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import {
+  ResolveIncomePrefillService,
+  type IncomePrefill,
+} from '@modules/budget/services/resolve-income-prefill.service';
 import { buildPresetAllocations } from '@modules/budget/valueObjects/BudgetPreset';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
@@ -20,7 +24,7 @@ export type BudgetSetupAllocation = {
 
 export type BudgetSetupResponse = {
   mode: BudgetMode;
-  suggestedIncome: number;
+  suggestedIncome: IncomePrefill;
   allocations: BudgetSetupAllocation[];
 };
 
@@ -33,13 +37,13 @@ export class GetBudgetSetupService implements Service<
   constructor(
     private readonly budgetRepository: BudgetRepository,
     private readonly workspaceTimezone: GetWorkspaceTimezoneService,
+    private readonly resolveIncomePrefill: ResolveIncomePrefillService,
     private readonly dateProvider: DateProvider,
   ) {}
 
   async execute(request: Request): Promise<Either<Error, BudgetSetupResponse>> {
-    const [timezone, suggestedIncome, categories] = await Promise.all([
+    const [timezone, categories] = await Promise.all([
       this.workspaceTimezone.execute(request.workspaceId),
-      this.budgetRepository.findMonthlyIncomeSuggestion(request.workspaceId),
       this.budgetRepository.findPresetCategories(request.workspaceId),
     ]);
 
@@ -47,10 +51,16 @@ export class GetBudgetSetupService implements Service<
       this.dateProvider.now(),
       timezone,
     );
-    const snapshot = await this.budgetRepository.resolveSnapshot(
-      request.workspaceId,
-      currentMonthStart,
-    );
+    const [suggestedIncome, snapshot] = await Promise.all([
+      this.resolveIncomePrefill.execute({
+        workspaceId: request.workspaceId,
+        timezone,
+      }),
+      this.budgetRepository.resolveSnapshot(
+        request.workspaceId,
+        currentMonthStart,
+      ),
+    ]);
 
     return right({
       mode: snapshot?.mode ?? BUDGET_MODE_DEFAULT,

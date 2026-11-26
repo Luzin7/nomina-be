@@ -547,7 +547,9 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
     });
   }
 
-  async findMonthlyIncomeSuggestion(workspaceId: string): Promise<number> {
+  async findRecurringMonthlyIncomeCents(
+    workspaceId: string,
+  ): Promise<number | null> {
     const [row] = await this.drizzle.db
       .select({
         total: sum(schema.recurringTransactions.amount).mapWith(Number),
@@ -565,7 +567,7 @@ export class BudgetRepositoryImplementation implements BudgetRepository {
         ),
       );
 
-    return row?.total ?? 0;
+    return row?.total ?? null;
   }
 
   async findPresetCategories(workspaceId: string): Promise<PresetCategory[]> {
