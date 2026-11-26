@@ -1,4 +1,5 @@
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import { ResolveIncomePrefillService } from '@modules/budget/services/resolve-income-prefill.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { GetBudgetSetupService } from './get-setup.handler';
@@ -11,6 +12,7 @@ describe('GetBudgetSetupService', () => {
   let service: GetBudgetSetupService;
   let repository: jest.Mocked<BudgetRepository>;
   let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
+  let resolveIncomePrefill: jest.Mocked<ResolveIncomePrefillService>;
   let dateProvider: DayJsDateProvider;
 
   beforeEach(() => {
@@ -19,7 +21,6 @@ describe('GetBudgetSetupService', () => {
       findCategoriesByIds: jest.fn(),
       findCompletedExpenseByCategory: jest.fn(),
       saveSnapshot: jest.fn(),
-      findMonthlyIncomeSuggestion: jest.fn().mockResolvedValue(0),
       findPresetCategories: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<BudgetRepository>;
 
@@ -27,12 +28,17 @@ describe('GetBudgetSetupService', () => {
       execute: jest.fn().mockResolvedValue(TIMEZONE),
     } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
 
+    resolveIncomePrefill = {
+      execute: jest.fn().mockResolvedValue({ cents: null, source: 'none' }),
+    } as unknown as jest.Mocked<ResolveIncomePrefillService>;
+
     dateProvider = new DayJsDateProvider();
     jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
 
     service = new GetBudgetSetupService(
       repository,
       workspaceTimezone,
+      resolveIncomePrefill,
       dateProvider,
     );
   });
@@ -40,7 +46,10 @@ describe('GetBudgetSetupService', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('returns the active monthly income suggestion and the preset split', async () => {
-    repository.findMonthlyIncomeSuggestion.mockResolvedValueOnce(850_000);
+    resolveIncomePrefill.execute.mockResolvedValueOnce({
+      cents: 850_000,
+      source: 'recurring',
+    });
     repository.findPresetCategories.mockResolvedValueOnce([
       { id: 'home', name: 'Moradia' },
       { id: 'leisure', name: 'Lazer' },
@@ -50,7 +59,15 @@ describe('GetBudgetSetupService', () => {
 
     expect(result.isRight()).toBe(true);
     if (!result.isRight()) return;
-    expect(result.value.suggestedIncome).toBe(850_000);
+    expect(result.value.suggestedIncome).toEqual({
+      cents: 850_000,
+      source: 'recurring',
+    });
+    expect(resolveIncomePrefill.execute).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      timezone: TIMEZONE,
+    });
+    expect(workspaceTimezone.execute).toHaveBeenCalledTimes(1);
     expect(result.value.allocations).toEqual([
       {
         categoryId: 'home',
@@ -170,6 +187,9 @@ describe('GetBudgetSetupService', () => {
     expect(result.isRight()).toBe(true);
     if (!result.isRight()) return;
     expect(result.value.mode).toBe('fixed');
-    expect(result.value.suggestedIncome).toBe(0);
+    expect(result.value.suggestedIncome).toEqual({
+      cents: null,
+      source: 'none',
+    });
   });
 });

@@ -192,7 +192,7 @@ describe('GetBudgetStatusService', () => {
       findCompletedExpenseByCategory: jest.fn().mockResolvedValue({}),
       findCategoryMap: jest.fn().mockResolvedValue(ROOT_CATEGORIES),
       saveSnapshot: jest.fn(),
-      findMonthlyIncomeSuggestion: jest.fn(),
+      findRecurringMonthlyIncomeCents: jest.fn(),
       findPresetCategories: jest.fn(),
     } as unknown as jest.Mocked<BudgetRepository>;
 
