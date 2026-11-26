@@ -40,6 +40,7 @@ describe('DeleteAccountService', () => {
       findByNameAndWorkspaceId: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
+      findLastMovementsByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
       updateAutoPay: jest.fn(),
       adjustBalance: jest.fn(),
