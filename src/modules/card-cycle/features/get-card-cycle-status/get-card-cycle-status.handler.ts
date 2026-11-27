@@ -120,21 +120,23 @@ export class GetCardCycleStatusService implements Service<
       dueDay,
       dueDate: request.dueDate,
     });
-    const [budget, cycleSpendCents] = await Promise.all([
-      this.cardCycleRepository.findApplicableBudget(
-        request.workspaceId,
-        account.id,
-        period.dueDate,
-      ),
-      this.cardCycleRepository.sumCycleSpend({
-        workspaceId: request.workspaceId,
-        accountId: account.id,
-        periodStart: period.periodStart,
-        periodEnd: period.periodEnd,
-        timezone: account.timezone,
-      }),
+    const [budgets, spends] = await Promise.all([
+      this.cardCycleRepository.findApplicableBudgets(request.workspaceId, [
+        { accountId: account.id, dueDate: period.dueDate },
+      ]),
+      this.cardCycleRepository.sumCycleSpends([
+        {
+          workspaceId: request.workspaceId,
+          accountId: account.id,
+          periodStart: period.periodStart,
+          periodEnd: period.periodEnd,
+          timezone: account.timezone,
+        },
+      ]),
     ]);
+    const budget = budgets.get(account.id) ?? null;
     const limitCents = budget === null ? null : budget.limitCents;
+    const cycleSpendCents = spends.get(account.id) ?? 0;
 
     return right({
       accountId: account.id,

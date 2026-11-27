@@ -3,6 +3,7 @@ import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { MissingCardCyclePeriodError } from '../errors/MissingCardCyclePeriodError';
 import { CardCycleBudgetExistsError } from '@modules/card-cycle/errors';
 import {
+  CardCycleBudgetLookup,
   CardCycleBudgetRecord,
   CardCyclePeriodRecord,
   CardCycleRepository,
@@ -12,7 +13,7 @@ import {
 } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { Injectable } from '@nestjs/common';
 import { getErrorDetails } from '@shared/utils/error-details';
-import { and, desc, eq, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, lte, or, sql } from 'drizzle-orm';
 import * as schema from '../schema';
 import { withinLocalDays } from '../sql-helpers';
 
@@ -101,6 +102,42 @@ export class CardCycleRepositoryImplementation implements CardCycleRepository {
     });
   }
 
+  async findApplicableBudgets(
+    workspaceId: string,
+    lookups: CardCycleBudgetLookup[],
+  ): Promise<Map<string, CardCycleBudgetRecord>> {
+    const uniqueLookups = firstPerAccount(lookups);
+    if (uniqueLookups.length === 0) return new Map();
+
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(schema.cardCycleBudgets)
+        .where(
+          and(
+            eq(schema.cardCycleBudgets.workspaceId, workspaceId),
+            or(
+              ...uniqueLookups.map(({ accountId, dueDate }) =>
+                and(
+                  eq(schema.cardCycleBudgets.accountId, accountId),
+                  lte(schema.cardCycleBudgets.effectiveFrom, dueDate),
+                ),
+              ),
+            ),
+          ),
+        )
+        .orderBy(desc(schema.cardCycleBudgets.effectiveFrom));
+
+      const budgets = new Map<string, CardCycleBudgetRecord>();
+      for (const row of rows) {
+        if (budgets.has(row.accountId)) continue;
+        budgets.set(row.accountId, toCardCycleBudgetRecord(row));
+      }
+
+      return budgets;
+    });
+  }
+
   async saveBudget(
     input: SaveCardCycleBudgetInput,
   ): Promise<CardCycleBudgetRecord> {
@@ -182,6 +219,49 @@ export class CardCycleRepositoryImplementation implements CardCycleRepository {
       return row.total;
     });
   }
+
+  async sumCycleSpends(
+    inputs: CardCycleSpendInput[],
+  ): Promise<Map<string, number>> {
+    const uniqueInputs = firstPerAccount(inputs);
+    if (uniqueInputs.length === 0) return new Map();
+
+    return this.drizzle.withStatementTimeout(async (tx) => {
+      const rows = await tx
+        .select({
+          accountId: schema.transactions.accountId,
+          total:
+            sql<number>`COALESCE(SUM(${schema.transactions.amount}), 0)`.mapWith(
+              Number,
+            ),
+        })
+        .from(schema.transactions)
+        .where(
+          and(
+            eq(schema.transactions.type, TransactionType.EXPENSE),
+            eq(schema.transactions.status, TransactionStatus.COMPLETED),
+            or(
+              ...uniqueInputs.map((input) =>
+                and(
+                  eq(schema.transactions.workspaceId, input.workspaceId),
+                  eq(schema.transactions.accountId, input.accountId),
+                  withinLocalDays(schema.transactions.date, {
+                    start: input.periodStart,
+                    end: input.periodEnd,
+                    timezone: input.timezone,
+                  }),
+                ),
+              ),
+            ),
+          ),
+        )
+        .groupBy(schema.transactions.accountId);
+
+      return new Map(
+        rows.map((row): [string, number] => [row.accountId, row.total]),
+      );
+    });
+  }
 }
 
 function toCardCyclePeriodRecord(
@@ -210,4 +290,15 @@ function toCardCycleBudgetRecord(
     effectiveFrom: row.effectiveFrom,
     limitCents: row.limitCents,
   };
+}
+
+function firstPerAccount<T extends { accountId: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+
+  return items.filter((item) => {
+    if (seen.has(item.accountId)) return false;
+    seen.add(item.accountId);
+
+    return true;
+  });
 }

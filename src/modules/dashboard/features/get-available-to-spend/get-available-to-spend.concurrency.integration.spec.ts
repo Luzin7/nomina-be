@@ -1,12 +1,17 @@
 import { TransactionStatus, TransactionType } from '@constants/enums';
 import * as schema from '@infra/databases/drizzle/schema';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
-import { makeCheckingAccount } from '@modules/account/test-helpers/mock-factories';
+import {
+  makeCreditCard,
+  makeCheckingAccount,
+} from '@modules/account/test-helpers/mock-factories';
 import { BudgetRepository } from '@modules/budget/repositories/contracts/BudgetRepository';
+import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
 import type { SpendablePayload } from '@modules/spendable/presenters/Spendable.presenter';
+import { SpendableRepository } from '@modules/spendable/repositories/contracts/SpendableRepository';
 import { CreateTransactionService } from '@modules/transaction/features/create-transaction/create-transaction.service';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
@@ -229,7 +234,17 @@ describe('available to spend without a budget snapshot against a real database',
     });
   });
 
-  it('bounds one uncached read to eighty statements without reading or restoring the timeout', async () => {
+  it('reads the workspace cycle once per dashboard request', async () => {
+    const seed = await seedWorkspace();
+    await spend(app, seed, FIRST_AMOUNT);
+    const findCycle = jest.spyOn(app.get(SpendableRepository), 'findCycle');
+
+    await readHero(app, seed);
+
+    expect(findCycle).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds one uncached read to seventy-two statements without reading or restoring the timeout', async () => {
     const statements: string[] = [];
     const countedClient = postgresJs(postgres.url, {
       max: 5,
@@ -251,7 +266,7 @@ describe('available to spend without a budget snapshot against a real database',
       statements.length = 0;
       await readHero(countedApp, seed);
 
-      expect(statements.length).toBeLessThanOrEqual(80);
+      expect(statements.length).toBeLessThanOrEqual(72);
       expect(
         statements.filter((statement) =>
           /current_setting\('statement_timeout'\)|set_config\('statement_timeout'/.test(
@@ -259,6 +274,65 @@ describe('available to spend without a budget snapshot against a real database',
           ),
         ),
       ).toEqual([]);
+    } finally {
+      await countedApp.close();
+      await countedClient.end({ timeout: 5 });
+    }
+  });
+
+  it('keeps the card reads flat as cards are added', async () => {
+    const statements: string[] = [];
+    const countedClient = postgresJs(postgres.url, {
+      max: 5,
+      fetch_types: false,
+      onnotice: () => undefined,
+      connection: { TimeZone: 'UTC' },
+      debug: (_connection, query) => statements.push(String(query)),
+    });
+    const countedAppDb = drizzle(countedClient, { schema });
+    const countedApp = await createApplication(
+      countedAppDb,
+      new InMemoryCacheProvider(),
+    );
+
+    const countRead = async (
+      seed: Awaited<ReturnType<typeof seedWorkspace>>,
+    ): Promise<number> => {
+      statements.length = 0;
+      await readHero(countedApp, seed);
+      return statements.length;
+    };
+
+    const seedWithCards = async (cards: number) => {
+      const seed = await seedWorkspace(countedApp, countedAppDb);
+      for (let index = 0; index < cards; index += 1) {
+        const card = makeCreditCard({
+          id: randomUUID(),
+          workspaceId: seed.workspaceId,
+          dueDay: 15,
+        });
+        await countedApp.get(AccountRepository).create(card);
+        await countedApp.get(CardCycleRepository).saveBudget({
+          workspaceId: seed.workspaceId,
+          accountId: card.id,
+          effectiveFrom: '2026-01-01',
+          limitCents: 10_000 * (index + 1),
+        });
+      }
+      await spend(countedApp, seed, FIRST_AMOUNT);
+      return seed;
+    };
+
+    try {
+      const cardless = await countRead(await seedWithCards(0));
+      const oneCard = await countRead(await seedWithCards(1));
+      const fourCardsSeed = await seedWithCards(4);
+      const fourCards = await countRead(fourCardsSeed);
+      const hero = await readHero(countedApp, fourCardsSeed);
+
+      expect(hero.spendable?.cards).toHaveLength(4);
+      expect(oneCard - cardless).toBe(fourCards - cardless);
+      expect(fourCards - cardless).toBeLessThanOrEqual(12);
     } finally {
       await countedApp.close();
       await countedClient.end({ timeout: 5 });

@@ -179,7 +179,9 @@ export class GetAvailableToSpendService implements Service<
       this.timeStep(timings, 'goalAportes', () =>
         this.goalRepository.sumMonthlyAporteCents(workspaceId),
       ),
-      this.timeStep(timings, 'spendable', () => this.spendableOf(workspaceId)),
+      this.timeStep(timings, 'spendable', () =>
+        this.spendableOf(workspaceId, cycle),
+      ),
     ]);
     if (budget.isLeft()) return left(budget.value);
     if (plan.isLeft()) return left(plan.value);
@@ -241,9 +243,12 @@ export class GetAvailableToSpendService implements Service<
     }
   }
 
-  private async spendableOf(workspaceId: string): Promise<SpendableOutcome> {
+  private async spendableOf(
+    workspaceId: string,
+    cycle: string | null,
+  ): Promise<SpendableOutcome> {
     try {
-      const result = await this.getSpendable.execute({ workspaceId });
+      const result = await this.getSpendable.execute({ workspaceId, cycle });
       if (result.isLeft()) return { spendable: null, failed: true };
 
       return { spendable: result.value, failed: false };
