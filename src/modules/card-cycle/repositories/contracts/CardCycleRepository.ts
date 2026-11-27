@@ -36,6 +36,11 @@ export type CardCycleSpendInput = {
   timezone: string;
 };
 
+export type CardCycleBudgetLookup = {
+  accountId: string;
+  dueDate: string;
+};
+
 export abstract class CardCycleRepository {
   abstract materializePeriod(
     input: MaterializeCardCyclePeriodInput,
@@ -53,6 +58,11 @@ export abstract class CardCycleRepository {
     dueDate: string,
   ): Promise<CardCycleBudgetRecord | null>;
 
+  abstract findApplicableBudgets(
+    workspaceId: string,
+    lookups: CardCycleBudgetLookup[],
+  ): Promise<Map<string, CardCycleBudgetRecord>>;
+
   abstract saveBudget(
     input: SaveCardCycleBudgetInput,
   ): Promise<CardCycleBudgetRecord>;
@@ -64,4 +74,8 @@ export abstract class CardCycleRepository {
   ): Promise<CardCyclePeriodRecord[]>;
 
   abstract sumCycleSpend(input: CardCycleSpendInput): Promise<number>;
+
+  abstract sumCycleSpends(
+    inputs: CardCycleSpendInput[],
+  ): Promise<Map<string, number>>;
 }

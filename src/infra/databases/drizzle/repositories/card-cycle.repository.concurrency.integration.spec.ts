@@ -1,4 +1,8 @@
-import { AccountType, TransactionType } from '@constants/enums';
+import {
+  AccountType,
+  TransactionStatus,
+  TransactionType,
+} from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import * as schema from '@infra/databases/drizzle/schema';
 import { CardCycleBudgetExistsError } from '@modules/card-cycle/errors';
@@ -447,6 +451,285 @@ describe('CardCycleRepositoryImplementation against a real postgres', () => {
       );
 
       expect(await spend()).toBe(0);
+    });
+  });
+
+  describe('batched reads', () => {
+    async function createCardAccount(): Promise<string> {
+      const id = randomUUID();
+      await db.insert(schema.accounts).values({
+        id,
+        workspaceId,
+        name: 'Outro cartão',
+        type: AccountType.CREDIT_CARD,
+        timezone: CARD_TIMEZONE,
+        dueDay: 10,
+        closingDaysBeforeDue: 3,
+      });
+
+      return id;
+    }
+
+    it('picks the latest limit per card at or before its own due date', async () => {
+      const otherAccountId = await createCardAccount();
+      await repository.saveBudget({
+        workspaceId,
+        accountId,
+        effectiveFrom: '2026-01-28',
+        limitCents: 100_000,
+      });
+      await repository.saveBudget({
+        workspaceId,
+        accountId,
+        effectiveFrom: '2026-06-28',
+        limitCents: 200_000,
+      });
+      await repository.saveBudget({
+        workspaceId,
+        accountId,
+        effectiveFrom: '2027-01-28',
+        limitCents: 300_000,
+      });
+      await repository.saveBudget({
+        workspaceId,
+        accountId: otherAccountId,
+        effectiveFrom: '2026-03-10',
+        limitCents: 50_000,
+      });
+      const lookups = [
+        { accountId, dueDate: '2026-12-28' },
+        { accountId: otherAccountId, dueDate: '2026-02-10' },
+      ];
+
+      const budgets = await repository.findApplicableBudgets(
+        workspaceId,
+        lookups,
+      );
+
+      expect(budgets.size).toBe(1);
+      expect(budgets.get(accountId)?.limitCents).toBe(200_000);
+      expect(budgets.has(otherAccountId)).toBe(false);
+      for (const lookup of lookups) {
+        expect(budgets.get(lookup.accountId) ?? null).toEqual(
+          await repository.findApplicableBudget(
+            workspaceId,
+            lookup.accountId,
+            lookup.dueDate,
+          ),
+        );
+      }
+    });
+
+    it('sums each card window in its own timezone', async () => {
+      const otherAccountId = await createCardAccount();
+      await insertTransaction(
+        10_000,
+        new Date('2026-12-01T02:00:00.000Z'),
+        TransactionType.EXPENSE,
+        'COMPLETED',
+      );
+      await db.insert(schema.transactions).values({
+        workspaceId,
+        accountId: otherAccountId,
+        categoryId,
+        title: 'Compra',
+        amount: 20_000,
+        date: new Date('2026-12-01T02:00:00.000Z'),
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      });
+      const period = { periodStart: '2026-12-01', periodEnd: '2026-12-31' };
+      const inputs = [
+        { workspaceId, accountId, timezone: 'UTC', ...period },
+        {
+          workspaceId,
+          accountId: otherAccountId,
+          timezone: CARD_TIMEZONE,
+          ...period,
+        },
+      ];
+
+      const spends = await repository.sumCycleSpends(inputs);
+
+      expect(spends.get(accountId)).toBe(10_000);
+      expect(spends.has(otherAccountId)).toBe(false);
+      for (const input of inputs) {
+        expect(spends.get(input.accountId) ?? 0).toBe(
+          await repository.sumCycleSpend(input),
+        );
+      }
+    });
+
+    it('keeps limits and spends inside their own workspace', async () => {
+      const otherWorkspaceId = randomUUID();
+      const otherAccountId = randomUUID();
+      const otherCategoryId = randomUUID();
+      await db.insert(schema.workspaces).values({
+        id: otherWorkspaceId,
+        name: 'Outro workspace',
+      });
+      await db.insert(schema.accounts).values({
+        id: otherAccountId,
+        workspaceId: otherWorkspaceId,
+        name: 'Cartão do outro workspace',
+        type: AccountType.CREDIT_CARD,
+        timezone: CARD_TIMEZONE,
+        dueDay: 10,
+        closingDaysBeforeDue: 3,
+      });
+      await db.insert(schema.categories).values({
+        id: otherCategoryId,
+        workspaceId: otherWorkspaceId,
+        name: 'Mercado',
+        type: TransactionType.EXPENSE,
+      });
+      await repository.saveBudget({
+        workspaceId,
+        accountId,
+        effectiveFrom: '2026-01-28',
+        limitCents: 100_000,
+      });
+      await repository.saveBudget({
+        workspaceId: otherWorkspaceId,
+        accountId: otherAccountId,
+        effectiveFrom: '2026-01-10',
+        limitCents: 70_000,
+      });
+      await insertTransaction(
+        11_000,
+        new Date('2026-12-05T15:00:00.000Z'),
+        TransactionType.EXPENSE,
+        'COMPLETED',
+      );
+      await db.insert(schema.transactions).values({
+        workspaceId: otherWorkspaceId,
+        accountId: otherAccountId,
+        categoryId: otherCategoryId,
+        title: 'Compra',
+        amount: 22_000,
+        date: new Date('2026-12-05T15:00:00.000Z'),
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      });
+      const period = { periodStart: '2026-12-01', periodEnd: '2026-12-31' };
+
+      const budgetsFromA = await repository.findApplicableBudgets(workspaceId, [
+        { accountId: otherAccountId, dueDate: '2026-12-10' },
+        { accountId, dueDate: '2026-12-28' },
+      ]);
+      expect(budgetsFromA.has(otherAccountId)).toBe(false);
+      expect(budgetsFromA.get(accountId)?.limitCents).toBe(100_000);
+
+      const budgetsFromB = await repository.findApplicableBudgets(
+        otherWorkspaceId,
+        [
+          { accountId, dueDate: '2026-12-28' },
+          { accountId: otherAccountId, dueDate: '2026-12-10' },
+        ],
+      );
+      expect(budgetsFromB.has(accountId)).toBe(false);
+      expect(budgetsFromB.get(otherAccountId)?.limitCents).toBe(70_000);
+
+      const spendsFromA = await repository.sumCycleSpends([
+        {
+          workspaceId,
+          accountId: otherAccountId,
+          timezone: CARD_TIMEZONE,
+          ...period,
+        },
+        { workspaceId, accountId, timezone: CARD_TIMEZONE, ...period },
+      ]);
+      expect(spendsFromA.has(otherAccountId)).toBe(false);
+      expect(spendsFromA.get(accountId)).toBe(11_000);
+
+      const spendsFromB = await repository.sumCycleSpends([
+        {
+          workspaceId: otherWorkspaceId,
+          accountId,
+          timezone: CARD_TIMEZONE,
+          ...period,
+        },
+        {
+          workspaceId: otherWorkspaceId,
+          accountId: otherAccountId,
+          timezone: CARD_TIMEZONE,
+          ...period,
+        },
+      ]);
+      expect(spendsFromB.has(accountId)).toBe(false);
+      expect(spendsFromB.get(otherAccountId)).toBe(22_000);
+    });
+
+    it('answers a repeated card from its first lookup', async () => {
+      await repository.saveBudget({
+        workspaceId,
+        accountId,
+        effectiveFrom: '2026-01-28',
+        limitCents: 100_000,
+      });
+      await repository.saveBudget({
+        workspaceId,
+        accountId,
+        effectiveFrom: '2026-06-28',
+        limitCents: 200_000,
+      });
+
+      const budgets = await repository.findApplicableBudgets(workspaceId, [
+        { accountId, dueDate: '2026-02-28' },
+        { accountId, dueDate: '2026-12-28' },
+      ]);
+
+      expect(budgets.get(accountId)).toEqual(
+        await repository.findApplicableBudget(
+          workspaceId,
+          accountId,
+          '2026-02-28',
+        ),
+      );
+      expect(budgets.get(accountId)?.limitCents).toBe(100_000);
+    });
+
+    it('sums a repeated card over its first window', async () => {
+      await insertTransaction(
+        10_000,
+        new Date('2026-12-10T15:00:00.000Z'),
+        TransactionType.EXPENSE,
+        'COMPLETED',
+      );
+      await insertTransaction(
+        20_000,
+        new Date('2026-12-20T15:00:00.000Z'),
+        TransactionType.EXPENSE,
+        'COMPLETED',
+      );
+
+      const spends = await repository.sumCycleSpends([
+        {
+          workspaceId,
+          accountId,
+          timezone: CARD_TIMEZONE,
+          periodStart: '2026-12-01',
+          periodEnd: '2026-12-15',
+        },
+        {
+          workspaceId,
+          accountId,
+          timezone: CARD_TIMEZONE,
+          periodStart: '2026-12-01',
+          periodEnd: '2026-12-31',
+        },
+      ]);
+
+      expect(spends.get(accountId)).toBe(10_000);
+      expect(spends.get(accountId)).toBe(
+        await repository.sumCycleSpend({
+          workspaceId,
+          accountId,
+          timezone: CARD_TIMEZONE,
+          periodStart: '2026-12-01',
+          periodEnd: '2026-12-15',
+        }),
+      );
     });
   });
 });
