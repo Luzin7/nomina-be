@@ -1,6 +1,11 @@
 import { RecurrenceFrequency } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
-import { instantOf, localDayIn } from '@infra/databases/drizzle/sql-helpers';
+import {
+  epochMsInUtc,
+  epochMsToDate,
+  instantOf,
+  localDayIn,
+} from '@infra/databases/drizzle/sql-helpers';
 import {
   DateRange,
   MonthLedgerQuery,
@@ -14,7 +19,6 @@ import type { PendingInstallment } from '@modules/report/valueObjects/Projection
 import { SYSTEM_CATEGORY_LIST } from '@modules/category/constants/system-categories';
 import { Injectable } from '@nestjs/common';
 import {
-  AnyColumn,
   and,
   eq,
   gte,
@@ -42,11 +46,6 @@ type PlainExpenseTuple = [number, string, number, boolean];
 const SYSTEM_CATEGORY_IDS = SYSTEM_CATEGORY_LIST.map((category) => category.id);
 
 const INCOME_OR_EXPENSE = ['INCOME', 'EXPENSE'];
-
-const epochMsInUtc = (column: AnyColumn | SQL) =>
-  sql<string>`(EXTRACT(EPOCH FROM ${column}) * 1000)::bigint`;
-
-const epochMsToDate = (epochMs: string) => new Date(Number(epochMs));
 
 type RecurringRuleRow = {
   id: string;
