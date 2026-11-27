@@ -255,19 +255,35 @@ export class GenerateRecurringTransactionsJobService {
   private async invalidateReports(
     datesByWorkspace: Map<string, Date[]>,
   ): Promise<void> {
-    for (const [workspaceId, dates] of datesByWorkspace) {
-      const timezone = await this.workspaceTimezone.execute(workspaceId);
-      const months = dates.map((date) =>
-        this.dateProvider.format(date, 'YYYY-MM', timezone),
-      );
+    const workspaces = [...datesByWorkspace];
 
-      await invalidateMonthReads(
-        this.redis,
-        workspaceId,
-        months,
-        'generate-recurring-transactions',
-      );
-    }
+    const settled = await Promise.allSettled(
+      workspaces.map(([workspaceId, dates]) =>
+        this.invalidateWorkspaceReports(workspaceId, dates),
+      ),
+    );
+
+    const [firstFailure] = settled.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason as unknown] : [],
+    );
+    if (firstFailure !== undefined) throw firstFailure;
+  }
+
+  private async invalidateWorkspaceReports(
+    workspaceId: string,
+    dates: Date[],
+  ): Promise<void> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+    const months = dates.map((date) =>
+      this.dateProvider.format(date, 'YYYY-MM', timezone),
+    );
+
+    await invalidateMonthReads(
+      this.redis,
+      workspaceId,
+      months,
+      'generate-recurring-transactions',
+    );
   }
 
   private async generateForRecurring(

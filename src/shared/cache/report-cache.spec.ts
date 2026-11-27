@@ -135,9 +135,9 @@ describe('report-cache', () => {
     expect(cache.counters.get('cache-gen:report:month:ws-1:2026-12')).toBe(
       NOW_MS + 1,
     );
-    expect(cache.counters.get('cache-gen:report:month:ws-1:2026-10')).toBe(
-      undefined,
-    );
+    expect(
+      cache.counters.get('cache-gen:report:month:ws-1:2026-10'),
+    ).toBeUndefined();
   });
 
   it('captures a bump that returns no generation', async () => {
