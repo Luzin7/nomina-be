@@ -3,6 +3,34 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.8.0](https://github.com/Luzin7/nomina-be/compare/v2.7.1...v2.8.0) (2026-11-27)
+
+### Features
+
+* **account:** expose per-account last movements in one read ([02e6470](https://github.com/Luzin7/nomina-be/commit/02e6470b9545508277b98bcfd89a8a1f9ea105d6))
+* **budget:** return a sourced income prefill from the setup read ([7a9278e](https://github.com/Luzin7/nomina-be/commit/7a9278ed78093f376ecab54a7528245a123dc1ae))
+
+### Bug Fixes
+
+* **account:** require integer amounts on account writes ([1691558](https://github.com/Luzin7/nomina-be/commit/16915585a6825e66e9bbd7ccb0712726693865ea))
+* **account:** return the signed credit card available limit ([7094603](https://github.com/Luzin7/nomina-be/commit/7094603255bad8fdf82e2802c6af400c0f74990c))
+* **budget:** exclude unmapped root categories from the suggestion ([abf8708](https://github.com/Luzin7/nomina-be/commit/abf8708a04982ef7049b7133446b9fd9304f1105))
+* **cache:** expose a single redis client ([fe0709c](https://github.com/Luzin7/nomina-be/commit/fe0709cb86384776e8bf2885e02efe7e5c17e29e))
+* **cache:** log generation counter misses and failures ([60c8b71](https://github.com/Luzin7/nomina-be/commit/60c8b713bc0080592d8cd2a7be640fab38d113c3))
+* **cache:** surface bump and read failures, cover month boundaries ([7cd35e9](https://github.com/Luzin7/nomina-be/commit/7cd35e939af5e223da0693e5dee32b886870ab1d))
+* **cache:** throw on unavailable reads and throttle bump reports ([42ae544](https://github.com/Luzin7/nomina-be/commit/42ae544001c2bf6f19cdae4cfcd47f35aa8ab81a))
+* **category:** scope usage counts to the requesting workspace ([d253fe4](https://github.com/Luzin7/nomina-be/commit/d253fe4841800dad0cbc028850956c9d107aff57))
+* **dashboard:** expose one days remaining on available to spend ([a7461bf](https://github.com/Luzin7/nomina-be/commit/a7461bf2089746a295b90bf5b241b86566038692))
+* **drizzle:** stop restoring statement_timeout outside an enclosing transaction ([c4183a3](https://github.com/Luzin7/nomina-be/commit/c4183a37694e8e892bde8307797af2ed2b23774e))
+* **jobs:** invalidate report reads per workspace without awaiting in a loop ([5375e38](https://github.com/Luzin7/nomina-be/commit/5375e38df8d921114dddf7eb675d7c6d785dfcc5))
+* **report-cache:** invalidate category expenses on structural writes ([7982e47](https://github.com/Luzin7/nomina-be/commit/7982e47d7fa7b2dc8c127ae043dcecff2f7bff5c))
+* **report:** keep saving comparison sign on negative baseline ([3aaa110](https://github.com/Luzin7/nomina-be/commit/3aaa110283affc4da85bdabff2c79731716ff59f))
+
+### Performance Improvements
+
+* **report-cache:** scope expenses-by-category invalidation to the written month ([c8d0e66](https://github.com/Luzin7/nomina-be/commit/c8d0e66ceb43345a2dea75d0107eee7d3d415cfc))
+* **spendable:** batch card-cycle reads and reuse the dashboard cycle ([606b387](https://github.com/Luzin7/nomina-be/commit/606b3873e600e368123a4298cc96bf409f31422a))
+
 ## [2.7.1](https://github.com/Luzin7/nomina-be/compare/v2.7.0...v2.7.1) (2026-11-25)
 
 ### Bug Fixes
