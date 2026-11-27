@@ -14,6 +14,7 @@ import { GenerateRecurringTransactionsJobService } from '@modules/transaction/jo
 import { TransactionPreviewPresenter } from '@modules/transaction/presenters/TransactionPreview.presenter';
 import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
 import { Workspace } from '@modules/workspace/entities/Workspace';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
   PostgreSqlContainer,
@@ -52,6 +53,10 @@ class InMemoryCache implements Partial<CacheProvider> {
 
   async exists(): Promise<boolean> {
     return false;
+  }
+
+  async get(): Promise<string | null> {
+    return null;
   }
 
   async set(): Promise<boolean> {
@@ -95,16 +100,26 @@ describe('transaction list installment position against a real postgres', () => 
     db = drizzle(queryClient, { schema });
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 
-    const drizzleService = { db } as unknown as DrizzleService;
+    const drizzleService = {
+      db,
+      withStatementTimeout: <Result>(
+        work: (executor: typeof db) => Promise<Result>,
+      ): Promise<Result> => work(db),
+    } as unknown as DrizzleService;
     const dateProvider = new FixedClockDateProvider();
     const cache = new InMemoryCache() as unknown as CacheProvider;
     repository = new TransactionRepositoryImplementation(drizzleService);
     accountRepository = new AccountRepositoryImplementation(drizzleService);
+    const workspaceTimezone = new GetWorkspaceTimezoneService(
+      new WorkspaceRepositoryImplementation(drizzleService),
+      cache,
+    );
     purchaseService = new CreateInstallmentPurchaseService(
       accountRepository,
       new CategoryRepositoryImplementation(drizzleService),
       repository,
       dateProvider,
+      workspaceTimezone,
       cache,
     );
     generationJob = new GenerateRecurringTransactionsJobService(
@@ -112,6 +127,7 @@ describe('transaction list installment position against a real postgres', () => 
       new CalculateNextGenerationDateService(dateProvider),
       cache,
       dateProvider,
+      workspaceTimezone,
     );
   });
 

@@ -16,7 +16,7 @@ import {
 import { type SuggestionDecisionOutcome } from '@modules/budget/valueObjects/SuggestionDecisions';
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { AcceptSplitSuggestionRequest } from './accept-split-suggestion.dto';
@@ -94,9 +94,10 @@ export class AcceptSplitSuggestionService implements Service<
     if (outcome === 'drifted') return left(new BudgetSuggestionChangedError());
     if (outcome === 'already-decided') return this.settled(workspaceId);
 
-    await invalidateLedgerReads(
+    await invalidateMonthReads(
       this.cache,
       workspaceId,
+      [month],
       'accept-split-suggestion',
     );
 

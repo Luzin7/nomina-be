@@ -31,13 +31,32 @@ import { UpdateRecurringTransactionService } from '@modules/transaction/features
 import { GenerateRecurringTransactionsJobService } from '@modules/transaction/jobs/generate-recurring-transactions/generate-recurring-transactions.service';
 import { SettleCardInstallmentsJobService } from '@modules/transaction/jobs/settle-card-installments/settle-card-installments.service';
 import * as schema from '@infra/databases/drizzle/schema';
+import { GetExpensesByCategoryService } from '@modules/report/features/get-expenses-by-category/get-expenses-by-category.handler';
+import { GetMonthPaceService } from '@modules/report/features/get-month-pace/get-month-pace.handler';
+import { Transaction } from '@modules/transaction/entities/Transaction';
+import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { FRESHNESS_READS } from './test-helpers/freshness-reads';
+import {
+  ApplicationHandle,
+  createApplication,
+  PostgresHandle,
+  startPostgres,
+  startValkey,
+  ValkeyHandle,
+} from './test-helpers/freshness-harness';
 import {
   AMOUNT,
   DAY_MS,
   defineFreshnessSuite,
   FreshnessContext,
+  FreshnessSeed,
+  seedWorkspace,
+  snapshot,
   unwrap,
 } from './test-helpers/freshness-suite';
 
@@ -163,7 +182,12 @@ defineFreshnessSuite({
     },
     {
       name: 'delete-account',
-      changes: ['list-accounts', 'list-goals', 'goal-contributions'],
+      changes: [
+        'list-accounts',
+        'list-goals',
+        'goal-contributions',
+        'expenses-by-category',
+      ],
       prepare: async (context) => {
         unwrap(
           await context.app.get(CreateGoalContributionService).execute({
@@ -173,6 +197,19 @@ defineFreshnessSuite({
             amountCents: 5_000,
             sourceAccountId: context.seed.otherAccountId,
           }),
+        );
+        unwrap(
+          await context.app.get(CreateTransactionService).execute({
+            workspaceId: context.seed.workspaceId,
+            sub: context.seed.userId,
+            accountId: context.seed.otherAccountId,
+            categoryId: context.seed.categoryId,
+            title: 'Deleted account expense',
+            amount: AMOUNT,
+            date: context.seed.today,
+            type: TransactionType.EXPENSE,
+            status: TransactionStatus.COMPLETED,
+          } as never),
         );
       },
       run: async (context) => {
@@ -434,4 +471,391 @@ defineFreshnessSuite({
       },
     },
   ],
+});
+
+const EXPENSES_ROUTE = 'report:expenses-by-category';
+const PACE_ROUTE = 'report:month-pace';
+const MISS_PREFIX = 'read-through miss key=';
+const BOUNDARY_TIMEZONE = 'America/Sao_Paulo';
+
+interface MonthAt {
+  year: number;
+  month: number;
+  date: string;
+}
+
+function monthAt(seed: FreshnessSeed, offset: number): MonthAt {
+  const reference = new Date(
+    Date.UTC(seed.year, seed.month - 1 + offset, 15, 12),
+  );
+  const year = reference.getUTCFullYear();
+  const month = reference.getUTCMonth() + 1;
+
+  return {
+    year,
+    month,
+    date: reference.toISOString().slice(0, 10),
+  };
+}
+
+function monthStartOf({ year, month }: MonthAt): string {
+  return `${year}-${String(month).padStart(2, '0')}-01`;
+}
+
+interface BoundaryExpense {
+  id: string;
+  title: string;
+  date: Date;
+}
+
+function missedKeys(spy: jest.SpyInstance): string[] {
+  return spy.mock.calls
+    .map(([message]) => String(message))
+    .filter((message) => message.startsWith(MISS_PREFIX))
+    .map((message) => message.slice(MISS_PREFIX.length).split(' ')[0]);
+}
+
+function missesFor(
+  spy: jest.SpyInstance,
+  route: string,
+  workspaceId: string,
+): string[] {
+  return missedKeys(spy).filter(
+    (key) => key.startsWith(`${route}:`) && key.includes(`:${workspaceId}:`),
+  );
+}
+
+describe('month scoped report generation', () => {
+  let postgres: PostgresHandle;
+  let valkey: ValkeyHandle;
+  let app: ApplicationHandle;
+  let log: jest.SpyInstance;
+
+  beforeAll(async () => {
+    log = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    postgres = await startPostgres();
+    valkey = await startValkey();
+    app = await createApplication(postgres.db, valkey.cache);
+  });
+
+  afterAll(async () => {
+    await app?.close();
+    await valkey?.stop();
+    await postgres?.stop();
+    log.mockRestore();
+  });
+
+  beforeEach(() => log.mockClear());
+
+  const readExpenses = async (workspaceId: string, at: MonthAt) =>
+    app.get(GetExpensesByCategoryService).execute({
+      workspaceId,
+      year: at.year,
+      month: at.month,
+      limit: 5,
+    });
+
+  const readPace = async (workspaceId: string, at: MonthAt) =>
+    unwrap(
+      await app.get(GetMonthPaceService).execute({
+        workspaceId,
+        month: at.month,
+        year: at.year,
+      }),
+    );
+
+  const boundaryInstants = (seed: FreshnessSeed, offset: number) => {
+    const dateProvider = app.get(DateProvider);
+
+    return {
+      late: new Date(
+        dateProvider
+          .endOfMonth(monthStartOf(monthAt(seed, offset)), BOUNDARY_TIMEZONE)
+          .getTime() -
+          (30 * 60 * 1000 - 1),
+      ),
+      early: new Date(
+        dateProvider
+          .startOfMonth(
+            monthStartOf(monthAt(seed, offset + 1)),
+            BOUNDARY_TIMEZONE,
+          )
+          .getTime() +
+          30 * 60 * 1000,
+      ),
+    };
+  };
+
+  const insertExpenseAt = async (
+    seed: FreshnessSeed,
+    date: Date,
+    amount: bigint,
+    title: string,
+  ): Promise<BoundaryExpense> => {
+    const [row] = await postgres.db
+      .insert(schema.transactions)
+      .values({
+        workspaceId: seed.workspaceId,
+        accountId: seed.accountId,
+        categoryId: seed.categoryId,
+        title,
+        amount: Number(amount),
+        date,
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      })
+      .returning();
+
+    return { id: row.id, title: row.title, date: row.date };
+  };
+
+  const updateExpenseAmount = async (
+    seed: FreshnessSeed,
+    expense: BoundaryExpense,
+    amount: bigint,
+  ): Promise<void> => {
+    unwrap(
+      await app.get(UpdateTransactionService).execute({
+        workspaceId: seed.workspaceId,
+        sub: seed.userId,
+        transactionId: expense.id,
+        accountId: seed.accountId,
+        categoryId: seed.categoryId,
+        title: expense.title,
+        amount,
+        date: app
+          .get(DateProvider)
+          .format(expense.date, 'YYYY-MM-DD', BOUNDARY_TIMEZONE),
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      }),
+    );
+  };
+
+  const createExpense = async (seed: FreshnessSeed, date: string) =>
+    unwrap<Transaction>(
+      await app.get(CreateTransactionService).execute({
+        workspaceId: seed.workspaceId,
+        sub: seed.userId,
+        accountId: seed.accountId,
+        categoryId: seed.categoryId,
+        title: 'Gasto do mês',
+        amount: AMOUNT,
+        date,
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      }),
+    );
+
+  it('serves the previous month from the same cache entry after a write in the current month', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const previous = monthAt(seed, -1);
+
+    await readExpenses(seed.workspaceId, previous);
+    const warmKeys = missesFor(log, EXPENSES_ROUTE, seed.workspaceId);
+    expect(warmKeys).toHaveLength(1);
+    const [warmKey] = warmKeys;
+    const warmPayload = await valkey.cache.get(warmKey);
+    const warmValue = snapshot(await readExpenses(seed.workspaceId, previous));
+
+    await createExpense(seed, seed.today);
+
+    const afterWrite = snapshot(await readExpenses(seed.workspaceId, previous));
+
+    expect(warmPayload).not.toBeNull();
+    expect(afterWrite).toBe(warmValue);
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toEqual([warmKey]);
+    await expect(valkey.cache.get(warmKey)).resolves.toBe(warmPayload);
+  });
+
+  it('re-reads the old and the new month after a date move', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const current = monthAt(seed, -2);
+    const next = monthAt(seed, -1);
+    const expense = await createExpense(seed, current.date);
+
+    await readExpenses(seed.workspaceId, current);
+    const warmCurrent = snapshot(await readExpenses(seed.workspaceId, current));
+    await readExpenses(seed.workspaceId, next);
+    const warmNext = snapshot(await readExpenses(seed.workspaceId, next));
+
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toHaveLength(2);
+
+    unwrap(
+      await app.get(UpdateTransactionService).execute({
+        workspaceId: seed.workspaceId,
+        sub: seed.userId,
+        transactionId: expense.id,
+        accountId: seed.accountId,
+        categoryId: seed.categoryId,
+        title: expense.title,
+        amount: expense.amount,
+        date: next.date,
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED,
+      }),
+    );
+
+    const afterCurrent = snapshot(
+      await readExpenses(seed.workspaceId, current),
+    );
+    const afterNext = snapshot(await readExpenses(seed.workspaceId, next));
+
+    const afterUpdate = missesFor(log, EXPENSES_ROUTE, seed.workspaceId).slice(
+      2,
+    );
+    expect(afterUpdate).toHaveLength(2);
+    expect(new Set(afterUpdate).size).toBe(2);
+    expect(afterCurrent).not.toBe(warmCurrent);
+    expect(afterNext).not.toBe(warmNext);
+  });
+
+  it('serves an unrelated month from the same cache entry after a write in the current month', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const unrelated = monthAt(seed, -3);
+
+    await readExpenses(seed.workspaceId, unrelated);
+    const warmKeys = missesFor(log, EXPENSES_ROUTE, seed.workspaceId);
+    expect(warmKeys).toHaveLength(1);
+    const [warmKey] = warmKeys;
+    const warmValue = snapshot(await readExpenses(seed.workspaceId, unrelated));
+
+    await createExpense(seed, seed.today);
+
+    const afterWrite = snapshot(
+      await readExpenses(seed.workspaceId, unrelated),
+    );
+
+    expect(afterWrite).toBe(warmValue);
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toEqual([warmKey]);
+  });
+
+  it('re-reads the month entries after the workspace time zone changes', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const current = monthAt(seed, 0);
+    await createExpense(seed, current.date);
+
+    const warm = snapshot(await readExpenses(seed.workspaceId, current));
+    const warmKeys = missesFor(log, EXPENSES_ROUTE, seed.workspaceId);
+    expect(warmKeys).toHaveLength(1);
+
+    const workspace = await app
+      .get(WorkspaceRepository)
+      .findById(seed.workspaceId);
+    if (!workspace) throw new Error('workspace missing');
+    workspace.updateDetails(
+      workspace.name,
+      workspace.currency,
+      'America/Manaus',
+      workspace.cycle,
+    );
+    await app.get(WorkspaceRepository).update(workspace);
+    await valkey.cache.del(`workspace:timezone:${seed.workspaceId}`);
+
+    const afterService = new GetExpensesByCategoryService(
+      app.get(TransactionRepository),
+      new GetWorkspaceTimezoneService(
+        app.get(WorkspaceRepository),
+        valkey.cache,
+      ),
+      app.get(DateProvider),
+      valkey.cache,
+    );
+    const afterChange = snapshot(
+      await afterService.execute({
+        workspaceId: seed.workspaceId,
+        year: current.year,
+        month: current.month,
+        limit: 5,
+      }),
+    );
+    const afterKeys = missesFor(log, EXPENSES_ROUTE, seed.workspaceId);
+
+    expect(afterKeys).toHaveLength(2);
+    expect(afterKeys[1]).not.toBe(afterKeys[0]);
+    expect(afterChange).toBe(warm);
+  });
+
+  it('buckets expenses that cross midnight in the workspace time zone into their local month', async () => {
+    const seed = await seedWorkspace(app, postgres.db, {
+      timezone: BOUNDARY_TIMEZONE,
+    });
+    const current = monthAt(seed, -2);
+    const next = monthAt(seed, -1);
+    const { late, early } = boundaryInstants(seed, -2);
+
+    await insertExpenseAt(seed, late, AMOUNT * 7n, 'Ultimo dia 23:30');
+    await insertExpenseAt(seed, early, AMOUNT * 3n, 'Primeiro dia 00:30');
+
+    const currentRead = await readExpenses(seed.workspaceId, current);
+    const nextRead = await readExpenses(seed.workspaceId, next);
+
+    expect(currentRead.totalExpense).toBe(Number(AMOUNT * 7n));
+    expect(nextRead.totalExpense).toBe(Number(AMOUNT * 3n));
+  });
+
+  it('keeps the other boundary month warm when a write lands in one of them', async () => {
+    const seed = await seedWorkspace(app, postgres.db, {
+      timezone: BOUNDARY_TIMEZONE,
+    });
+    const current = monthAt(seed, -2);
+    const next = monthAt(seed, -1);
+    const { late, early } = boundaryInstants(seed, -2);
+    const lateExpense = await insertExpenseAt(
+      seed,
+      late,
+      AMOUNT * 7n,
+      'Ultimo dia',
+    );
+    const earlyExpense = await insertExpenseAt(
+      seed,
+      early,
+      AMOUNT * 3n,
+      'Primeiro dia',
+    );
+
+    log.mockClear();
+    await readExpenses(seed.workspaceId, current);
+    await readExpenses(seed.workspaceId, next);
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toHaveLength(2);
+
+    log.mockClear();
+    await updateExpenseAmount(seed, lateExpense, AMOUNT * 9n);
+    const currentAfterLateWrite = await readExpenses(seed.workspaceId, current);
+    const nextAfterLateWrite = await readExpenses(seed.workspaceId, next);
+
+    expect(currentAfterLateWrite.totalExpense).toBe(Number(AMOUNT * 9n));
+    expect(nextAfterLateWrite.totalExpense).toBe(Number(AMOUNT * 3n));
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toHaveLength(1);
+
+    log.mockClear();
+    await updateExpenseAmount(seed, earlyExpense, AMOUNT * 5n);
+    const nextAfterEarlyWrite = await readExpenses(seed.workspaceId, next);
+    const currentAfterEarlyWrite = await readExpenses(
+      seed.workspaceId,
+      current,
+    );
+
+    expect(nextAfterEarlyWrite.totalExpense).toBe(Number(AMOUNT * 5n));
+    expect(currentAfterEarlyWrite.totalExpense).toBe(Number(AMOUNT * 9n));
+    expect(missesFor(log, EXPENSES_ROUTE, seed.workspaceId)).toHaveLength(1);
+  });
+
+  it('re-reads the global month-pace entry after a write in the current month', async () => {
+    const seed = await seedWorkspace(app, postgres.db);
+    const current = monthAt(seed, 0);
+
+    const warm = snapshot(await readPace(seed.workspaceId, current));
+    expect(snapshot(await readPace(seed.workspaceId, current))).toBe(warm);
+    expect(missesFor(log, PACE_ROUTE, seed.workspaceId)).toHaveLength(1);
+
+    await createExpense(seed, seed.today);
+
+    const afterWrite = snapshot(await readPace(seed.workspaceId, current));
+
+    expect(missesFor(log, PACE_ROUTE, seed.workspaceId)).toHaveLength(2);
+    expect(afterWrite).not.toBe(warm);
+  });
 });

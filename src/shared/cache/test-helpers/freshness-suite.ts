@@ -100,9 +100,14 @@ export function snapshot(value: unknown): string {
   );
 }
 
-async function seedWorkspace(
+export interface SeedWorkspaceOptions {
+  timezone?: string;
+}
+
+export async function seedWorkspace(
   app: ApplicationHandle,
   db: TestDatabase,
+  { timezone = WORKSPACE_TIMEZONE }: SeedWorkspaceOptions = {},
 ): Promise<FreshnessSeed> {
   const workspaceId = randomUUID();
   const userId = randomUUID();
@@ -124,10 +129,7 @@ async function seedWorkspace(
     name: 'Freshness',
   });
   const workspace = unwrap<Workspace>(
-    Workspace.create(
-      { name: 'Freshness', timezone: WORKSPACE_TIMEZONE },
-      workspaceId,
-    ),
+    Workspace.create({ name: 'Freshness', timezone }, workspaceId),
   );
   await app.get(WorkspaceRepository).create(workspace);
   for (const id of [accountId, otherAccountId]) {
@@ -137,7 +139,7 @@ async function seedWorkspace(
         workspaceId,
         name: `Conta ${id}`,
         balance: OPENING_BALANCE,
-        timezone: WORKSPACE_TIMEZONE,
+        timezone,
       }),
     );
   }
@@ -146,7 +148,7 @@ async function seedWorkspace(
       id: cardId,
       workspaceId,
       name: 'Cartao',
-      timezone: WORKSPACE_TIMEZONE,
+      timezone,
     }),
   );
   const category = unwrap<Category>(

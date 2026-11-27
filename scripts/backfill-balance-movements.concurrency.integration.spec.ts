@@ -28,6 +28,7 @@ import { TransactionRepository } from '../src/modules/transaction/repositories/c
 import { User } from '../src/modules/user/entities/User';
 import { Workspace } from '../src/modules/workspace/entities/Workspace';
 import { WorkspaceRepository } from '../src/modules/workspace/repositories/contracts/WorkspaceRepository';
+import { GetWorkspaceTimezoneService } from '../src/modules/workspace/services/get-workspace-timezone.service';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -116,6 +117,7 @@ describe('backfill and reconcile after balance writes', () => {
         { provide: CacheProvider, useClass: RedisService },
         { provide: ConfigService, useValue: {} },
         { provide: DateProvider, useClass: DayJsDateProvider },
+        GetWorkspaceTimezoneService,
         UserRepositoryImplementation,
         {
           provide: RecurringSuggestionDetectionDispatcher,

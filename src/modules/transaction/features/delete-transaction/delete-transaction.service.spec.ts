@@ -6,6 +6,8 @@ import { TransactionRepository } from '@modules/transaction/repositories/contrac
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DeleteTransactionService } from './delete-transaction.service';
 
 type ServiceRequest = Parameters<
@@ -52,6 +54,8 @@ describe('DeleteTransactionService', () => {
   let service: DeleteTransactionService;
 
   let transactionRepository: jest.Mocked<TransactionRepository>;
+  let dateProvider: jest.Mocked<DateProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
 
   beforeEach(() => {
     transactionRepository = {
@@ -68,20 +72,32 @@ describe('DeleteTransactionService', () => {
       findDueCardTransactions: jest.fn(),
     } as jest.Mocked<TransactionRepository>;
 
-    service = new DeleteTransactionService(transactionRepository, {
-      onModuleDestroy: jest.fn(),
-      ping: jest.fn().mockResolvedValue(false),
-      get: jest.fn().mockResolvedValue(null),
-      set: jest.fn().mockResolvedValue(true),
-      del: jest.fn().mockResolvedValue(true),
-      exists: jest.fn().mockResolvedValue(false),
-      acquireLock: jest.fn().mockResolvedValue(true),
-      releaseLock: jest.fn().mockResolvedValue(true),
-      delByPattern: jest.fn().mockResolvedValue(0),
-      incrementCounter: jest.fn().mockResolvedValue(1),
-      getClient: jest.fn().mockReturnValue(null),
-      isAvailable: jest.fn().mockReturnValue(false),
-    } as unknown as jest.Mocked<CacheProvider>);
+    dateProvider = {
+      format: jest.fn((date: Date) => date.toISOString().slice(0, 7)),
+    } as unknown as jest.Mocked<DateProvider>;
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
+
+    service = new DeleteTransactionService(
+      transactionRepository,
+      dateProvider,
+      workspaceTimezone,
+      {
+        onModuleDestroy: jest.fn(),
+        ping: jest.fn().mockResolvedValue(false),
+        get: jest.fn().mockResolvedValue(null),
+        set: jest.fn().mockResolvedValue(true),
+        del: jest.fn().mockResolvedValue(true),
+        exists: jest.fn().mockResolvedValue(false),
+        acquireLock: jest.fn().mockResolvedValue(true),
+        releaseLock: jest.fn().mockResolvedValue(true),
+        delByPattern: jest.fn().mockResolvedValue(0),
+        incrementCounter: jest.fn().mockResolvedValue(1),
+        getClient: jest.fn().mockReturnValue(null),
+        isAvailable: jest.fn().mockReturnValue(false),
+      } as unknown as jest.Mocked<CacheProvider>,
+    );
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -146,6 +162,23 @@ describe('DeleteTransactionService', () => {
     expect(transactionRepository.deleteWithBalanceEffect).toHaveBeenCalledWith(
       'tx-1',
       { actorId: 'user-1' },
+    );
+  });
+
+  it('bumps the month of the deleted transaction in the workspace timezone', async () => {
+    const transaction = makeTransaction(TransactionStatus.COMPLETED);
+    transactionRepository.findUniqueById.mockResolvedValue(transaction);
+    transactionRepository.deleteWithBalanceEffect.mockResolvedValue(
+      right(true),
+    );
+
+    await service.execute(makeRequest());
+
+    expect(workspaceTimezone.execute).toHaveBeenCalledWith('ws-1');
+    expect(dateProvider.format).toHaveBeenCalledWith(
+      transaction.date,
+      'YYYY-MM',
+      'America/Sao_Paulo',
     );
   });
 

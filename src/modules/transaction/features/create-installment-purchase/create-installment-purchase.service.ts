@@ -29,7 +29,8 @@ import {
   CreateInstallmentPurchaseRequest,
   MIN_PURCHASE_INSTALLMENTS,
 } from './create-installment-purchase.dto';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 
 type Request = CreateInstallmentPurchaseRequest & TokenPayloadBase;
 
@@ -49,6 +50,7 @@ export class CreateInstallmentPurchaseService implements Service<
     private readonly categoryRepository: CategoryRepository,
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly cache: CacheProvider,
   ) {}
 
@@ -143,13 +145,35 @@ export class CreateInstallmentPurchaseService implements Service<
     );
     if (persisted.isLeft()) return left(persisted.value);
 
-    await invalidateLedgerReads(
+    await invalidateMonthReads(
       this.cache,
       workspaceId,
+      await this.installmentMonths(firstDate, installments, workspaceId),
       'create-installment-purchase',
     );
 
     return right({ recurring, firstInstallment });
+  }
+
+  private async installmentMonths(
+    firstDate: Date,
+    installments: number,
+    workspaceId: string,
+  ): Promise<string[]> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+    const months = new Set<string>();
+
+    for (let index = 0; index < installments; index++) {
+      months.add(
+        this.dateProvider.format(
+          this.dateProvider.add(firstDate, index, 'month', timezone),
+          'YYYY-MM',
+          timezone,
+        ),
+      );
+    }
+
+    return [...months];
   }
 
   private async validateCategory(

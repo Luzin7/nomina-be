@@ -9,6 +9,8 @@ import { TransactionRepository } from '@modules/transaction/repositories/contrac
 import { makeTransactionWithStatus } from '@modules/transaction/test-helpers/mock-factories';
 import { left, right } from '@shared/core/errors/Either';
 import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { SetTransactionStatusService } from './set-transaction-status.service';
 
 type ServiceRequest = Parameters<
@@ -29,6 +31,8 @@ describe('SetTransactionStatusService', () => {
   let service: SetTransactionStatusService;
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let cacheProvider: jest.Mocked<CacheProvider>;
+  let dateProvider: jest.Mocked<DateProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
   let detectionDispatcher: jest.Mocked<RecurringSuggestionDetectionDispatcher>;
 
   beforeEach(() => {
@@ -61,12 +65,20 @@ describe('SetTransactionStatusService', () => {
       isAvailable: jest.fn().mockReturnValue(false),
     } as unknown as jest.Mocked<CacheProvider>;
 
+    dateProvider = {
+      format: jest.fn((date: Date) => date.toISOString().slice(0, 7)),
+    } as unknown as jest.Mocked<DateProvider>;
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
     detectionDispatcher = {
       notify: jest.fn(),
     } as unknown as jest.Mocked<RecurringSuggestionDetectionDispatcher>;
 
     service = new SetTransactionStatusService(
       transactionRepository,
+      dateProvider,
+      workspaceTimezone,
       cacheProvider,
       detectionDispatcher,
     );
@@ -193,5 +205,26 @@ describe('SetTransactionStatusService', () => {
     await service.execute(makeRequest());
 
     expect(cacheProvider.delByPattern).not.toHaveBeenCalled();
+  });
+
+  it('bumps the month of the updated transaction in the workspace timezone', async () => {
+    const transaction = makeTransactionWithStatus(TransactionStatus.COMPLETED);
+    transactionRepository.updateStatusWithBalanceEffect.mockResolvedValue(
+      right(transaction),
+    );
+
+    await service.execute(makeRequest());
+
+    expect(workspaceTimezone.execute).toHaveBeenCalledWith('ws-1');
+    expect(dateProvider.format).toHaveBeenCalledWith(
+      transaction.date,
+      'YYYY-MM',
+      'America/Sao_Paulo',
+    );
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:' +
+        transaction.date.toISOString().slice(0, 7),
+      expect.any(Number),
+    );
   });
 });

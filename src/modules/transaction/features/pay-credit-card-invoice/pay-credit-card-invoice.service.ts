@@ -21,7 +21,8 @@ import { Injectable } from '@nestjs/common';
 import { TokenPayloadBase } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { Service } from '@shared/core/contracts/Service';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { PayCreditCardInvoiceRequest } from './pay-credit-card-invoice.dto';
 
@@ -38,6 +39,7 @@ export class PayCreditCardInvoiceService implements Service<
     private readonly accountRepository: AccountRepository,
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly cacheProvider: CacheProvider,
   ) {}
 
@@ -142,13 +144,29 @@ export class PayCreditCardInvoiceService implements Service<
     );
     if (persisted.isLeft()) return left(persisted.value);
 
-    await invalidateLedgerReads(
+    await invalidateMonthReads(
       this.cacheProvider,
       props.workspaceId,
+      await this.touchedMonths(transaction.date, invoiceKey, props.workspaceId),
       'pay-credit-card-invoice',
     );
 
     return right(transaction);
+  }
+
+  private async touchedMonths(
+    paymentDate: Date,
+    invoiceKey: string,
+    workspaceId: string,
+  ): Promise<string[]> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+
+    return [
+      ...new Set([
+        this.dateProvider.format(paymentDate, 'YYYY-MM', timezone),
+        invoiceKey,
+      ]),
+    ];
   }
 
   /**

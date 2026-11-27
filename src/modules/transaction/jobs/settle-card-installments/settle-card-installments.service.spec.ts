@@ -4,6 +4,8 @@ import { TransactionRepository } from '@modules/transaction/repositories/contrac
 import { Transaction } from '@modules/transaction/entities/Transaction';
 import { makeTransaction } from '@modules/transaction/test-helpers/mock-factories';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { captureException } from '@sentry/nestjs';
 import { left, right } from '@shared/core/errors/Either';
 import { TransactionStatus } from '@constants/enums';
@@ -17,6 +19,7 @@ const loggerWarn = jest
   .mockImplementation(() => undefined);
 
 const NOW = new Date('2024-01-15T12:00:00.000Z');
+const calendar = new DayJsDateProvider();
 
 function dueOf(transactions: Transaction[], totalDue = transactions.length) {
   return { transactions, totalDue };
@@ -31,11 +34,21 @@ function makeDue(id: string, workspaceId = 'ws-1') {
   });
 }
 
+function makeDueAt(id: string, workspaceId: string, date: Date) {
+  return makeTransaction({
+    id,
+    workspaceId,
+    status: TransactionStatus.PENDING,
+    date,
+  });
+}
+
 describe('SettleCardInstallmentsJobService', () => {
   let service: SettleCardInstallmentsJobService;
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let cache: jest.Mocked<CacheProvider>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
 
   beforeEach(() => {
     transactionRepository = {
@@ -50,12 +63,17 @@ describe('SettleCardInstallmentsJobService', () => {
     } as unknown as jest.Mocked<CacheProvider>;
     dateProvider = {
       now: jest.fn().mockReturnValue(NOW),
+      format: jest.fn().mockReturnValue('2024-01'),
     } as unknown as jest.Mocked<DateProvider>;
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
 
     service = new SettleCardInstallmentsJobService(
       transactionRepository,
       cache,
       dateProvider,
+      workspaceTimezone,
     );
   });
 
@@ -95,6 +113,62 @@ describe('SettleCardInstallmentsJobService', () => {
       expect.any(Number),
     );
     expect(cache.delByPattern).not.toHaveBeenCalled();
+  });
+
+  it('bumps the month each workspace touched in its own time zone', async () => {
+    const due = [
+      makeDueAt('tx-a', 'ws-a', new Date('2024-01-31T23:00:00.000Z')),
+      makeDueAt('tx-b', 'ws-b', new Date('2024-01-31T23:00:00.000Z')),
+    ];
+    transactionRepository.findDueCardTransactions.mockResolvedValue(dueOf(due));
+    transactionRepository.updateStatusWithBalanceEffect.mockImplementation(
+      async ({ transactionId }) =>
+        right(due.find((tx) => tx.id === transactionId)!),
+    );
+    workspaceTimezone.execute.mockImplementation(async (workspaceId) =>
+      workspaceId === 'ws-a' ? 'America/Sao_Paulo' : 'Asia/Tokyo',
+    );
+    dateProvider.format.mockImplementation((date, formatString, timezone) =>
+      calendar.format(date, formatString, timezone),
+    );
+
+    await service.execute();
+
+    expect(cache.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-a:2024-01',
+      expect.any(Number),
+    );
+    expect(cache.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-b:2024-02',
+      expect.any(Number),
+    );
+  });
+
+  it('keeps bumping the other workspaces when one workspace fails', async () => {
+    const due = [
+      makeDueAt('tx-a', 'ws-a', new Date('2024-01-10T12:00:00.000Z')),
+      makeDueAt('tx-b', 'ws-b', new Date('2024-02-10T12:00:00.000Z')),
+    ];
+    transactionRepository.findDueCardTransactions.mockResolvedValue(dueOf(due));
+    transactionRepository.updateStatusWithBalanceEffect.mockImplementation(
+      async ({ transactionId }) =>
+        right(due.find((tx) => tx.id === transactionId)!),
+    );
+    workspaceTimezone.execute.mockImplementation(async (workspaceId) => {
+      if (workspaceId === 'ws-a') throw new Error('timezone lookup failed');
+      return 'America/Sao_Paulo';
+    });
+
+    await expect(service.execute()).rejects.toThrow('timezone lookup failed');
+
+    expect(cache.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:ws-b',
+      expect.any(Number),
+    );
+    expect(cache.incrementCounter).not.toHaveBeenCalledWith(
+      'cache-gen:report:ws-a',
+      expect.any(Number),
+    );
   });
 
   it('should ask the repository for rows due at the current time', async () => {

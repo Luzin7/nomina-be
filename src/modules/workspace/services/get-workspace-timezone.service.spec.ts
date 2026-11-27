@@ -1,5 +1,8 @@
 import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { RedisReadFailedError } from '@infra/cache/redis/errors/RedisReadFailedError';
+import { RedisUnavailableError } from '@infra/cache/redis/errors/RedisUnavailableError';
+import { Logger } from '@nestjs/common';
 import { WorkspaceRepository } from '../repositories/contracts/WorkspaceRepository';
 import {
   GetWorkspaceTimezoneService,
@@ -72,6 +75,25 @@ describe('GetWorkspaceTimezoneService', () => {
 
     expect(timezone).toBe('America/Recife');
     expect(workspaceRepository.findTimezoneById).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the repository when the cache read fails', async () => {
+    const errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    cache.get.mockRejectedValue(
+      new RedisReadFailedError(
+        'workspace:timezone:ws-1',
+        new RedisUnavailableError('Redis client is not available for GET'),
+      ),
+    );
+
+    const timezone = await service.execute('ws-1');
+
+    expect(timezone).toBe('America/Recife');
+    expect(workspaceRepository.findTimezoneById).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith(
+      'cache=error route=workspace key=workspace:timezone:ws-1 errorClass=RedisReadFailedError',
+    );
+    errorSpy.mockRestore();
   });
 
   it('returns the default timezone without persisting it when the workspace has none', async () => {

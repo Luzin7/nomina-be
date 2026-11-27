@@ -6,7 +6,10 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { DeleteAccountRequest } from './delete-account.dto';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import {
+  invalidateLedgerReads,
+  invalidateStructureReads,
+} from '@shared/cache/report-cache';
 
 type Request = DeleteAccountRequest & Pick<TokenPayloadSchema, 'workspaceId'>;
 
@@ -29,6 +32,11 @@ export class DeleteAccountService implements Service<Request, Error, void> {
 
     await this.accountRepository.delete(accountId);
     await invalidateLedgerReads(
+      this.redisService,
+      workspaceId,
+      'delete-account',
+    );
+    await invalidateStructureReads(
       this.redisService,
       workspaceId,
       'delete-account',

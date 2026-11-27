@@ -17,6 +17,7 @@ import {
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { right } from '@shared/core/errors/Either';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { CreateInstallmentPurchaseService } from './create-installment-purchase.service';
 
 const TODAY = '2024-03-10';
@@ -86,6 +87,7 @@ describe('CreateInstallmentPurchaseService', () => {
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let cache: jest.Mocked<CacheProvider>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
 
   beforeEach(() => {
     accountRepository = {
@@ -112,13 +114,18 @@ describe('CreateInstallmentPurchaseService', () => {
         if (unit === 'month') result.setUTCMonth(result.getUTCMonth() + amount);
         return result;
       }),
+      format: jest.fn((date: Date) => date.toISOString().slice(0, 7)),
     } as unknown as jest.Mocked<DateProvider>;
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('UTC'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
 
     service = new CreateInstallmentPurchaseService(
       accountRepository,
       categoryRepository,
       transactionRepository,
       dateProvider,
+      workspaceTimezone,
       cache,
     );
   });
@@ -138,6 +145,18 @@ describe('CreateInstallmentPurchaseService', () => {
     );
     expect(cache.incrementCounter).toHaveBeenCalledWith(
       'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
+    expect(cache.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-03',
+      expect.any(Number),
+    );
+    expect(cache.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-04',
+      expect.any(Number),
+    );
+    expect(cache.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-05',
       expect.any(Number),
     );
     expect(cache.delByPattern).not.toHaveBeenCalled();
