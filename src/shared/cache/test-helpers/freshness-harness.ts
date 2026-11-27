@@ -39,6 +39,7 @@ export type TestDatabase = PostgresJsDatabase<typeof schema>;
 
 export interface PostgresHandle {
   db: TestDatabase;
+  url: string;
   stop(): Promise<void>;
 }
 
@@ -69,6 +70,7 @@ export async function startPostgres(): Promise<PostgresHandle> {
 
   return {
     db,
+    url: container.getConnectionUri(),
     stop: async () => {
       await client.end({ timeout: 5 });
       await container.stop();

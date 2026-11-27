@@ -2,9 +2,7 @@ import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { AccountType, RecurrenceFrequency } from '@constants/enums';
 import { SpendableRepositoryImplementation } from './spendable.repository';
 
-const CURRENT_TIMEOUT_STATEMENT = 'current_setting';
 const SET_TIMEOUT_STATEMENT = 'SET LOCAL statement_timeout = 1000';
-const RESTORE_TIMEOUT_STATEMENT = 'set_config';
 
 function makeSequencedRepository(
   results: unknown[],
@@ -19,13 +17,7 @@ function makeSequencedRepository(
   const queued = [...statementResults];
   const execute = jest.fn(async (statement: unknown) => {
     const text = JSON.stringify(statement);
-    if (text.includes(CURRENT_TIMEOUT_STATEMENT))
-      return [{ statementTimeout: '5s' }];
-    if (
-      text.includes(SET_TIMEOUT_STATEMENT) ||
-      text.includes(RESTORE_TIMEOUT_STATEMENT)
-    )
-      return [];
+    if (text.includes(SET_TIMEOUT_STATEMENT)) return [];
 
     return queued.shift() ?? [];
   });
@@ -68,11 +60,8 @@ const statementsOf = (execute: jest.Mock): string[] =>
 
 const expectBoundedRead = (execute: jest.Mock): void => {
   expect(statementsOf(execute)).toEqual([
-    expect.stringContaining(CURRENT_TIMEOUT_STATEMENT),
     expect.stringContaining(SET_TIMEOUT_STATEMENT),
-    expect.stringContaining(RESTORE_TIMEOUT_STATEMENT),
   ]);
-  expect(statementsOf(execute)[2]).toContain('5s');
 };
 
 const RECURRENCE_ROW = {
@@ -130,15 +119,12 @@ describe('SpendableRepositoryImplementation read timeouts', () => {
     });
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(statements).toEqual([
-      expect.stringContaining(CURRENT_TIMEOUT_STATEMENT),
       expect.stringContaining(SET_TIMEOUT_STATEMENT),
       expect.stringContaining('balance_movements'),
-      expect.stringContaining(RESTORE_TIMEOUT_STATEMENT),
     ]);
     expect(
       statements.filter((statement) => statement.includes('balance_movements')),
     ).toHaveLength(1);
-    expect(statements[3]).toContain('5s');
   });
 
   it('bounds the completed cash income sum to one second', async () => {

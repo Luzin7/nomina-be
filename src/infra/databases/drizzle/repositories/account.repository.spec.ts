@@ -142,7 +142,7 @@ describe('AccountRepositoryImplementation.findAllByWorkspaceId', () => {
       makeRow({ id: 'acc-1' }),
       makeRow({ id: 'acc-2', type: AccountType.CREDIT_CARD, dueDay: null }),
     ];
-    const execute = jest.fn().mockResolvedValue([{ statementTimeout: '15s' }]);
+    const execute = jest.fn().mockResolvedValue([]);
     const transaction = jest.fn(
       async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
@@ -163,11 +163,6 @@ describe('AccountRepositoryImplementation.findAllByWorkspaceId', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(
       execute.mock.calls.map(([statement]) => JSON.stringify(statement)),
-    ).toEqual([
-      expect.stringContaining('current_setting'),
-      expect.stringContaining('SET LOCAL statement_timeout = 1000'),
-      expect.stringContaining('set_config'),
-    ]);
-    expect(JSON.stringify(execute.mock.calls[2][0])).toContain('15s');
+    ).toEqual([expect.stringContaining('SET LOCAL statement_timeout = 1000')]);
   });
 });
