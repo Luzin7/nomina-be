@@ -13,17 +13,12 @@ import {
   SpendableRepository,
 } from '@modules/spendable/repositories/contracts/SpendableRepository';
 import { Injectable } from '@nestjs/common';
-import { AnyColumn, SQL, and, eq, inArray, sql } from 'drizzle-orm';
+import { SQL, and, eq, inArray, sql } from 'drizzle-orm';
 import * as schema from '../schema';
-import { withinLocalDays } from '../sql-helpers';
+import { epochMsInUtc, epochMsToDate, withinLocalDays } from '../sql-helpers';
 
 const CASH_ACCOUNT_TYPES = [AccountType.CHECKING, AccountType.CASH];
 const INCOME_OR_EXPENSE = [TransactionType.INCOME, TransactionType.EXPENSE];
-
-const epochMsInUtc = (column: AnyColumn | SQL) =>
-  sql<string>`(EXTRACT(EPOCH FROM ${column}) * 1000)::bigint`;
-
-const epochMsToDate = (epochMs: string) => new Date(Number(epochMs));
 
 type CashSnapshotRow = {
   pendingCents: string;
