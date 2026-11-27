@@ -1,5 +1,6 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { bumpGeneration } from './generation-counter';
+import { readGenerationCounter } from './generation-read';
 
 export const LEDGER_CACHE_TTL_SECONDS = 30 * 60;
 export const LEDGER_LIVE_CACHE_TTL_SECONDS = 15 * 60;
@@ -22,20 +23,32 @@ export const readLedgerGeneration = (
   cache: CacheProvider,
   workspaceId: string,
 ): Promise<number | null> =>
-  cache.readCounter(ledgerGenerationKey(workspaceId), Date.now());
+  readGenerationCounter({
+    cache,
+    route: 'report',
+    counterKey: ledgerGenerationKey(workspaceId),
+  });
 
 export const readMonthGeneration = (
   cache: CacheProvider,
   workspaceId: string,
   month: string,
 ): Promise<number | null> =>
-  cache.readCounter(monthGenerationKey(workspaceId, month), Date.now());
+  readGenerationCounter({
+    cache,
+    route: 'report',
+    counterKey: monthGenerationKey(workspaceId, month),
+  });
 
 export const readStructureGeneration = (
   cache: CacheProvider,
   workspaceId: string,
 ): Promise<number | null> =>
-  cache.readCounter(structureGenerationKey(workspaceId), Date.now());
+  readGenerationCounter({
+    cache,
+    route: 'report',
+    counterKey: structureGenerationKey(workspaceId),
+  });
 
 export const invalidateLedgerReads = (
   cache: CacheProvider,

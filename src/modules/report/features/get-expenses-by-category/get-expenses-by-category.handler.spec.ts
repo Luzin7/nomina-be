@@ -1,7 +1,9 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { RedisReadFailedError } from '@infra/cache/redis/errors/RedisReadFailedError';
 import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpensesByCategory';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { LEDGER_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
@@ -168,6 +170,44 @@ describe('GetExpensesByCategoryService', () => {
     expect(cache.get).not.toHaveBeenCalled();
     expect(cache.set).not.toHaveBeenCalled();
     expect(transactionRepository.getTopExpensesByCategory).toHaveBeenCalled();
+  });
+
+  describe('counter store outage', () => {
+    let errorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      cache.readCounter.mockRejectedValue(
+        new RedisReadFailedError(
+          'cache-gen:report:ws-1',
+          new Error('connection reset'),
+        ),
+      );
+      transactionRepository.getTopExpensesByCategory.mockResolvedValue({
+        expenses: [],
+        totalExpense: 0,
+      });
+    });
+
+    afterEach(() => errorSpy.mockRestore());
+
+    it('serves the report from the database and logs cache=error per counter', async () => {
+      await expect(service.execute(makeRequest())).resolves.toEqual({
+        expenses: [],
+        totalExpense: 0,
+      });
+
+      expect(cache.get).not.toHaveBeenCalled();
+      expect(cache.set).not.toHaveBeenCalled();
+      expect(
+        transactionRepository.getTopExpensesByCategory,
+      ).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls.map(([line]) => line)).toEqual([
+        'cache=error route=report key=cache-gen:report:month:ws-1:2026-09 errorClass=RedisReadFailedError',
+        'cache=error route=category key=cache-gen:category:ws-1 errorClass=RedisReadFailedError',
+        'cache=error route=report key=cache-gen:report:structure:ws-1 errorClass=RedisReadFailedError',
+      ]);
+    });
   });
 
   it('misses on the next read when a write bumped the month generation during compute', async () => {

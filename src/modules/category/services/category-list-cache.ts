@@ -1,5 +1,6 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { bumpGeneration } from '@shared/cache/generation-counter';
+import { readGenerationCounter } from '@shared/cache/generation-read';
 
 export const CATEGORIES_CACHE_TTL_SECONDS = 30 * 60;
 export const CATEGORY_LIST_CACHE_PREFIX = 'categories:list:';
@@ -11,7 +12,11 @@ export const readCategoryGeneration = (
   cache: CacheProvider,
   workspaceId: string,
 ): Promise<number | null> =>
-  cache.readCounter(categoryGenerationKey(workspaceId), Date.now());
+  readGenerationCounter({
+    cache,
+    route: 'category',
+    counterKey: categoryGenerationKey(workspaceId),
+  });
 
 export const invalidateCategoryReads = (
   cache: CacheProvider,
