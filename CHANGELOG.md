@@ -3,6 +3,13 @@
 Todas as mudanças notáveis da API são documentadas aqui.
 Segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/) e [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [2.8.1](https://github.com/Luzin7/nomina-be/compare/v2.8.0...v2.8.1) (2026-11-27)
+
+### Bug Fixes
+
+* **account:** retire the poisoned last-movements cache namespace ([0d895d8](https://github.com/Luzin7/nomina-be/commit/0d895d8545b01068de7d95a70242c22b2a685b0e))
+* **account:** return last movement dates from raw rows ([794b9cd](https://github.com/Luzin7/nomina-be/commit/794b9cd50b5c15ee4cc5b94321352bf266366d52))
+
 ## [2.8.0](https://github.com/Luzin7/nomina-be/compare/v2.7.1...v2.8.0) (2026-11-27)
 
 ### Features
