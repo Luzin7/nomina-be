@@ -129,7 +129,14 @@ export class RedisService implements CacheProvider, OnModuleDestroy {
 
   async get(key: string): Promise<string | null> {
     const client = this.getClient();
-    if (!client) return null;
+    if (!client) {
+      if (!this.isEnabled) return null;
+
+      throw new RedisReadFailedError(
+        key,
+        new RedisUnavailableError('Redis client is not available for GET'),
+      );
+    }
 
     try {
       return await client.get(key);

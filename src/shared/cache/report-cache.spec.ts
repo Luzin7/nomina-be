@@ -1,5 +1,6 @@
 import { captureException } from '@sentry/nestjs';
 import { CacheGenerationBumpError } from './errors/CacheGenerationBumpError';
+import { resetReportThrottle } from './report-throttle';
 import { InMemoryCacheProvider } from './test-helpers/in-memory-cache';
 import {
   LEDGER_CACHE_TTL_SECONDS,
@@ -28,6 +29,7 @@ describe('report-cache', () => {
   beforeEach(() => {
     jest.spyOn(Date, 'now').mockReturnValue(NOW_MS);
     mockCaptureException.mockClear();
+    resetReportThrottle();
   });
   afterEach(() => jest.restoreAllMocks());
 
@@ -200,6 +202,55 @@ describe('report-cache', () => {
       'cache-gen:report:ws-1',
       'cache-gen:report:month:ws-1:2026-11',
     ]);
+  });
+
+  it('reports one bump failure per window for the same operation and family', async () => {
+    const cache = new InMemoryCacheProvider();
+    jest
+      .spyOn(cache, 'incrementCounter')
+      .mockResolvedValue(null as unknown as number);
+
+    await invalidateMonthReads(cache, 'ws-1', ['2026-11'], 'recurring-run');
+    await invalidateMonthReads(cache, 'ws-1', ['2026-12'], 'recurring-run');
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(2);
+    const keys = mockCaptureException.mock.calls.map(
+      ([, context]) =>
+        (context as { extra: { counterKey: string } }).extra.counterKey,
+    );
+    expect(keys).toEqual([
+      'cache-gen:report:ws-1',
+      'cache-gen:report:month:ws-1:2026-11',
+    ]);
+  });
+
+  it('reports a suppressed bump failure again once the window has passed', async () => {
+    const cache = new InMemoryCacheProvider();
+    jest
+      .spyOn(cache, 'incrementCounter')
+      .mockResolvedValue(null as unknown as number);
+
+    await invalidateStructureReads(cache, 'ws-1', 'recurring-run');
+    await invalidateStructureReads(cache, 'ws-1', 'recurring-run');
+    expect(mockCaptureException).toHaveBeenCalledTimes(1);
+
+    jest.spyOn(Date, 'now').mockReturnValue(NOW_MS + 60_001);
+    await invalidateStructureReads(cache, 'ws-1', 'recurring-run');
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps one window per counter family', async () => {
+    const cache = new InMemoryCacheProvider();
+    jest
+      .spyOn(cache, 'incrementCounter')
+      .mockResolvedValue(null as unknown as number);
+
+    await invalidateLedgerReads(cache, 'ws-1', 'recurring-run');
+    await invalidateLedgerReads(cache, 'ws-1', 'other-job');
+    await invalidateStructureReads(cache, 'ws-1', 'recurring-run');
+
+    expect(mockCaptureException).toHaveBeenCalledTimes(3);
   });
 
   it('keeps a late set from being served after a concurrent write', async () => {

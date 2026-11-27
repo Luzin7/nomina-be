@@ -28,6 +28,7 @@ export const invalidateCategoryReads = (
     counterKey: categoryGenerationKey(workspaceId),
     workspaceId,
     operation,
+    family: 'category',
   });
 
 interface CategoryListCacheKeyInput {

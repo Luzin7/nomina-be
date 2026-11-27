@@ -181,12 +181,50 @@ describe('RedisService', () => {
     );
   });
 
-  it('keeps reads fail-open while redis is enabled but unavailable', async () => {
+  it('rejects reads with RedisReadFailedError as cause when the client cannot be created', async () => {
+    const service = loadRedisService({ clientCreationFails: true });
+    const RedisReadFailedError = loadRedisReadFailedError();
+    const RedisUnavailableError = loadRedisUnavailableError();
+
+    expect(service.isEnabled).toBe(true);
+
+    const error = await service.get('key').catch((reason) => reason);
+
+    expect(error).toBeInstanceOf(RedisReadFailedError);
+    expect((error as { cause?: unknown }).cause).toBeInstanceOf(
+      RedisUnavailableError,
+    );
+    expect(mockClient.get).not.toHaveBeenCalled();
+  });
+
+  it('rejects reads with RedisReadFailedError when the connection was lost', async () => {
+    const service = loadRedisService();
+    const RedisReadFailedError = loadRedisReadFailedError();
+    const RedisUnavailableError = loadRedisUnavailableError();
+    mockClient.status = 'reconnecting';
+    redisHandler('error')(new Error('connection reset'));
+
+    const error = await service.get('key').catch((reason) => reason);
+
+    expect(error).toBeInstanceOf(RedisReadFailedError);
+    expect((error as { cause?: unknown }).cause).toBeInstanceOf(
+      RedisUnavailableError,
+    );
+    expect(mockClient.get).not.toHaveBeenCalled();
+  });
+
+  it('returns null from reads when redis is intentionally disabled', async () => {
+    const service = loadRedisService({ enabled: false });
+
+    await expect(service.get('key')).resolves.toBeNull();
+    expect(mockClient.get).not.toHaveBeenCalled();
+  });
+
+  it('keeps writes fail-open while redis is enabled but unavailable', async () => {
     const service = loadRedisService({ clientCreationFails: true });
 
     expect(service.isEnabled).toBe(true);
 
-    await expect(service.get('key')).resolves.toBeNull();
     await expect(service.set('key', 'value')).resolves.toBe(false);
     await expect(service.del('key')).resolves.toBe(false);
     await expect(service.exists('key')).resolves.toBe(false);

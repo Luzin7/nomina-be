@@ -27,4 +27,5 @@ export const invalidateGoalReads = (
     counterKey: goalGenerationKey(workspaceId),
     workspaceId,
     operation,
+    family: 'goal',
   });

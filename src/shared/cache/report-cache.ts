@@ -60,6 +60,7 @@ export const invalidateLedgerReads = (
     counterKey: ledgerGenerationKey(workspaceId),
     workspaceId,
     operation,
+    family: 'ledger',
   });
 
 export const invalidateStructureReads = (
@@ -72,6 +73,7 @@ export const invalidateStructureReads = (
     counterKey: structureGenerationKey(workspaceId),
     workspaceId,
     operation,
+    family: 'structure',
   });
 
 export const invalidateMonthReads = (
@@ -80,16 +82,17 @@ export const invalidateMonthReads = (
   months: Iterable<string>,
   operation: string,
 ): Promise<void> => {
-  const counterKeys = [
-    ledgerGenerationKey(workspaceId),
-    ...[...new Set(months)].map((month) =>
-      monthGenerationKey(workspaceId, month),
-    ),
+  const counters = [
+    { counterKey: ledgerGenerationKey(workspaceId), family: 'ledger' },
+    ...[...new Set(months)].map((month) => ({
+      counterKey: monthGenerationKey(workspaceId, month),
+      family: 'month',
+    })),
   ];
 
   return Promise.all(
-    counterKeys.map((counterKey) =>
-      bumpGeneration({ cache, counterKey, workspaceId, operation }),
+    counters.map(({ counterKey, family }) =>
+      bumpGeneration({ cache, counterKey, workspaceId, operation, family }),
     ),
   ).then(() => undefined);
 };

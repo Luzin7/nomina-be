@@ -1,6 +1,7 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { RedisUnavailableError } from '@infra/cache/redis/errors/RedisUnavailableError';
 import { Logger } from '@nestjs/common';
+import { errorClassOf } from './error-class';
 
 const logger = new Logger('CacheGenerationRead');
 
@@ -39,9 +40,8 @@ function reportFailure(
   counterKey: string,
   error: unknown,
 ): null {
-  const errorClass = error instanceof Error ? error.name : 'UnknownError';
   logger.error(
-    `cache=error route=${route} key=${counterKey} errorClass=${errorClass}`,
+    `cache=error route=${route} key=${counterKey} errorClass=${errorClassOf(error)}`,
   );
   return null;
 }
