@@ -15,6 +15,7 @@ import {
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
 import { makeRecurring } from '@modules/transaction/test-helpers/mock-factories';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
@@ -87,6 +88,7 @@ describe('UpdateRecurringTransactionService', () => {
       delete: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
+      findLastMovementsByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
       updateAutoPay: jest.fn(),
       adjustBalance: jest.fn(),
@@ -200,6 +202,9 @@ describe('UpdateRecurringTransactionService', () => {
       calculator,
       redis,
       jobDateProvider,
+      {
+        execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+      } as unknown as GetWorkspaceTimezoneService,
     );
   }
 

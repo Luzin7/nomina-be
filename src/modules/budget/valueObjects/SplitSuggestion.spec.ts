@@ -106,7 +106,7 @@ describe('buildSplitSuggestion', () => {
     });
   });
 
-  it('keeps unmapped categories at their observed spending', () => {
+  it('excludes unmapped categories from the allocations and reports their spending', () => {
     const result = buildSplitSuggestion(
       makeInput({
         spendByMonth: [
@@ -118,12 +118,132 @@ describe('buildSplitSuggestion', () => {
     );
 
     expect(result.unmappedCategoryIds).toEqual(['pets']);
-    expect(result.allocations.find((a) => a.categoryId === 'pets')).toEqual({
-      categoryId: 'pets',
-      group: null,
-      actualCents: 50_000,
-      idealCents: null,
-      suggestedCents: 50_000,
+    expect(
+      result.allocations.find((a) => a.categoryId === 'pets'),
+    ).toBeUndefined();
+    expect(result.unallocatedCents).toBe(50_000);
+  });
+
+  it('reports no unallocated amount when every root is mapped', () => {
+    const result = buildSplitSuggestion(
+      makeInput({
+        categories: CATEGORIES.filter((category) => category.name !== 'Pets'),
+      }),
+    );
+
+    expect(result.unmappedCategoryIds).toEqual([]);
+    expect(result.unallocatedCents).toBe(0);
+  });
+
+  describe('unmapped roots', () => {
+    const CATEGORIES_WITH_UNMAPPED: SuggestionCategory[] = [
+      { id: 'housing', name: 'Moradia', parentId: null, hidden: false },
+      { id: 'leisure', name: 'Lazer', parentId: null, hidden: false },
+      { id: 'invest', name: 'Investimentos', parentId: null, hidden: false },
+      { id: 'donations', name: 'Doações', parentId: null, hidden: false },
+      { id: 'course', name: 'Curso de inglês', parentId: null, hidden: false },
+    ];
+
+    const SPEND = {
+      housing: 250_000,
+      leisure: 120_000,
+      invest: 60_000,
+      donations: 20_000,
+      course: 20_200,
+    };
+
+    const inputOf = (step: number) =>
+      makeInput({
+        categories: CATEGORIES_WITH_UNMAPPED,
+        spendByMonth: [SPEND, SPEND, SPEND],
+        groupByCategoryName: {
+          Moradia: 'essentials',
+          Lazer: 'lifestyle',
+          Investimentos: 'savings',
+        },
+        incomeBasisCents: 450_000,
+        step,
+      });
+
+    it.each([1, 2, 3, 4, 5, 6])(
+      'keeps the step %i plan at or below income and matches the internal ideal',
+      (step) => {
+        const { allocations, unallocatedCents } = buildSplitSuggestion(
+          inputOf(step),
+        );
+        const suggestedTotal = allocations.reduce(
+          (total, allocation) => total + allocation.suggestedCents,
+          0,
+        );
+        const idealTotal = allocations.reduce(
+          (total, allocation) => total + (allocation.idealCents ?? 0),
+          0,
+        );
+
+        expect(suggestedTotal).toBeLessThanOrEqual(450_000);
+        expect(idealTotal).toBe(450_000);
+        expect(
+          allocations.map((allocation) => allocation.categoryId),
+        ).not.toEqual(expect.arrayContaining(['donations', 'course']));
+        expect(unallocatedCents).toBe(40_200);
+      },
+    );
+
+    it('matches the internal ideal at the last step', () => {
+      const { allocations } = buildSplitSuggestion(inputOf(6));
+
+      expect(
+        allocations.reduce(
+          (total, allocation) => total + allocation.suggestedCents,
+          0,
+        ),
+      ).toBe(450_000);
+    });
+  });
+
+  describe('chained steps', () => {
+    const CHAIN_CATEGORIES: SuggestionCategory[] = [
+      { id: 'housing', name: 'Moradia', parentId: null, hidden: false },
+      { id: 'leisure', name: 'Lazer', parentId: null, hidden: false },
+      { id: 'invest', name: 'Investimentos', parentId: null, hidden: false },
+    ];
+
+    const CHAIN_SPEND = { housing: 416_000, invest: 49_800 };
+
+    const chainInput = (
+      step: number,
+      currentTargets: Record<string, number>,
+    ): SplitSuggestionInput =>
+      makeInput({
+        categories: CHAIN_CATEGORIES,
+        spendByMonth: [CHAIN_SPEND, CHAIN_SPEND, CHAIN_SPEND],
+        incomeBasisCents: 465_800,
+        currentTargets,
+        step,
+      });
+
+    it('never overtakes the income as the targets are carried across steps', () => {
+      let targets: Record<string, number> = {};
+      const totals: number[] = [];
+
+      for (let step = 1; step <= 6; step += 1) {
+        const { allocations } = buildSplitSuggestion(chainInput(step, targets));
+        const total = allocations.reduce(
+          (sum, allocation) => sum + allocation.suggestedCents,
+          0,
+        );
+
+        totals.push(total);
+        expect(total).toBeLessThanOrEqual(465_800);
+        targets = Object.fromEntries(
+          allocations.map((allocation) => [
+            allocation.categoryId,
+            allocation.suggestedCents,
+          ]),
+        );
+      }
+
+      expect(totals.at(-1)).toBe(465_800);
     });
   });
 

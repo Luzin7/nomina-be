@@ -32,6 +32,9 @@ const SAO_PAULO = 'America/Sao_Paulo';
 const NOW = new Date('2026-11-15T15:00:00.000Z');
 const ESSENTIALS_ID = 'cat-essentials';
 const LEISURE_ID = 'cat-leisure';
+const SAVINGS_ID = 'cat-savings';
+const DONATIONS_ID = 'cat-donations';
+const CUSTOM_ID = 'cat-custom';
 
 const makeActiveMonth = (
   key: string,
@@ -438,6 +441,90 @@ describe('ResolveBudgetSuggestionService', () => {
       expect(idealTotal).toBeLessThanOrEqual(500_000);
     });
 
+    it.each([
+      [1, null],
+      [2, '2026-10'],
+      [3, '2026-09'],
+      [4, '2026-08'],
+      [5, '2026-07'],
+      [6, '2026-06'],
+    ] as const)(
+      'keeps the step %i plan within income and exposes the unmapped amount',
+      async (step, firstSplitMonth) => {
+        budgetRepository.resolveSnapshot.mockResolvedValue(
+          makeSnapshot(450_000),
+        );
+        budgetRepository.findSuggestionCategories.mockResolvedValue([
+          {
+            id: ESSENTIALS_ID,
+            name: 'Moradia',
+            parentId: null,
+            hidden: false,
+          },
+          { id: LEISURE_ID, name: 'Lazer', parentId: null, hidden: false },
+          {
+            id: SAVINGS_ID,
+            name: 'Investimentos',
+            parentId: null,
+            hidden: false,
+          },
+          {
+            id: DONATIONS_ID,
+            name: 'Doações',
+            parentId: null,
+            hidden: false,
+          },
+          {
+            id: CUSTOM_ID,
+            name: 'Curso de inglês',
+            parentId: null,
+            hidden: false,
+          },
+        ]);
+        budgetRepository.findSuggestionParameters.mockResolvedValue(
+          makeParameters({
+            groupByCategoryName: {
+              Moradia: 'essentials',
+              Lazer: 'lifestyle',
+              Investimentos: 'savings',
+            },
+          }),
+        );
+        const expenseByCategory = {
+          [ESSENTIALS_ID]: 250_000,
+          [LEISURE_ID]: 120_000,
+          [SAVINGS_ID]: 60_000,
+          [DONATIONS_ID]: 20_000,
+          [CUSTOM_ID]: 20_200,
+        };
+        budgetRepository.findInferenceTotals.mockResolvedValue([
+          makeTotals('2026-08', { expenseByCategory }),
+          makeTotals('2026-09', { expenseByCategory }),
+          makeTotals('2026-10', { expenseByCategory }),
+        ]);
+        budgetRepository.findSuggestionDecisions.mockResolvedValue(
+          firstSplitMonth === null
+            ? []
+            : [
+                makeDecision({
+                  kind: 'split',
+                  month: firstSplitMonth,
+                  bracketVersion: 1,
+                }),
+              ],
+        );
+
+        const { plan, split } = await resolveFresh();
+
+        expect(split).toMatchObject({
+          status: 'pending',
+          step,
+          unallocatedCents: 40_200,
+        });
+        expect(plan?.planTotalCents).toBeLessThanOrEqual(450_000);
+      },
+    );
+
     it('does not cap the step-k total at the snapshot income', async () => {
       budgetRepository.resolveSnapshot.mockResolvedValue({
         ...makeSnapshot(500_000),
@@ -540,7 +627,7 @@ describe('ResolveBudgetSuggestionService', () => {
       await resolve();
 
       expect(cache.get).toHaveBeenCalledWith(
-        `budget:suggestion:v4:${WORKSPACE_ID}:g11:c22:2026-11-15`,
+        `budget:suggestion:v5:${WORKSPACE_ID}:g11:c22:2026-11-15`,
       );
     });
 

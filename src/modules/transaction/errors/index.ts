@@ -140,12 +140,6 @@ export class TitleRequiredError extends BusinessRuleDomainError {
   }
 }
 
-export class StatusRequiredError extends BusinessRuleDomainError {
-  constructor() {
-    super('O status da transação é obrigatório.');
-  }
-}
-
 export class DateRequiredError extends BusinessRuleDomainError {
   constructor() {
     super('A data da transação é obrigatória.');

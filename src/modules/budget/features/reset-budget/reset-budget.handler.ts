@@ -21,7 +21,7 @@ import { fingerprintOf } from '@modules/budget/valueObjects/SuggestionFingerprin
 import { Injectable } from '@nestjs/common';
 import { captureException } from '@sentry/nestjs';
 import { type TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { ServiceUnavailableDomainError } from '@shared/core/errors/DomainError';
@@ -95,7 +95,12 @@ export class ResetBudgetService implements Service<
       return this.reject(workspaceId, new BudgetSuggestionChangedError());
     }
 
-    await invalidateLedgerReads(this.cache, workspaceId, 'reset-budget');
+    await invalidateMonthReads(
+      this.cache,
+      workspaceId,
+      [month],
+      'reset-budget',
+    );
 
     return right(
       buildBudgetConfigResponse({

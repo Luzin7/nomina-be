@@ -8,7 +8,9 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { FindTransactionRequest } from '../find-transaction/find-transaction.dto';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
+import { DateProvider } from '@providers/date/contracts/DateProvider';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 
 type Request = FindTransactionRequest & TokenPayloadBase;
 
@@ -16,6 +18,8 @@ type Request = FindTransactionRequest & TokenPayloadBase;
 export class DeleteTransactionService implements Service<Request, Error, void> {
   constructor(
     private readonly transactionRepository: TransactionRepository,
+    private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly redisService: CacheProvider,
   ) {}
 
@@ -31,13 +35,19 @@ export class DeleteTransactionService implements Service<Request, Error, void> {
     if (deletionResult.isLeft()) return left(deletionResult.value);
     if (!deletionResult.value) return left(new TransactionNotFoundError());
 
-    await invalidateLedgerReads(
+    await invalidateMonthReads(
       this.redisService,
       request.workspaceId,
+      [await this.monthOf(transactionResult.value.date, request.workspaceId)],
       'delete-transaction',
     );
 
     return right(undefined);
+  }
+
+  private async monthOf(date: Date, workspaceId: string): Promise<string> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+    return this.dateProvider.format(date, 'YYYY-MM', timezone);
   }
 
   private async fetchAndValidateTransaction(

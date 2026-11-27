@@ -178,6 +178,7 @@ export class CategoryRepositoryImplementation implements CategoryRepository {
         schema.transactions,
         and(
           eq(schema.transactions.categoryId, schema.categories.id),
+          eq(schema.transactions.workspaceId, workspaceId),
           gte(schema.transactions.date, sixMonthsAgo),
         ),
       )

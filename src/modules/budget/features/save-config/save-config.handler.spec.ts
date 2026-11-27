@@ -98,7 +98,7 @@ describe('SaveBudgetConfigService', () => {
         savedInputs.push(input);
         return { id: 'budget-1', effectiveFrom: input.effectiveFrom };
       }),
-      findMonthlyIncomeSuggestion: jest.fn(),
+      findRecurringMonthlyIncomeCents: jest.fn(),
       findPresetCategories: jest.fn(),
     } as unknown as jest.Mocked<BudgetRepository>;
 

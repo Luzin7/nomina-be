@@ -1,5 +1,7 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { Logger } from '@nestjs/common';
+import { CacheGenerationBumpError } from './errors/CacheGenerationBumpError';
+import { reportThrottled } from './report-throttle';
 
 const logger = new Logger('CacheGeneration');
 
@@ -8,6 +10,7 @@ interface BumpGenerationInput {
   counterKey: string;
   workspaceId: string;
   operation: string;
+  family: string;
 }
 
 export async function bumpGeneration({
@@ -15,15 +18,25 @@ export async function bumpGeneration({
   counterKey,
   workspaceId,
   operation,
+  family,
 }: BumpGenerationInput): Promise<void> {
-  const failureMessage = `cache generation ${counterKey} bump failed for workspace ${workspaceId} during ${operation}`;
+  const failure = new CacheGenerationBumpError(
+    workspaceId,
+    counterKey,
+    operation,
+  );
 
   try {
     const generation = await cache.incrementCounter(counterKey, Date.now());
     if (generation !== null) return;
 
-    logger.error(failureMessage);
+    logger.error(failure.message);
   } catch (error) {
-    logger.error(failureMessage, error);
+    failure.cause = error;
+    logger.error(failure.message, error);
   }
+
+  reportThrottled(`${operation}:${family}`, failure, {
+    extra: { workspaceId, counterKey, operation },
+  });
 }

@@ -22,6 +22,7 @@ export const createAccountSchema = z.discriminatedUnion('type', [
     type: z.literal(AccountType.CREDIT_CARD),
     creditLimit: z.coerce
       .number()
+      .int('Limite deve ser um valor inteiro')
       .positive('Limite deve ser positivo')
       .optional()
       .nullable(),
@@ -35,15 +36,27 @@ export const createAccountSchema = z.discriminatedUnion('type', [
   }),
   baseAccountSchema.extend({
     type: z.literal(AccountType.CHECKING),
-    balance: z.coerce.number().optional().default(0),
+    balance: z.coerce
+      .number()
+      .int('Saldo deve ser um valor inteiro')
+      .optional()
+      .default(0),
   }),
   baseAccountSchema.extend({
     type: z.literal(AccountType.CASH),
-    balance: z.coerce.number().optional().default(0),
+    balance: z.coerce
+      .number()
+      .int('Saldo deve ser um valor inteiro')
+      .optional()
+      .default(0),
   }),
   baseAccountSchema.extend({
     type: z.literal(AccountType.INVESTMENT),
-    balance: z.coerce.number().optional().default(0),
+    balance: z.coerce
+      .number()
+      .int('Saldo deve ser um valor inteiro')
+      .optional()
+      .default(0),
   }),
 ]);
 

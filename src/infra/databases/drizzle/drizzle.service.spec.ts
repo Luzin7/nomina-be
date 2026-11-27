@@ -23,7 +23,7 @@ const makeService = () => {
 };
 
 describe('DrizzleService.withStatementTimeout', () => {
-  it('bounds the work to one second and restores the enclosing transaction value', async () => {
+  it('bounds the work to one second without reading or restoring the session value outside an enclosing transaction', async () => {
     const { service, execute, transaction } = makeService();
     const work = jest.fn().mockResolvedValue('read');
 
@@ -32,12 +32,8 @@ describe('DrizzleService.withStatementTimeout', () => {
     expect(result).toBe('read');
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(statementsOf(execute)).toEqual([
-      expect.stringContaining('current_setting'),
       expect.stringContaining('SET LOCAL statement_timeout = 1000'),
-      expect.stringContaining('set_config'),
     ]);
-    expect(statementsOf(execute)[2]).toContain(ENCLOSING_TIMEOUT);
-    expect(statementsOf(execute)[2]).toContain('true');
   });
 
   it('restores the timeout inside the caller transaction instead of the outer one', async () => {
@@ -60,6 +56,8 @@ describe('DrizzleService.withStatementTimeout', () => {
       expect.stringContaining('SET LOCAL statement_timeout = 1000'),
       expect.stringContaining('set_config'),
     ]);
+    expect(statementsOf(execute)[2]).toContain(ENCLOSING_TIMEOUT);
+    expect(statementsOf(execute)[2]).toContain('true');
   });
 
   it('propagates the failure without a restore statement after a cancelled read', async () => {
@@ -70,7 +68,6 @@ describe('DrizzleService.withStatementTimeout', () => {
 
     await expect(attempt).rejects.toBe(failure);
     expect(statementsOf(execute)).toEqual([
-      expect.stringContaining('current_setting'),
       expect.stringContaining('SET LOCAL statement_timeout = 1000'),
     ]);
   });

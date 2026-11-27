@@ -8,7 +8,7 @@ import { RedisService } from './redis/RedisService';
     RedisService,
     {
       provide: CacheProvider,
-      useClass: RedisService,
+      useExisting: RedisService,
     },
   ],
   exports: [RedisService, CacheProvider],

@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { captureException } from '@sentry/nestjs';
 import Redis, { ChainableCommander, RedisOptions } from 'ioredis';
 import { CacheProvider, LockHandle } from '../contracts/CacheProvider';
+import { RedisReadFailedError } from './errors/RedisReadFailedError';
 import { RedisUnavailableError } from './errors/RedisUnavailableError';
 
 const COMMAND_TIMEOUT_MS = 2000;
@@ -128,13 +129,20 @@ export class RedisService implements CacheProvider, OnModuleDestroy {
 
   async get(key: string): Promise<string | null> {
     const client = this.getClient();
-    if (!client) return null;
+    if (!client) {
+      if (!this.isEnabled) return null;
+
+      throw new RedisReadFailedError(
+        key,
+        new RedisUnavailableError('Redis client is not available for GET'),
+      );
+    }
 
     try {
       return await client.get(key);
     } catch (error) {
       this.logger.warn(`Redis GET failed for key ${key}:`, error);
-      return null;
+      throw new RedisReadFailedError(key, error);
     }
   }
 

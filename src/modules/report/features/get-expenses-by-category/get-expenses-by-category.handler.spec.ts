@@ -1,7 +1,9 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
+import { RedisReadFailedError } from '@infra/cache/redis/errors/RedisReadFailedError';
 import { TopExpensesByCategory } from '@modules/transaction/valueObjects/TopExpensesByCategory';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { LEDGER_CACHE_TTL_SECONDS } from '@shared/cache/report-cache';
@@ -118,7 +120,7 @@ describe('GetExpensesByCategoryService', () => {
     await service.execute(makeRequest({ limit: 50 }));
 
     expect(cache.get).toHaveBeenCalledWith(
-      'report:expenses-by-category:v6:ws-1:g7:c7:2026-9:2026-09:50',
+      'report:expenses-by-category:v6:ws-1:c7:s7:m2026-097:America/Sao_Paulo:2026-9:2026-09:50',
     );
   });
 
@@ -150,7 +152,7 @@ describe('GetExpensesByCategoryService', () => {
       totalExpense: 10000,
     });
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v6:ws-1:g7:c7:2026-9:2026-09:5',
+      'report:expenses-by-category:v6:ws-1:c7:s7:m2026-097:America/Sao_Paulo:2026-9:2026-09:5',
       JSON.stringify(result),
       LEDGER_CACHE_TTL_SECONDS,
     );
@@ -170,12 +172,52 @@ describe('GetExpensesByCategoryService', () => {
     expect(transactionRepository.getTopExpensesByCategory).toHaveBeenCalled();
   });
 
-  it('misses on the next read when a write bumped the generation during compute', async () => {
+  describe('counter store outage', () => {
+    let errorSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      cache.readCounter.mockRejectedValue(
+        new RedisReadFailedError(
+          'cache-gen:report:ws-1',
+          new Error('connection reset'),
+        ),
+      );
+      transactionRepository.getTopExpensesByCategory.mockResolvedValue({
+        expenses: [],
+        totalExpense: 0,
+      });
+    });
+
+    afterEach(() => errorSpy.mockRestore());
+
+    it('serves the report from the database and logs cache=error per counter', async () => {
+      await expect(service.execute(makeRequest())).resolves.toEqual({
+        expenses: [],
+        totalExpense: 0,
+      });
+
+      expect(cache.get).not.toHaveBeenCalled();
+      expect(cache.set).not.toHaveBeenCalled();
+      expect(
+        transactionRepository.getTopExpensesByCategory,
+      ).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls.map(([line]) => line)).toEqual([
+        'cache=error route=report key=cache-gen:report:month:ws-1:2026-09 errorClass=RedisReadFailedError',
+        'cache=error route=category key=cache-gen:category:ws-1 errorClass=RedisReadFailedError',
+        'cache=error route=report key=cache-gen:report:structure:ws-1 errorClass=RedisReadFailedError',
+      ]);
+    });
+  });
+
+  it('misses on the next read when a write bumped the month generation during compute', async () => {
     cache.readCounter
       .mockResolvedValueOnce(7)
       .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(7)
       .mockResolvedValueOnce(8)
-      .mockResolvedValueOnce(8);
+      .mockResolvedValueOnce(7)
+      .mockResolvedValueOnce(7);
     transactionRepository.getTopExpensesByCategory.mockResolvedValue({
       expenses: [],
       totalExpense: 0,
@@ -185,13 +227,49 @@ describe('GetExpensesByCategoryService', () => {
     await service.execute(makeRequest());
 
     expect(cache.set).toHaveBeenCalledWith(
-      'report:expenses-by-category:v6:ws-1:g7:c7:2026-9:2026-09:5',
+      'report:expenses-by-category:v6:ws-1:c7:s7:m2026-097:America/Sao_Paulo:2026-9:2026-09:5',
       expect.any(String),
       LEDGER_CACHE_TTL_SECONDS,
     );
     expect(cache.get).toHaveBeenLastCalledWith(
-      'report:expenses-by-category:v6:ws-1:g8:c8:2026-9:2026-09:5',
+      'report:expenses-by-category:v6:ws-1:c7:s7:m2026-098:America/Sao_Paulo:2026-9:2026-09:5',
     );
+  });
+});
+
+describe('GetExpensesByCategoryService workspace time zone', () => {
+  it('re-reads the month after the workspace time zone changes', async () => {
+    const transactionRepository = {
+      getTopExpensesByCategory: jest
+        .fn()
+        .mockResolvedValue({ expenses: [], totalExpense: 0 }),
+    } as unknown as jest.Mocked<TransactionRepository>;
+    const workspaceTimezone = {
+      execute: jest
+        .fn()
+        .mockResolvedValueOnce('UTC')
+        .mockResolvedValueOnce('America/Manaus'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
+    const dateProvider = new DayJsDateProvider();
+    jest.spyOn(dateProvider, 'now').mockReturnValue(NOW);
+    const cache = new InMemoryCacheProvider();
+    const service = new GetExpensesByCategoryService(
+      transactionRepository,
+      workspaceTimezone,
+      dateProvider,
+      cache,
+    );
+
+    await service.execute(makeRequest());
+    await service.execute(makeRequest());
+
+    expect(
+      transactionRepository.getTopExpensesByCategory,
+    ).toHaveBeenCalledTimes(2);
+    expect([...cache.values.keys()]).toEqual([
+      expect.stringContaining(':UTC:'),
+      expect.stringContaining(':America/Manaus:'),
+    ]);
   });
 });
 

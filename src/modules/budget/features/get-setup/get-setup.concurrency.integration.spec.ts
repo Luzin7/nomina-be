@@ -1,7 +1,9 @@
 import { TransactionType } from '@constants/enums';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
 import { BudgetRepositoryImplementation } from '@infra/databases/drizzle/repositories/budget.repository';
+import { MonthProjectionRepositoryImplementation } from '@infra/databases/drizzle/repositories/month-projection.repository';
 import * as schema from '@infra/databases/drizzle/schema';
+import { ResolveIncomePrefillService } from '@modules/budget/services/resolve-income-prefill.service';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import {
@@ -48,12 +50,23 @@ describe('budget setup allocation offer', () => {
     });
     db = drizzle(queryClient, { schema });
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    const repository = new BudgetRepositoryImplementation({
+      db,
+    } as unknown as DrizzleService);
+    const dateProvider = new DayJsDateProvider();
     service = new GetBudgetSetupService(
-      new BudgetRepositoryImplementation({ db } as unknown as DrizzleService),
+      repository,
       {
         execute: jest.fn().mockResolvedValue('UTC'),
       } as unknown as GetWorkspaceTimezoneService,
-      new DayJsDateProvider(),
+      new ResolveIncomePrefillService(
+        repository,
+        new MonthProjectionRepositoryImplementation({
+          db,
+        } as unknown as DrizzleService),
+        dateProvider,
+      ),
+      dateProvider,
     );
   });
 

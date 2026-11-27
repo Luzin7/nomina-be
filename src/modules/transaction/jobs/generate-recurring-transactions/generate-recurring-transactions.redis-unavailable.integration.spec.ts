@@ -4,6 +4,8 @@ import { captureException } from '@sentry/nestjs';
 import { ConfigService } from '@nestjs/config';
 import { RecurringTransactionRepository } from '@modules/transaction/repositories/contracts/RecurringTransactionRepository';
 import { NextGenerationDateCalculator } from '@modules/transaction/services/contracts/NextGenerationDateCalculator';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { DEFAULT_TIMEZONE } from '@constants/timezone';
 import { GenerateRecurringTransactionsJobService } from './generate-recurring-transactions.service';
 
 jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
@@ -91,6 +93,9 @@ describe('GenerateRecurringTransactionsJobService against a real unavailable red
       nextGenerationDateCalculator,
       redis as unknown as CacheProvider,
       dateProvider,
+      {
+        execute: jest.fn().mockResolvedValue(DEFAULT_TIMEZONE),
+      } as unknown as GetWorkspaceTimezoneService,
     );
   });
 

@@ -1,11 +1,14 @@
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { DRIZZLE_TOKEN } from '@infra/databases/drizzle/drizzle.provider';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { WorkspaceRepositoryImplementation } from '@infra/databases/drizzle/repositories/workspace.repository';
 import * as schema from '@infra/databases/drizzle/schema';
 import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import { DeleteRecurringTransactionService } from '@modules/transaction/features/delete-recurring-transaction/delete-recurring-transaction.service';
 import { GenerateRecurringTransactionsJobService } from '@modules/transaction/jobs/generate-recurring-transactions/generate-recurring-transactions.service';
 import { CalculateNextGenerationDateService } from '@modules/transaction/services/calculate-next-generation-date.service';
+import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
 import { captureException } from '@sentry/nestjs';
 import { getErrorDetails } from '@shared/utils/error-details';
@@ -215,6 +218,7 @@ describe('recurring transaction delete and generation overlap', () => {
   let job: GenerateRecurringTransactionsJobService;
   let dateProvider: DayJsDateProvider;
   let cache: CacheProvider;
+  let workspaceTimezone: GetWorkspaceTimezoneService;
 
   beforeAll(async () => {
     container = await new PostgreSqlContainer('postgres:16-alpine')
@@ -232,6 +236,10 @@ describe('recurring transaction delete and generation overlap', () => {
         DrizzleService,
         { provide: DRIZZLE_TOKEN, useValue: drizzleDb },
         RecurringTransactionRepositoryImplementation,
+        {
+          provide: WorkspaceRepository,
+          useClass: WorkspaceRepositoryImplementation,
+        },
       ],
     }).compile();
 
@@ -248,15 +256,21 @@ describe('recurring transaction delete and generation overlap', () => {
         .fn()
         .mockResolvedValue({ key: 'lock:recurring', token: 'token' }),
       releaseLock: jest.fn().mockResolvedValue(true),
+      get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue(true),
       incrementCounter: jest.fn().mockResolvedValue(1),
     } as unknown as CacheProvider;
+    workspaceTimezone = new GetWorkspaceTimezoneService(
+      moduleRef.get(WorkspaceRepository),
+      cache,
+    );
 
     job = new GenerateRecurringTransactionsJobService(
       repository,
       new CalculateNextGenerationDateService(dateProvider),
       cache,
       dateProvider,
+      workspaceTimezone,
     );
   });
 
@@ -440,6 +454,7 @@ describe('recurring transaction delete and generation overlap', () => {
       new CalculateNextGenerationDateService(dateProvider),
       cache,
       dateProvider,
+      workspaceTimezone,
     );
 
     const result = await racingJob.execute();

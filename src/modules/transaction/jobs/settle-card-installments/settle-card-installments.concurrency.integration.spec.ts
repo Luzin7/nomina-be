@@ -6,9 +6,12 @@ import {
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { DRIZZLE_TOKEN } from '@infra/databases/drizzle/drizzle.provider';
 import { DrizzleService } from '@infra/databases/drizzle/drizzle.service';
+import { WorkspaceRepositoryImplementation } from '@infra/databases/drizzle/repositories/workspace.repository';
 import { TransactionRepositoryImplementation } from '@infra/databases/drizzle/repositories/transaction.repository';
 import * as schema from '@infra/databases/drizzle/schema';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
+import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
@@ -79,13 +82,20 @@ describe('settle card installments against a real postgres', () => {
           useClass: TransactionRepositoryImplementation,
         },
         {
+          provide: WorkspaceRepository,
+          useClass: WorkspaceRepositoryImplementation,
+        },
+        {
           provide: CacheProvider,
           useValue: {
+            get: jest.fn().mockResolvedValue(null),
+            set: jest.fn().mockResolvedValue(true),
             delByPattern: jest.fn().mockResolvedValue(0),
             incrementCounter: jest.fn().mockResolvedValue(1),
           },
         },
         { provide: DateProvider, useValue: dateProvider },
+        GetWorkspaceTimezoneService,
         SettleCardInstallmentsJobService,
       ],
     }).compile();

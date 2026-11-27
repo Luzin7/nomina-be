@@ -19,6 +19,8 @@ import { ListAccountsController } from './features/list-accounts/list-accounts.c
 import { ListAccountsService } from './features/list-accounts/list-accounts.service';
 import { ListBalanceAdjustmentsController } from './features/list-balance-adjustments/list-balance-adjustments.controller';
 import { ListBalanceAdjustmentsService } from './features/list-balance-adjustments/list-balance-adjustments.service';
+import { ListLastMovementsController } from './features/list-last-movements/list-last-movements.controller';
+import { ListLastMovementsService } from './features/list-last-movements/list-last-movements.handler';
 import { ListOpenCardInvoicesController } from './features/list-open-card-invoices/list-open-card-invoices.controller';
 import { ListOpenCardInvoicesService } from './features/list-open-card-invoices/list-open-card-invoices.handler';
 import { SetAutopayController } from './features/set-autopay/set-autopay.controller';
@@ -34,6 +36,7 @@ import { WorkspaceModule } from '@modules/workspace/Workspace.module';
     UpdateAccountController,
     SetAutopayController,
     DeleteAccountController,
+    ListLastMovementsController,
     FindAccountController,
     ListAccountsController,
     ListOpenCardInvoicesController,
@@ -48,6 +51,7 @@ import { WorkspaceModule } from '@modules/workspace/Workspace.module';
     UpdateAccountService,
     SetAutopayService,
     DeleteAccountService,
+    ListLastMovementsService,
     FindAccountByIdService,
     ListAccountsService,
     ListOpenCardInvoicesService,

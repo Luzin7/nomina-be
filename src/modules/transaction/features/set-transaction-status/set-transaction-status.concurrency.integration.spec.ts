@@ -24,6 +24,7 @@ import {
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
@@ -108,6 +109,7 @@ describe('transaction status changes against a real postgres', () => {
         { provide: CacheProvider, useClass: RedisService },
         { provide: ConfigService, useValue: {} },
         { provide: DateProvider, useClass: DayJsDateProvider },
+        GetWorkspaceTimezoneService,
         {
           provide: RecurringSuggestionDetectionDispatcher,
           useValue: { notify: () => undefined },

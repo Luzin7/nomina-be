@@ -12,6 +12,7 @@ import {
   CardCycleBudgetRecord,
   CardCyclePeriodRecord,
   CardCycleRepository,
+  CardCycleSpendInput,
   MaterializeCardCyclePeriodInput,
 } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { DayJsDateProvider } from '@providers/date/implementations/Dayjs';
@@ -89,29 +90,48 @@ function makeLedgerRepository(
   rows: LedgerRow[],
   budgets: CardCycleBudgetRecord[],
 ): CardCycleRepository {
+  const budgetOf = (dueDate: string) =>
+    budgets
+      .filter((budget) => budget.effectiveFrom <= dueDate)
+      .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
+      .at(-1) ?? null;
+  const spendOf = (input: CardCycleSpendInput) =>
+    rows
+      .filter(
+        (row) =>
+          row.accountId === input.accountId &&
+          row.type === TransactionType.EXPENSE &&
+          row.status === TransactionStatus.COMPLETED &&
+          localDateOf(row.date, input.timezone) >= input.periodStart &&
+          localDateOf(row.date, input.timezone) <= input.periodEnd,
+      )
+      .reduce((total, row) => total + row.amount, 0);
+
   return {
     materializePeriod: async (input) => makePeriod({ ...input.window }),
     findPeriod: async () => null,
     findApplicableBudget: async (_workspaceId, _accountId, dueDate) =>
-      budgets
-        .filter((budget) => budget.effectiveFrom <= dueDate)
-        .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
-        .at(-1) ?? null,
+      budgetOf(dueDate),
+    findApplicableBudgets: async (_workspaceId, lookups) => {
+      const found = new Map<string, CardCycleBudgetRecord>();
+      for (const { accountId, dueDate } of lookups) {
+        const budget = budgetOf(dueDate);
+        if (budget !== null) found.set(accountId, budget);
+      }
+      return found;
+    },
     saveBudget: async () => {
       throw new Error('The status service does not save limits.');
     },
     listPeriods: async () => [],
-    sumCycleSpend: async (input) =>
-      rows
-        .filter(
-          (row) =>
-            row.accountId === input.accountId &&
-            row.type === TransactionType.EXPENSE &&
-            row.status === TransactionStatus.COMPLETED &&
-            localDateOf(row.date, input.timezone) >= input.periodStart &&
-            localDateOf(row.date, input.timezone) <= input.periodEnd,
-        )
-        .reduce((total, row) => total + row.amount, 0),
+    sumCycleSpend: async (input) => spendOf(input),
+    sumCycleSpends: async (inputs) =>
+      new Map(
+        inputs.map((input): [string, number] => [
+          input.accountId,
+          spendOf(input),
+        ]),
+      ),
   };
 }
 
@@ -156,9 +176,11 @@ describe('GetCardCycleStatusService', () => {
       materializePeriod: jest.fn().mockResolvedValue(makePeriod()),
       findPeriod: jest.fn(),
       findApplicableBudget: jest.fn().mockResolvedValue(null),
+      findApplicableBudgets: jest.fn().mockResolvedValue(new Map()),
       saveBudget: jest.fn(),
       listPeriods: jest.fn(),
       sumCycleSpend: jest.fn().mockResolvedValue(0),
+      sumCycleSpends: jest.fn().mockResolvedValue(new Map()),
     } as unknown as jest.Mocked<CardCycleRepository>;
 
     dateProvider = new DayJsDateProvider();
@@ -175,10 +197,12 @@ describe('GetCardCycleStatusService', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('materializes the requested cycle and returns limit, spend and available', async () => {
-    cardCycleRepository.findApplicableBudget.mockResolvedValue(
-      makeBudget(250_000),
+    cardCycleRepository.findApplicableBudgets.mockResolvedValue(
+      new Map([['acc-1', makeBudget(250_000)]]),
     );
-    cardCycleRepository.sumCycleSpend.mockResolvedValue(100_000);
+    cardCycleRepository.sumCycleSpends.mockResolvedValue(
+      new Map([['acc-1', 100_000]]),
+    );
 
     const result = await service.execute({
       workspaceId: 'ws-1',
@@ -209,13 +233,15 @@ describe('GetCardCycleStatusService', () => {
         closingDaysBeforeDue: 7,
       },
     });
-    expect(cardCycleRepository.sumCycleSpend).toHaveBeenCalledWith({
-      workspaceId: 'ws-1',
-      accountId: 'acc-1',
-      periodStart: '2026-11-22',
-      periodEnd: '2026-12-21',
-      timezone: card.timezone,
-    });
+    expect(cardCycleRepository.sumCycleSpends).toHaveBeenCalledWith([
+      {
+        workspaceId: 'ws-1',
+        accountId: 'acc-1',
+        periodStart: '2026-11-22',
+        periodEnd: '2026-12-21',
+        timezone: card.timezone,
+      },
+    ]);
   });
 
   it('falls back to the current cycle when no due date is given', async () => {
@@ -241,7 +267,9 @@ describe('GetCardCycleStatusService', () => {
   });
 
   it('returns null available when no limit is set, keeping the spend', async () => {
-    cardCycleRepository.sumCycleSpend.mockResolvedValue(75_000);
+    cardCycleRepository.sumCycleSpends.mockResolvedValue(
+      new Map([['acc-1', 75_000]]),
+    );
 
     const result = await service.execute({
       workspaceId: 'ws-1',
@@ -256,10 +284,12 @@ describe('GetCardCycleStatusService', () => {
   });
 
   it('allows available to go negative', async () => {
-    cardCycleRepository.findApplicableBudget.mockResolvedValue(
-      makeBudget(50_000),
+    cardCycleRepository.findApplicableBudgets.mockResolvedValue(
+      new Map([['acc-1', makeBudget(50_000)]]),
     );
-    cardCycleRepository.sumCycleSpend.mockResolvedValue(80_000);
+    cardCycleRepository.sumCycleSpends.mockResolvedValue(
+      new Map([['acc-1', 80_000]]),
+    );
 
     const result = await service.execute({
       workspaceId: 'ws-1',

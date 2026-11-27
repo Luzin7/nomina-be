@@ -24,8 +24,9 @@ import {
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { CreateTransactionRequest } from './create-transaction.dto';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
 import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 
 type Request = CreateTransactionRequest & TokenPayloadBase;
 
@@ -40,6 +41,7 @@ export class CreateTransactionService implements Service<
     private readonly categoryRepository: CategoryRepository,
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly redisService: CacheProvider,
     private readonly detectionDispatcher: RecurringSuggestionDetectionDispatcher,
   ) {}
@@ -82,9 +84,10 @@ export class CreateTransactionService implements Service<
     );
     if (persisted.isLeft()) return left(persisted.value);
 
-    await invalidateLedgerReads(
+    await invalidateMonthReads(
       this.redisService,
       request.workspaceId,
+      [await this.monthOf(transaction.date, request.workspaceId)],
       'create-transaction',
     );
 
@@ -123,6 +126,11 @@ export class CreateTransactionService implements Service<
     }
 
     return right({ account, destinationAccount });
+  }
+
+  private async monthOf(date: Date, workspaceId: string): Promise<string> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+    return this.dateProvider.format(date, 'YYYY-MM', timezone);
   }
 
   /**

@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { RedisReadFailedError } from '@infra/cache/redis/errors/RedisReadFailedError';
+import { RedisUnavailableError } from '@infra/cache/redis/errors/RedisUnavailableError';
 import { left, right } from '@shared/core/errors/Either';
 import { readThrough } from './read-through';
 import { InMemoryCacheProvider } from './test-helpers/in-memory-cache';
@@ -17,9 +19,9 @@ describe('readThrough', () => {
     logSpy.mockRestore();
   });
 
-  const missPattern = (key: string, outcome: string) =>
+  const missPattern = (key: string, outcome: string, cache = 'miss') =>
     new RegExp(
-      `^read-through miss key=${key} outcome=${outcome} elapsedMs=\\d+ elu=\\d\\.\\d{2}$`,
+      `^read-through miss key=${key} cache=${cache} outcome=${outcome} elapsedMs=\\d+ elu=\\d\\.\\d{2}$`,
     );
 
   it('logs one line on a miss whose load succeeds', async () => {
@@ -81,6 +83,26 @@ describe('readThrough', () => {
     });
 
     expect(cache.ttls.get('k')).toBe(900);
+  });
+
+  it('logs one cache=error line and loads from the database when an enabled redis lost the connection', async () => {
+    jest
+      .spyOn(cache, 'get')
+      .mockRejectedValue(
+        new RedisReadFailedError(
+          'k',
+          new RedisUnavailableError('Redis client is not available for GET'),
+        ),
+      );
+    const load = jest.fn(async () => right({ ok: true }));
+
+    await expect(
+      readThrough({ cache, key: 'k', ttlSeconds: 900, load }),
+    ).resolves.toEqual(right({ ok: true }));
+
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(logSpy.mock.calls[0][0]).toMatch(missPattern('k', 'ok', 'error'));
   });
 
   it('stores with the ttl returned by ttlFor for the loaded value', async () => {

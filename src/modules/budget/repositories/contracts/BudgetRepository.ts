@@ -183,7 +183,9 @@ export abstract class BudgetRepository {
     input: SaveBudgetSnapshotInput,
   ): Promise<SavedBudgetSnapshot>;
 
-  abstract findMonthlyIncomeSuggestion(workspaceId: string): Promise<number>;
+  abstract findRecurringMonthlyIncomeCents(
+    workspaceId: string,
+  ): Promise<number | null>;
 
   abstract findPresetCategories(workspaceId: string): Promise<PresetCategory[]>;
 

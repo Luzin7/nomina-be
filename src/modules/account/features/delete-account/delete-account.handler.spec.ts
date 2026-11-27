@@ -40,6 +40,7 @@ describe('DeleteAccountService', () => {
       findByNameAndWorkspaceId: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
+      findLastMovementsByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
       updateAutoPay: jest.fn(),
       adjustBalance: jest.fn(),
@@ -95,6 +96,10 @@ describe('DeleteAccountService', () => {
 
     expect(redisService.incrementCounter).toHaveBeenCalledWith(
       'cache-gen:report:ws-1',
+      expect.any(Number),
+    );
+    expect(redisService.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:structure:ws-1',
       expect.any(Number),
     );
     expect(redisService.delByPattern).not.toHaveBeenCalled();

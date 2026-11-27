@@ -1,4 +1,5 @@
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
+import { normalizeWorkspaceCycle } from '@constants/enums';
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { GetBudgetStatusService } from '@modules/budget/features/get-status/get-status.handler';
 import type { BudgetStatusResponse } from '@modules/budget/features/get-status/get-status.handler';
@@ -11,6 +12,7 @@ import { readGoalGeneration } from '@modules/goal/services/goal-cache';
 import { GoalRepository } from '@modules/goal/repositories/contracts/GoalRepository';
 import { FindMonthSummaryService } from '@modules/report/features/get-month-summary/get-month-summary.service';
 import { GetSpendableService } from '@modules/spendable/features/get-spendable/get-spendable.handler';
+import { CycleWindow } from '@modules/spendable/valueObjects/CycleWindow';
 import type { SpendablePayload } from '@modules/spendable/presenters/Spendable.presenter';
 import { SpendableRepository } from '@modules/spendable/repositories/contracts/SpendableRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
@@ -133,13 +135,13 @@ export class GetAvailableToSpendService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'dashboard:available-to-spend',
-        version: 'v9',
+        version: 'v10',
         workspaceId,
         generations: { ledger, goal, category },
         parts: [today, cycle ?? 'unset'],
       }),
       ttlSeconds: LEDGER_LIVE_CACHE_TTL_SECONDS,
-      load: () => this.compute(request, today),
+      load: () => this.compute(request, today, cycle),
       ttlFor: ({ degraded }) =>
         degraded ? DEGRADED_CACHE_TTL_SECONDS : LEDGER_LIVE_CACHE_TTL_SECONDS,
     });
@@ -151,8 +153,13 @@ export class GetAvailableToSpendService implements Service<
   private async compute(
     { workspaceId, sub }: Request,
     today: string,
+    cycle: string | null,
   ): Promise<Either<Error, ComputedAvailableToSpend>> {
     const [year, month] = today.split('-').map(Number);
+    const daysRemaining = CycleWindow.of(
+      today,
+      normalizeWorkspaceCycle(cycle),
+    ).daysRemaining;
     const startedAt = performance.now();
     const timings: ComputeTimings = {
       budget: 0,
@@ -172,7 +179,9 @@ export class GetAvailableToSpendService implements Service<
       this.timeStep(timings, 'goalAportes', () =>
         this.goalRepository.sumMonthlyAporteCents(workspaceId),
       ),
-      this.timeStep(timings, 'spendable', () => this.spendableOf(workspaceId)),
+      this.timeStep(timings, 'spendable', () =>
+        this.spendableOf(workspaceId, cycle),
+      ),
     ]);
     if (budget.isLeft()) return left(budget.value);
     if (plan.isLeft()) return left(plan.value);
@@ -189,7 +198,7 @@ export class GetAvailableToSpendService implements Service<
       recurringNotYetGeneratedCents:
         projection.recurringNotYetGenerated.totalExpense,
       goalAportesCents,
-      daysRemaining: projection.daysRemaining,
+      daysRemaining,
     });
     const ranked = await this.rankInsight({
       workspaceId,
@@ -208,7 +217,7 @@ export class GetAvailableToSpendService implements Service<
         ranked.degraded || isDegradedPlan(plan.value) || spendable.failed,
       response: {
         month: today.slice(0, 7),
-        daysRemaining: projection.daysRemaining,
+        daysRemaining,
         ...figure,
         ...planSidesOf(budget.value),
         unbudgetedCategories: budget.value.exists
@@ -234,9 +243,12 @@ export class GetAvailableToSpendService implements Service<
     }
   }
 
-  private async spendableOf(workspaceId: string): Promise<SpendableOutcome> {
+  private async spendableOf(
+    workspaceId: string,
+    cycle: string | null,
+  ): Promise<SpendableOutcome> {
     try {
-      const result = await this.getSpendable.execute({ workspaceId });
+      const result = await this.getSpendable.execute({ workspaceId, cycle });
       if (result.isLeft()) return { spendable: null, failed: true };
 
       return { spendable: result.value, failed: false };

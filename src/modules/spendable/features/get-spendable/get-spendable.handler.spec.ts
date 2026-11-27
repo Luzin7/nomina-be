@@ -13,6 +13,8 @@ import {
 } from '@modules/account/test-helpers/mock-factories';
 import {
   CardCycleRepository,
+  type CardCycleBudgetLookup,
+  type CardCycleBudgetRecord,
   type CardCycleSpendInput,
 } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
@@ -146,28 +148,50 @@ describe('GetSpendableService', () => {
       findAllByWorkspaceId: jest.fn(async () => given.accounts),
     } as unknown as jest.Mocked<AccountRepository>;
 
+    const budgetOf = (
+      accountId: string,
+      dueDate: string,
+    ): CardCycleBudgetRecord | null => {
+      const limitCents = given.budgets[accountId];
+      if (limitCents === undefined) return null;
+      const effectiveFrom = given.budgetEffectiveFrom ?? '2026-01-01';
+      if (effectiveFrom > dueDate) return null;
+      return {
+        id: `budget-${accountId}`,
+        workspaceId: WORKSPACE_ID,
+        accountId,
+        effectiveFrom,
+        limitCents,
+      };
+    };
+    const spendOf = ({ accountId, periodStart }: CardCycleSpendInput): number =>
+      given.spends[`${accountId}|${periodStart}`] ??
+      given.spends[accountId] ??
+      0;
+
     cardCycleRepository = {
       findApplicableBudget: jest.fn(
-        async (_workspaceId, accountId, dueDate) => {
-          const limitCents = given.budgets[accountId];
-          if (limitCents === undefined) return null;
-          const effectiveFrom = given.budgetEffectiveFrom ?? '2026-01-01';
-          if (effectiveFrom > dueDate) return null;
-          return {
-            id: `budget-${accountId}`,
-            workspaceId: WORKSPACE_ID,
-            accountId,
-            effectiveFrom,
-            limitCents,
-          };
+        async (_workspaceId: string, accountId: string, dueDate: string) =>
+          budgetOf(accountId, dueDate),
+      ),
+      findApplicableBudgets: jest.fn(
+        async (_workspaceId: string, lookups: CardCycleBudgetLookup[]) => {
+          const budgets = new Map<string, CardCycleBudgetRecord>();
+          for (const { accountId, dueDate } of lookups) {
+            const budget = budgetOf(accountId, dueDate);
+            if (budget !== null) budgets.set(accountId, budget);
+          }
+          return budgets;
         },
       ),
-      sumCycleSpend: jest.fn(
-        async ({ accountId, periodStart }: CardCycleSpendInput) =>
-          given.spends[`${accountId}|${periodStart}`] ??
-          given.spends[accountId] ??
-          0,
+      sumCycleSpend: jest.fn(async (input: CardCycleSpendInput) =>
+        spendOf(input),
       ),
+      sumCycleSpends: jest.fn(async (inputs: CardCycleSpendInput[]) => {
+        const spends = new Map<string, number>();
+        for (const input of inputs) spends.set(input.accountId, spendOf(input));
+        return spends;
+      }),
     } as unknown as jest.Mocked<CardCycleRepository>;
 
     cardInvoiceRepository = {
@@ -306,6 +330,123 @@ describe('GetSpendableService', () => {
     expect(result.cards).toHaveLength(3);
     expect(result.cardsHeadroomCents).toBe(75000);
     expect(result.spendableCents).toBe(275000);
+  });
+
+  it('reads every card budget and spend in one call', async () => {
+    given.accounts = [
+      checking(200000n),
+      makeCreditCard({ id: 'card-1', name: 'One', dueDay: 25 }),
+      makeCreditCard({ id: 'card-2', name: 'Two', dueDay: 25 }),
+      makeCreditCard({ id: 'card-3', name: 'Three', dueDay: 25 }),
+      makeCreditCard({ id: 'card-4', name: 'Four', dueDay: 25 }),
+    ];
+    given.budgets = {
+      'card-1': 50000,
+      'card-2': 30000,
+      'card-3': 20000,
+      'card-4': 10000,
+    };
+    given.spends = {
+      'card-1|2026-10-21': 10000,
+      'card-2|2026-10-21': 20000,
+      'card-3|2026-10-21': 5000,
+    };
+
+    const result = await run();
+
+    expect(cardCycleRepository.findApplicableBudgets).toHaveBeenCalledTimes(1);
+    expect(cardCycleRepository.sumCycleSpends).toHaveBeenCalledTimes(1);
+    expect(cardCycleRepository.findApplicableBudget).not.toHaveBeenCalled();
+    expect(cardCycleRepository.sumCycleSpend).not.toHaveBeenCalled();
+    expect(result.cards).toMatchObject([
+      {
+        accountId: 'card-1',
+        limitCents: 50000,
+        spendCents: 10000,
+        headroomCents: 40000,
+      },
+      {
+        accountId: 'card-2',
+        limitCents: 30000,
+        spendCents: 20000,
+        headroomCents: 10000,
+      },
+      {
+        accountId: 'card-3',
+        limitCents: 20000,
+        spendCents: 5000,
+        headroomCents: 15000,
+      },
+      {
+        accountId: 'card-4',
+        limitCents: 10000,
+        spendCents: 0,
+        headroomCents: 10000,
+      },
+    ]);
+  });
+
+  it('keeps each card on its own cycle when closing days differ', async () => {
+    given.accounts = [
+      checking(200000n),
+      makeCreditCard({
+        id: 'card-1',
+        name: 'Early',
+        dueDay: 20,
+        closingDaysBeforeDue: 7,
+      }),
+      makeCreditCard({
+        id: 'card-2',
+        name: 'Late',
+        dueDay: 25,
+        closingDaysBeforeDue: 5,
+      }),
+    ];
+    given.budgets = { 'card-1': 50000, 'card-2': 30000 };
+    given.spends = {
+      'card-1|2026-11-14': 12000,
+      'card-2|2026-10-21': 7000,
+    };
+
+    const result = await run();
+
+    expect(cardCycleRepository.findApplicableBudgets).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      [
+        { accountId: 'card-1', dueDate: '2026-12-20' },
+        { accountId: 'card-2', dueDate: '2026-11-25' },
+      ],
+    );
+    expect(cardCycleRepository.sumCycleSpends).toHaveBeenCalledWith([
+      {
+        workspaceId: WORKSPACE_ID,
+        accountId: 'card-1',
+        periodStart: '2026-11-14',
+        periodEnd: '2026-12-13',
+        timezone: TIMEZONE,
+      },
+      {
+        workspaceId: WORKSPACE_ID,
+        accountId: 'card-2',
+        periodStart: '2026-10-21',
+        periodEnd: '2026-11-20',
+        timezone: TIMEZONE,
+      },
+    ]);
+    expect(result.cards).toMatchObject([
+      {
+        accountId: 'card-1',
+        limitCents: 50000,
+        spendCents: 12000,
+        headroomCents: 38000,
+      },
+      {
+        accountId: 'card-2',
+        limitCents: 30000,
+        spendCents: 7000,
+        headroomCents: 23000,
+      },
+    ]);
   });
 
   it('row 6: a card without a declared budget does not appear', async () => {
@@ -464,14 +605,14 @@ describe('GetSpendableService', () => {
 
     const result = await run();
 
-    expect(cardCycleRepository.sumCycleSpend).toHaveBeenCalledTimes(1);
-    expect(cardCycleRepository.sumCycleSpend).toHaveBeenCalledWith(
+    expect(cardCycleRepository.sumCycleSpends).toHaveBeenCalledTimes(1);
+    expect(cardCycleRepository.sumCycleSpends).toHaveBeenCalledWith([
       expect.objectContaining({
         accountId: 'card-1',
         periodStart: '2026-10-21',
         periodEnd: '2026-11-20',
       }),
-    );
+    ]);
     expect(result.obligationsCents).toBe(0);
     expect(result.spendableCents).toBe(150000);
   });
@@ -525,10 +666,9 @@ describe('GetSpendableService', () => {
 
     await run();
 
-    expect(cardCycleRepository.findApplicableBudget).toHaveBeenCalledWith(
+    expect(cardCycleRepository.findApplicableBudgets).toHaveBeenCalledWith(
       WORKSPACE_ID,
-      'card-1',
-      '2026-11-25',
+      [{ accountId: 'card-1', dueDate: '2026-11-25' }],
     );
   });
 
@@ -674,7 +814,7 @@ describe('GetSpendableService', () => {
 
     const result = await run();
 
-    expect(cardCycleRepository.sumCycleSpend).not.toHaveBeenCalled();
+    expect(cardCycleRepository.sumCycleSpends).toHaveBeenCalledWith([]);
     expect(cardInvoiceRepository.findTotals).not.toHaveBeenCalled();
     expect(result.cards).toEqual([]);
     expect(result.spendableCents).toBe(200000);

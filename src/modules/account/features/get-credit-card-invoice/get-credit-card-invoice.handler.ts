@@ -74,8 +74,6 @@ type CardContext = {
 const invoiceKeyOf = (year: number, month: number): InvoiceKey =>
   `${year}-${String(month).padStart(2, '0')}`;
 
-const atLeastZero = (amount: bigint): bigint => (amount > 0n ? amount : 0n);
-
 @Injectable()
 export class GetCreditCardInvoiceService implements Service<
   Request,
@@ -144,10 +142,7 @@ export class GetCreditCardInvoiceService implements Service<
       previousBalance: statement.previousBalance,
       statementTotal: statement.total,
       pendingAmount,
-      availableLimit:
-        account.creditLimit === null
-          ? null
-          : atLeastZero(account.creditLimit - totalAmount - pendingAmount),
+      availableLimit: account.availableLimit,
       dueDate: bounds.dueDate,
       dueMonth,
       dueYear,

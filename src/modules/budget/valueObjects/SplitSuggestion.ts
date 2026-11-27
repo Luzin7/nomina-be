@@ -35,6 +35,7 @@ export type SuggestedAllocation = {
 export type SplitSuggestion = {
   allocations: SuggestedAllocation[];
   unmappedCategoryIds: string[];
+  unallocatedCents: number;
 };
 
 const sum = (values: number[]): number =>
@@ -87,33 +88,48 @@ function actualByRoot(input: SplitSuggestionInput): Map<string, number> {
 
 type Candidate = {
   category: SuggestionCategory;
-  group: GroupKey | null;
+  group: GroupKey;
   actualCents: number;
 };
 
-function buildCandidates(input: SplitSuggestionInput): Candidate[] {
+type CandidateSelection = {
+  candidates: Candidate[];
+  unmappedCategoryIds: string[];
+  unallocatedCents: number;
+};
+
+function selectCandidates(input: SplitSuggestionInput): CandidateSelection {
   const actuals = actualByRoot(input);
   const roots = input.categories.filter(
     (category) => category.parentId === null && !category.hidden,
   );
   const groupOf = (category: SuggestionCategory): GroupKey | null =>
     input.groupByCategoryName[category.name] ?? null;
+  const mapped: Candidate[] = [];
+  const unmapped: { id: string; actualCents: number }[] = [];
+  for (const category of roots) {
+    const group = groupOf(category);
+    const actualCents = actuals.get(category.id) ?? 0;
+    if (group === null) {
+      if (actualCents > 0) unmapped.push({ id: category.id, actualCents });
+      continue;
+    }
+    mapped.push({ category, group, actualCents });
+  }
   const spentGroups = new Set(
-    roots
-      .filter((category) => (actuals.get(category.id) ?? 0) > 0)
-      .map(groupOf),
+    mapped
+      .filter((candidate) => candidate.actualCents > 0)
+      .map((candidate) => candidate.group),
   );
-  return roots
-    .map((category) => ({
-      category,
-      group: groupOf(category),
-      actualCents: actuals.get(category.id) ?? 0,
-    }))
-    .filter(
+
+  return {
+    candidates: mapped.filter(
       (candidate) =>
-        candidate.actualCents > 0 ||
-        (candidate.group !== null && !spentGroups.has(candidate.group)),
-    );
+        candidate.actualCents > 0 || !spentGroups.has(candidate.group),
+    ),
+    unmappedCategoryIds: unmapped.map(({ id }) => id),
+    unallocatedCents: sum(unmapped.map(({ actualCents }) => actualCents)),
+  };
 }
 
 function idealByCategory(
@@ -161,15 +177,50 @@ const glide = (
   );
 };
 
+const capAtIncome = ({
+  suggested,
+  currentTotalCents,
+  incomeBasisCents,
+}: {
+  suggested: number[];
+  currentTotalCents: number;
+  incomeBasisCents: number | null;
+}): number[] => {
+  if (incomeBasisCents === null) return suggested;
+  const total = sum(suggested);
+  if (total <= incomeBasisCents || currentTotalCents > incomeBasisCents) {
+    return suggested;
+  }
+  const target = Math.floor(incomeBasisCents / CENTS_PER_REAL) * CENTS_PER_REAL;
+  let excess = total - target;
+  const capped = [...suggested];
+  const bySize = capped
+    .map((value, index) => ({ index, value }))
+    .sort((a, b) => b.value - a.value || a.index - b.index);
+  for (const { index } of bySize) {
+    if (excess <= 0) break;
+    const reduction = Math.min(excess, capped[index]);
+    capped[index] -= reduction;
+    excess -= reduction;
+  }
+  return capped;
+};
+
 export function buildSplitSuggestion(
   input: SplitSuggestionInput,
 ): SplitSuggestion {
-  const eligible = buildCandidates(input);
+  const {
+    candidates: eligible,
+    unmappedCategoryIds,
+    unallocatedCents,
+  } = selectCandidates(input);
   const ideals = idealByCategory(eligible, input);
   const candidates = eligible.filter(
     (candidate) =>
       candidate.actualCents > 0 || ideals.has(candidate.category.id),
   );
+  const currentOf = (candidate: Candidate): number =>
+    input.currentTargets[candidate.category.id] ?? candidate.actualCents;
   const allocations = candidates.map(({ category, group, actualCents }) => {
     const idealCents = ideals.get(category.id) ?? null;
     const currentCents = input.currentTargets[category.id] ?? actualCents;
@@ -184,10 +235,18 @@ export function buildSplitSuggestion(
           : glide(currentCents, idealCents, input.step, input.steps),
     };
   });
+  const capped = capAtIncome({
+    suggested: allocations.map((allocation) => allocation.suggestedCents),
+    currentTotalCents: sum(candidates.map(currentOf)),
+    incomeBasisCents: input.incomeBasisCents,
+  });
+
   return {
-    allocations,
-    unmappedCategoryIds: candidates
-      .filter((candidate) => candidate.group === null)
-      .map((candidate) => candidate.category.id),
+    allocations: allocations.map((allocation, index) => ({
+      ...allocation,
+      suggestedCents: capped[index],
+    })),
+    unmappedCategoryIds,
+    unallocatedCents,
   };
 }

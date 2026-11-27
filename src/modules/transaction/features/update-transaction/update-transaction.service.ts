@@ -19,7 +19,8 @@ import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { UpdateTransactionRequest } from './update-transaction.dto';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
 
 type Request = UpdateTransactionRequest & {
@@ -43,6 +44,7 @@ export class UpdateTransactionService implements Service<
     private readonly categoryRepository: CategoryRepository,
     private readonly transactionRepository: TransactionRepository,
     private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
     private readonly redisService: CacheProvider,
     private readonly detectionDispatcher: RecurringSuggestionDetectionDispatcher,
   ) {}
@@ -67,24 +69,48 @@ export class UpdateTransactionService implements Service<
       accountsResult.value.get(request.accountId)!,
     );
 
+    let previousDate: Date | null = null;
     const updateResult =
       await this.transactionRepository.updateWithBalanceEffect(
         request.transactionId,
-        (current) =>
-          this.buildUpdatedTransaction(current, request, resolvedEdit),
+        (current) => {
+          previousDate = current.date;
+          return this.buildUpdatedTransaction(current, request, resolvedEdit);
+        },
         { actorId: request.sub },
       );
     if (updateResult.isLeft()) return left(updateResult.value);
 
-    await invalidateLedgerReads(
+    await invalidateMonthReads(
       this.redisService,
       request.workspaceId,
+      await this.touchedMonths(
+        request.workspaceId,
+        previousDate,
+        updateResult.value.date,
+      ),
       'update-transaction',
     );
 
     this.detectionDispatcher.notify(request.workspaceId);
 
     return right(updateResult.value);
+  }
+
+  private async touchedMonths(
+    workspaceId: string,
+    previousDate: Date | null,
+    nextDate: Date,
+  ): Promise<string[]> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+    const months = new Set<string>();
+
+    if (previousDate) {
+      months.add(this.dateProvider.format(previousDate, 'YYYY-MM', timezone));
+    }
+    months.add(this.dateProvider.format(nextDate, 'YYYY-MM', timezone));
+
+    return [...months];
   }
 
   /**

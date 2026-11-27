@@ -11,7 +11,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { captureException } from '@sentry/nestjs';
 import { getErrorDetails } from '@shared/utils/error-details';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
 
 const BATCH_SIZE = 500;
 const TIME_BUDGET_MS = 30_000;
@@ -61,6 +62,7 @@ export class SettleCardInstallmentsJobService {
     private readonly transactionRepository: TransactionRepository,
     private readonly cache: CacheProvider,
     private readonly dateProvider: DateProvider,
+    private readonly workspaceTimezone: GetWorkspaceTimezoneService,
   ) {}
 
   async execute(): Promise<SettleCardInstallmentsSummary> {
@@ -73,7 +75,7 @@ export class SettleCardInstallmentsJobService {
 
     const counts = { settled: 0, skipped: 0, failed: 0 };
     const failures: SettlementFailure[] = [];
-    const settledWorkspaceIds = new Set<string>();
+    const settledDatesByWorkspace = new Map<string, Date[]>();
     let processedCount = 0;
 
     for (const transaction of due) {
@@ -82,11 +84,15 @@ export class SettleCardInstallmentsJobService {
       const result = await this.settle(transaction, failures);
       processedCount += 1;
       counts[result] += 1;
-      if (result === 'settled')
-        settledWorkspaceIds.add(transaction.workspaceId);
+      if (result === 'settled') {
+        const dates =
+          settledDatesByWorkspace.get(transaction.workspaceId) ?? [];
+        dates.push(transaction.date);
+        settledDatesByWorkspace.set(transaction.workspaceId, dates);
+      }
     }
 
-    await this.invalidateReports(settledWorkspaceIds);
+    await this.invalidateReports(settledDatesByWorkspace);
     this.reportFailures(failures, counts.failed, processedCount);
 
     const remainingCount = totalDue - processedCount;
@@ -143,14 +149,38 @@ export class SettleCardInstallmentsJobService {
     }
   }
 
-  private async invalidateReports(workspaceIds: Set<string>): Promise<void> {
-    for (const workspaceId of workspaceIds) {
-      await invalidateLedgerReads(
-        this.cache,
-        workspaceId,
-        'settle-card-installments',
-      );
-    }
+  private async invalidateReports(
+    datesByWorkspace: Map<string, Date[]>,
+  ): Promise<void> {
+    const workspaces = [...datesByWorkspace];
+
+    const settled = await Promise.allSettled(
+      workspaces.map(([workspaceId, dates]) =>
+        this.invalidateWorkspaceReports(workspaceId, dates),
+      ),
+    );
+
+    const [firstFailure] = settled.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason as unknown] : [],
+    );
+    if (firstFailure !== undefined) throw firstFailure;
+  }
+
+  private async invalidateWorkspaceReports(
+    workspaceId: string,
+    dates: Date[],
+  ): Promise<void> {
+    const timezone = await this.workspaceTimezone.execute(workspaceId);
+    const months = dates.map((date) =>
+      this.dateProvider.format(date, 'YYYY-MM', timezone),
+    );
+
+    await invalidateMonthReads(
+      this.cache,
+      workspaceId,
+      months,
+      'settle-card-installments',
+    );
   }
 
   private recordFailure(

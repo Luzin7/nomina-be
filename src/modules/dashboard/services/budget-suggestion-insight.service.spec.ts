@@ -24,6 +24,7 @@ const PENDING_SPLIT: SplitSuggestionState = {
   bracket: null,
   allocations: [],
   unmappedCategoryIds: [],
+  unallocatedCents: 0,
   fingerprint: 'split',
 };
 

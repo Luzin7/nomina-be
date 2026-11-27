@@ -1,5 +1,6 @@
 import { AccountType, CLOSING_DAYS_BEFORE_DUE_OPTIONS } from '@constants/enums';
-import { createAccountSchema } from './create-account.dto';
+import { BadRequestException } from '@nestjs/common';
+import { CreateAccountPipe, createAccountSchema } from './create-account.dto';
 
 describe('CreateAccountRequest DTO', () => {
   describe('CHECKING account', () => {
@@ -122,5 +123,22 @@ describe('CreateAccountRequest DTO', () => {
 
   it('should reject missing type', () => {
     expect(createAccountSchema.safeParse({ name: 'Test' }).success).toBe(false);
+  });
+
+  it.each([
+    { type: AccountType.CHECKING, name: 'Conta', balance: 1.5 },
+    { type: AccountType.CASH, name: 'Carteira', balance: 1.5 },
+    { type: AccountType.INVESTMENT, name: 'Investimento', balance: 1.5 },
+    {
+      type: AccountType.CREDIT_CARD,
+      name: 'Visa',
+      creditLimit: 1.5,
+      closingDaysBeforeDue: 10,
+      dueDay: 20,
+    },
+  ])('should reject a fractional amount for $type', (payload) => {
+    expect(() => CreateAccountPipe.transform(payload)).toThrow(
+      BadRequestException,
+    );
   });
 });

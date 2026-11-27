@@ -1,9 +1,19 @@
+import { TransactionType } from '@constants/enums';
 import { CreditCard } from '@modules/account/entities/CreditCardAccount';
 import { AnyAccount } from '@modules/account/entities/types';
 
 export type AccountListItem = {
   account: AnyAccount;
   balanceUpdatedAt: Date | null;
+};
+
+export type AccountLastMovement = {
+  accountId: string;
+  transactionId: string;
+  title: string;
+  date: Date;
+  amountCents: number;
+  type: TransactionType;
 };
 
 export type AdjustBalanceInput = {
@@ -67,6 +77,10 @@ export abstract class AccountRepository {
   ): Promise<{ accounts: AccountListItem[]; total: number }>;
 
   abstract findAllByWorkspaceId(workspaceId: string): Promise<AnyAccount[]>;
+
+  abstract findLastMovementsByWorkspaceId(
+    workspaceId: string,
+  ): Promise<AccountLastMovement[]>;
 
   abstract countByWorkspaceId(workspaceId: string): Promise<number>;
 }

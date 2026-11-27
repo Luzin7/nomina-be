@@ -15,19 +15,29 @@ interface ReadThroughInput<L, R> {
   ttlFor?: (value: R) => number;
 }
 
+type CacheLookup<R> =
+  | { readonly status: 'hit'; readonly value: R }
+  | { readonly status: 'miss' }
+  | { readonly status: 'error' };
+
 async function readCached<R>(
   cache: CacheProvider,
   key: string,
   codec: CacheCodec<R>,
-): Promise<R | null> {
-  const raw = await cache.get(key);
-  if (raw === null || raw === undefined) return null;
+): Promise<CacheLookup<R>> {
+  let raw: string | null;
+  try {
+    raw = await cache.get(key);
+  } catch {
+    return { status: 'error' };
+  }
+  if (raw === null || raw === undefined) return { status: 'miss' };
 
   try {
-    return codec.decode(raw);
+    return { status: 'hit', value: codec.decode(raw) };
   } catch (error) {
     logger.error(`cache entry ${key} discarded`, error);
-    return null;
+    return { status: 'error' };
   }
 }
 
@@ -49,6 +59,7 @@ type MissOutcome = 'ok' | 'left' | 'error';
 
 async function loadWithTelemetry<L, R>(
   key: string,
+  cacheStatus: 'miss' | 'error',
   load: () => Promise<Either<L, R>>,
 ): Promise<Either<L, R>> {
   const startedAt = performance.now();
@@ -62,7 +73,7 @@ async function loadWithTelemetry<L, R>(
     const elapsedMs = Math.round(performance.now() - startedAt);
     const { utilization } = performance.eventLoopUtilization(eluStart);
     logger.log(
-      `read-through miss key=${key} outcome=${outcome} elapsedMs=${elapsedMs} elu=${utilization.toFixed(2)}`,
+      `read-through miss key=${key} cache=${cacheStatus} outcome=${outcome} elapsedMs=${elapsedMs} elu=${utilization.toFixed(2)}`,
     );
   }
 }
@@ -78,9 +89,9 @@ export async function readThrough<L, R>({
   if (key === null) return load();
 
   const cached = await readCached(cache, key, codec);
-  if (cached !== null) return right(cached);
+  if (cached.status === 'hit') return right(cached.value);
 
-  const result = await loadWithTelemetry(key, load);
+  const result = await loadWithTelemetry(key, cached.status, load);
   if (result.isLeft()) return result;
 
   await storeCached(cache, key, result.value, ttlFor(result.value), codec);

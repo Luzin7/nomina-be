@@ -33,6 +33,32 @@ const readCurrentTimeout = async (
 const restoreTimeout = (previous: string) =>
   sql`SELECT set_config('statement_timeout', ${previous}, true)`;
 
+const runBounded = async <Result>(
+  pool: PostgresJsDatabase<typeof schema>,
+  work: (db: DrizzleExecutor) => Promise<Result>,
+): Promise<Result> =>
+  pool.transaction(async (transaction) => {
+    await transaction.execute(SET_READ_TIMEOUT);
+
+    return work(transaction);
+  });
+
+const runWithinEnclosing = async <Result>(
+  executor: DrizzleExecutor,
+  work: (db: DrizzleExecutor) => Promise<Result>,
+): Promise<Result> =>
+  executor.transaction(async (savepoint) => {
+    const previous = await readCurrentTimeout(savepoint);
+
+    await savepoint.execute(SET_READ_TIMEOUT);
+
+    const result = await work(savepoint);
+
+    await savepoint.execute(restoreTimeout(previous));
+
+    return result;
+  });
+
 @Injectable()
 export class DrizzleService {
   private readonly transactionContext =
@@ -50,17 +76,11 @@ export class DrizzleService {
   withStatementTimeout<Result>(
     work: (db: DrizzleExecutor) => Promise<Result>,
   ): Promise<Result> {
-    return this.db.transaction(async (transaction) => {
-      const previous = await readCurrentTimeout(transaction);
+    const enclosing = this.transactionContext.getStore();
 
-      await transaction.execute(SET_READ_TIMEOUT);
+    if (!enclosing) return runBounded(this.pool, work);
 
-      const result = await work(transaction);
-
-      await transaction.execute(restoreTimeout(previous));
-
-      return result;
-    });
+    return runWithinEnclosing(enclosing, work);
   }
 
   runWithin<Result>(

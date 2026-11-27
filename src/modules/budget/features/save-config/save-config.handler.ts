@@ -23,7 +23,7 @@ import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-wor
 import { Injectable } from '@nestjs/common';
 import { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
 import { DateProvider } from '@providers/date/contracts/DateProvider';
-import { invalidateLedgerReads } from '@shared/cache/report-cache';
+import { invalidateMonthReads } from '@shared/cache/report-cache';
 import { Service } from '@shared/core/contracts/Service';
 import { Either, left, right } from '@shared/core/errors/Either';
 import { SaveBudgetConfigRequest } from './save-config.dto';
@@ -104,9 +104,15 @@ export class SaveBudgetConfigService implements Service<
         mode,
         allocations: savedAllocations,
       });
-      await invalidateLedgerReads(
+      const effectiveMonth = this.dateProvider.format(
+        effectiveFrom.value,
+        'YYYY-MM',
+        timezone,
+      );
+      await invalidateMonthReads(
         this.cache,
         workspaceId,
+        [effectiveMonth],
         'save-budget-config',
       );
 

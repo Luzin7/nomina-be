@@ -31,6 +31,7 @@ import {
 } from '@modules/transaction/test-helpers/mock-factories';
 import { Workspace } from '@modules/workspace/entities/Workspace';
 import { WorkspaceRepository } from '@modules/workspace/repositories/contracts/WorkspaceRepository';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { ConflictException, ExecutionContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
@@ -76,6 +77,10 @@ class InMemoryCache implements Partial<CacheProvider> {
 
   async exists(): Promise<boolean> {
     return false;
+  }
+
+  async get(): Promise<string | null> {
+    return null;
   }
 
   async set(): Promise<boolean> {
@@ -165,6 +170,7 @@ describe('create installment purchase against a real database', () => {
         { provide: CacheProvider, useClass: InMemoryCache },
         { provide: ConfigService, useValue: {} },
         { provide: DateProvider, useClass: AdjustableClockDateProvider },
+        GetWorkspaceTimezoneService,
         {
           provide: NextGenerationDateCalculator,
           useClass: CalculateNextGenerationDateService,

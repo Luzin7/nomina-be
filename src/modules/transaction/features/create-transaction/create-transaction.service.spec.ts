@@ -17,6 +17,7 @@ import { right } from '@shared/core/errors/Either';
 import { UnauthorizedError } from '@shared/errors/UnauthorizedError';
 import { randomUUID } from 'crypto';
 import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { CreateTransactionService } from './create-transaction.service';
 
 function makeRequest(
@@ -58,6 +59,7 @@ describe('CreateTransactionService', () => {
   let categoryRepository: jest.Mocked<CategoryRepository>;
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let dateProvider: jest.Mocked<DateProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
   let cacheProvider: jest.Mocked<CacheProvider>;
   let detectionDispatcher: jest.Mocked<RecurringSuggestionDetectionDispatcher>;
 
@@ -71,6 +73,7 @@ describe('CreateTransactionService', () => {
       findByNameAndWorkspaceId: jest.fn(),
       findManyByWorkspaceId: jest.fn(),
       findAllByWorkspaceId: jest.fn(),
+      findLastMovementsByWorkspaceId: jest.fn(),
       countByWorkspaceId: jest.fn(),
       updateAutoPay: jest.fn(),
       adjustBalance: jest.fn(),
@@ -116,7 +119,7 @@ describe('CreateTransactionService', () => {
       startOfDay: jest.fn().mockImplementation((date) => new Date(date)),
       now: jest.fn().mockReturnValue(new Date('2024-01-01')),
       add: jest.fn(),
-      format: jest.fn(),
+      format: jest.fn().mockReturnValue('2024-01'),
       toTimezone: jest.fn(),
       addDaysInCurrentDate: jest.fn(),
       parse: jest.fn(),
@@ -139,6 +142,9 @@ describe('CreateTransactionService', () => {
       getClient: jest.fn().mockReturnValue(null),
       isAvailable: jest.fn().mockReturnValue(false),
     } as unknown as jest.Mocked<CacheProvider>;
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
     detectionDispatcher = {
       notify: jest.fn(),
     } as unknown as jest.Mocked<RecurringSuggestionDetectionDispatcher>;
@@ -148,6 +154,7 @@ describe('CreateTransactionService', () => {
       categoryRepository,
       transactionRepository,
       dateProvider,
+      workspaceTimezone,
       cacheProvider,
       detectionDispatcher,
     );
@@ -208,6 +215,24 @@ describe('CreateTransactionService', () => {
       }),
     );
     expect(result.isLeft()).toBe(true);
+  });
+
+  it('bumps the month of the transaction in the workspace timezone', async () => {
+    arrangeSuccessMocks();
+    dateProvider.format.mockReturnValue('2023-12');
+
+    await service.execute(makeRequest({ date: '2023-12-15' }));
+
+    expect(workspaceTimezone.execute).toHaveBeenCalledWith('ws-1');
+    expect(dateProvider.format).toHaveBeenCalledWith(
+      expect.any(Date),
+      'YYYY-MM',
+      'America/Sao_Paulo',
+    );
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2023-12',
+      expect.any(Number),
+    );
   });
 
   it('should create a transaction and return right on success', async () => {

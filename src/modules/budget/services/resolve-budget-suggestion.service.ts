@@ -4,7 +4,11 @@ import {
   type BudgetSnapshot,
   type SuggestionParameters,
 } from '@modules/budget/repositories/contracts/BudgetRepository';
-import { inferIncome } from '@modules/budget/valueObjects/IncomeInference';
+import {
+  lookbackRange,
+  resolveIncomeBasis,
+} from '@modules/budget/valueObjects/IncomeBasis';
+import { type IncomeInference } from '@modules/budget/valueObjects/IncomeInference';
 import {
   resolveIncomeBracket,
   type ResolvedBracket,
@@ -23,11 +27,7 @@ import {
 import { CacheProvider } from '@infra/cache/contracts/CacheProvider';
 import { readCategoryGeneration } from '@modules/category/services/category-list-cache';
 import { MonthProjectionRepository } from '@modules/report/repositories/contracts/MonthProjectionRepository';
-import {
-  isPlanEligible,
-  selectBasisMonths,
-} from '@modules/report/valueObjects/MonthProjection';
-import { LOOKBACK_MONTHS } from '@modules/report/valueObjects/ProjectionRules';
+import { isPlanEligible } from '@modules/report/valueObjects/MonthProjection';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { captureException } from '@sentry/nestjs';
@@ -67,6 +67,7 @@ export type SplitSuggestionState =
       bracket: { position: number; version: number } | null;
       allocations: SuggestedAllocation[];
       unmappedCategoryIds: string[];
+      unallocatedCents: number;
       fingerprint: string;
     }
   | { status: 'accepted' | 'rejected' | 'complete' | 'unavailable' };
@@ -161,7 +162,7 @@ export class ResolveBudgetSuggestionService implements Service<
     const now = this.dateProvider.now();
     const key = buildCacheKey({
       route: 'budget:suggestion',
-      version: 'v4',
+      version: 'v5',
       workspaceId,
       generations: { ledger, category },
       parts: [this.dateProvider.format(now, 'YYYY-MM-DD', timezone)],
@@ -211,19 +212,20 @@ export class ResolveBudgetSuggestionService implements Service<
   ): Promise<Either<Error, BudgetSuggestion>> {
     const key = this.dateProvider.format(now, 'YYYY-MM', timezone);
     const start = this.dateProvider.startOfMonth(`${key}-01`, timezone);
+    const range = lookbackRange(this.dateProvider, start, timezone);
 
     const [ledger, totals, categories, parameters, decisions, snapshot] =
       await Promise.all([
         this.monthProjectionRepository.findMonthLedger({
           workspaceId,
           timezone,
-          range: this.lookbackRange(start, timezone),
+          range,
           currentMonthStart: start,
         }),
         this.budgetRepository.findInferenceTotals({
           workspaceId,
           timezone,
-          ...this.lookbackRange(start, timezone),
+          ...range,
         }),
         this.budgetRepository.findSuggestionCategories(workspaceId),
         this.budgetRepository.findSuggestionParameters(
@@ -233,19 +235,13 @@ export class ResolveBudgetSuggestionService implements Service<
         this.budgetRepository.resolveSnapshot(workspaceId, start),
       ]);
 
-    const basisKeys = selectBasisMonths(ledger, key).map(({ key }) => key);
-    const totalsByMonth = new Map(totals.map((entry) => [entry.month, entry]));
-    const incomes = basisKeys.map(
-      (basisKey) => totalsByMonth.get(basisKey)?.incomeCents ?? 0,
-    );
-    const basis = basisKeys.map(
-      (basisKey) => totalsByMonth.get(basisKey)?.expenseByCategory ?? {},
-    );
+    const incomeBasis = resolveIncomeBasis(ledger, totals, key);
+    const basis = incomeBasis.months.map((month) => month.expenseByCategory);
 
     this.warnWhenMinimumWageIsStale(workspaceId, key, parameters);
 
     const income = this.incomeOf({
-      incomes,
+      inference: incomeBasis.inference,
       decisions,
       snapshot,
       key,
@@ -266,7 +262,7 @@ export class ResolveBudgetSuggestionService implements Service<
     return right({
       month: key,
       monthStart: start,
-      basisMonths: basisKeys.length,
+      basisMonths: incomeBasis.months.length,
       income,
       split,
       plan,
@@ -274,42 +270,28 @@ export class ResolveBudgetSuggestionService implements Service<
     });
   }
 
-  private lookbackRange(start: Date, timezone: string) {
-    const lookbackStart = this.dateProvider.startOfMonth(
-      this.dateProvider.add(start, -LOOKBACK_MONTHS, 'month', timezone),
-      timezone,
-    );
-    const previousMonth = this.dateProvider.add(start, -1, 'month', timezone);
-
-    return {
-      start: lookbackStart,
-      end: this.dateProvider.endOfMonth(previousMonth, timezone),
-    };
-  }
-
   private incomeOf({
-    incomes,
+    inference,
     decisions,
     snapshot,
     key,
   }: {
-    incomes: number[];
+    inference: IncomeInference | null;
     decisions: SuggestionDecisions;
     snapshot: BudgetSnapshot | null;
     key: string;
   }): IncomeSuggestion {
-    const inferred = inferIncome(incomes);
     const status = resolveIncomeStatus({
       decisions,
       currentMonth: key,
       snapshotIncomeCents: snapshot?.monthlyIncome ?? null,
-      inferredBaseCents: inferred?.incomeCents ?? null,
+      inferredBaseCents: inference?.incomeCents ?? null,
     });
-    if (status !== 'pending' || !inferred) {
+    if (status !== 'pending' || !inference) {
       return { status: status === 'pending' ? 'unavailable' : status };
     }
 
-    const { incomeCents, incomeMonths, zeroIncomeMonths } = inferred;
+    const { incomeCents, incomeMonths, zeroIncomeMonths } = inference;
 
     return {
       status: 'pending',
@@ -343,16 +325,17 @@ export class ResolveBudgetSuggestionService implements Service<
       return { split: unavailableOf(progress), plan: null };
 
     const bracket = this.bracketOf(workspaceId, incomeBasisCents, parameters);
-    const { allocations, unmappedCategoryIds } = buildSplitSuggestion({
-      categories,
-      spendByMonth: basis,
-      groupByCategoryName: parameters.groupByCategoryName,
-      incomeBasisCents,
-      bracket,
-      currentTargets: input.targets,
-      step: progress.step,
-      steps: SPLIT_STEPS,
-    });
+    const { allocations, unmappedCategoryIds, unallocatedCents } =
+      buildSplitSuggestion({
+        categories,
+        spendByMonth: basis,
+        groupByCategoryName: parameters.groupByCategoryName,
+        incomeBasisCents,
+        bracket,
+        currentTargets: input.targets,
+        step: progress.step,
+        steps: SPLIT_STEPS,
+      });
     if (allocations.length === 0) {
       return { split: unavailableOf(progress), plan: null };
     }
@@ -381,6 +364,7 @@ export class ResolveBudgetSuggestionService implements Service<
             : null,
         allocations,
         unmappedCategoryIds,
+        unallocatedCents,
         fingerprint: fingerprintOf({
           kind: 'split',
           step: progress.step,

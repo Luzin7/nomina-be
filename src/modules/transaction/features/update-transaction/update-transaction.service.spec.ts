@@ -5,6 +5,7 @@ import { AccountRepository } from '@modules/account/repositories/contracts/Accou
 import { Category } from '@modules/category/entities/Category';
 import { CategoryRepository } from '@modules/category/repositories/contracts/CategoryRepository';
 import { TransactionNotFoundError } from '@modules/transaction/errors';
+import { Transaction } from '@modules/transaction/entities/Transaction';
 import { TransactionRepository } from '@modules/transaction/repositories/contracts/TransactionRepository';
 import {
   makeTransaction,
@@ -13,6 +14,7 @@ import {
 import { DateProvider } from '@providers/date/contracts/DateProvider';
 import { left, right } from '@shared/core/errors/Either';
 import { RecurringSuggestionDetectionDispatcher } from '../recurring-suggestions/recurring-suggestion-detection.dispatcher';
+import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { UpdateTransactionService } from './update-transaction.service';
 
 type ServiceRequest = Parameters<
@@ -71,6 +73,7 @@ describe('UpdateTransactionService', () => {
   let categoryRepository: jest.Mocked<CategoryRepository>;
   let transactionRepository: jest.Mocked<TransactionRepository>;
   let cacheProvider: jest.Mocked<CacheProvider>;
+  let workspaceTimezone: jest.Mocked<GetWorkspaceTimezoneService>;
   let detectionDispatcher: jest.Mocked<RecurringSuggestionDetectionDispatcher>;
 
   beforeEach(() => {
@@ -79,6 +82,9 @@ describe('UpdateTransactionService', () => {
     cacheProvider = {
       incrementCounter: jest.fn().mockResolvedValue(1),
     } as unknown as jest.Mocked<CacheProvider>;
+    workspaceTimezone = {
+      execute: jest.fn().mockResolvedValue('America/Sao_Paulo'),
+    } as unknown as jest.Mocked<GetWorkspaceTimezoneService>;
     detectionDispatcher = {
       notify: jest.fn(),
     } as unknown as jest.Mocked<RecurringSuggestionDetectionDispatcher>;
@@ -93,7 +99,9 @@ describe('UpdateTransactionService', () => {
       {
         now: jest.fn(() => new Date('2024-01-01T00:00:00.000Z')),
         startOfDay: jest.fn(startOfDay),
+        format: jest.fn((date: Date) => date.toISOString().slice(0, 7)),
       } as unknown as jest.Mocked<DateProvider>,
+      workspaceTimezone,
       cacheProvider,
       detectionDispatcher,
     );
@@ -116,6 +124,48 @@ describe('UpdateTransactionService', () => {
     expect(
       cacheProvider.incrementCounter.mock.invocationCallOrder[0],
     ).toBeLessThan(detectionDispatcher.notify.mock.invocationCallOrder[0]);
+  });
+
+  it('bumps the previous and the new month when the date moves', async () => {
+    const previous = makeTransaction({
+      date: new Date('2024-01-15T00:00:00.000Z'),
+    });
+    transactionRepository.findUniqueById.mockResolvedValue(previous);
+    transactionRepository.updateWithBalanceEffect.mockImplementation(
+      async (_id, mutate) => right(mutate(previous).value as Transaction),
+    );
+
+    await service.execute(makeRequest({ date: '2024-02-10' }));
+
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-01',
+      expect.any(Number),
+    );
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-02',
+      expect.any(Number),
+    );
+  });
+
+  it('bumps one month when the date stays in the same month', async () => {
+    const previous = makeTransaction({
+      date: new Date('2024-01-05T00:00:00.000Z'),
+    });
+    transactionRepository.findUniqueById.mockResolvedValue(previous);
+    transactionRepository.updateWithBalanceEffect.mockImplementation(
+      async (_id, mutate) => right(mutate(previous).value as Transaction),
+    );
+
+    await service.execute(makeRequest({ date: '2024-01-25' }));
+
+    expect(cacheProvider.incrementCounter).toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-01',
+      expect.any(Number),
+    );
+    expect(cacheProvider.incrementCounter).not.toHaveBeenCalledWith(
+      'cache-gen:report:month:ws-1:2024-02',
+      expect.any(Number),
+    );
   });
 
   it('does not notify detection when the update is rejected', async () => {

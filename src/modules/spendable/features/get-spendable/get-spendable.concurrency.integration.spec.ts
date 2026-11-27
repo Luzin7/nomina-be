@@ -734,6 +734,58 @@ describe('spendable reads against a real postgres', () => {
   });
 
   describe('statement timeout scope', () => {
+    it('names the read that overruns the one-second bound, never the cleanup', async () => {
+      const statements: string[] = [];
+      const readClient = postgres(databaseUrl, {
+        max: 1,
+        onnotice: () => undefined,
+        connection: { TimeZone: 'UTC' },
+        debug: (_connection, query) => statements.push(String(query)),
+      });
+      const readDrizzle = new DrizzleService(drizzle(readClient, { schema }));
+      const readSpendable = new SpendableRepositoryImplementation(readDrizzle);
+
+      let releaseLock!: () => void;
+      const lockReleased = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      let releaseLocked!: () => void;
+      const lockHeld = new Promise<void>((resolve) => {
+        releaseLocked = resolve;
+      });
+      const holder = db.transaction(async (tx) => {
+        await tx.execute(sql`LOCK TABLE transactions IN ACCESS EXCLUSIVE MODE`);
+        releaseLocked();
+        await lockReleased;
+      });
+      await lockHeld;
+
+      const attempt = readSpendable
+        .sumCompletedCashIncome({
+          workspaceId,
+          startDate: WINDOW.startDate,
+          endDate: WINDOW.endDate,
+          timezone: TIMEZONE,
+        })
+        .finally(releaseLock);
+
+      const failure = await attempt.then(
+        () => undefined,
+        (error: {
+          query?: string;
+          cause?: { code?: string; query?: string };
+        }) => error,
+      );
+      await holder;
+      await readClient.end({ timeout: 5 });
+
+      expect(failure?.cause?.code).toBe('57014');
+      expect(failure?.query ?? failure?.cause?.query).toContain('transactions');
+      expect(
+        statements.filter((query) => /set_config|current_setting/.test(query)),
+      ).toEqual([]);
+    });
+
     it('restores the enclosing transaction timeout after reads inside it', async () => {
       await db.transaction(async (tx) => {
         await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);

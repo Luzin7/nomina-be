@@ -25,7 +25,10 @@ import {
   payableInvoiceOf,
 } from '@modules/account/valueObjects/OpenInvoice';
 import { buildInvoiceStatementFromTotals } from '@modules/account/valueObjects/InvoiceStatement';
-import { CardCycleRepository } from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
+import {
+  CardCycleBudgetRecord,
+  CardCycleRepository,
+} from '@modules/card-cycle/repositories/contracts/CardCycleRepository';
 import { GetWorkspaceTimezoneService } from '@modules/workspace/services/get-workspace-timezone.service';
 import { Injectable } from '@nestjs/common';
 import type { TokenPayloadSchema } from '@providers/auth/strategys/jwtStrategy';
@@ -54,7 +57,9 @@ import {
   type SpendablePayload,
 } from '../../presenters/Spendable.presenter';
 
-type Request = Pick<TokenPayloadSchema, 'workspaceId'>;
+type Request = Pick<TokenPayloadSchema, 'workspaceId'> & {
+  cycle?: string | null;
+};
 
 export type GetSpendableResult = {
   cycle: WorkspaceCycle;
@@ -113,7 +118,8 @@ type CardPlansInput = CardContext & { cards: CreditCard[] };
 
 type CardResolutionInput = {
   draft: CardDraft;
-  workspaceId: string;
+  budgets: ReadonlyMap<string, CardCycleBudgetRecord>;
+  spends: ReadonlyMap<string, number>;
   accounts: AnyAccount[];
   cashAccountIds: ReadonlySet<string>;
 };
@@ -156,8 +162,12 @@ export class GetSpendableService implements Service<
 
   async execute({
     workspaceId,
+    cycle: knownCycle,
   }: Request): Promise<Either<Error, SpendablePayload>> {
-    const storedCycle = await this.spendableRepository.findCycle(workspaceId);
+    const storedCycle =
+      knownCycle === undefined
+        ? await this.spendableRepository.findCycle(workspaceId)
+        : knownCycle;
     if (storedCycle === null)
       return left(new SpendableWorkspaceNotFoundError());
 
@@ -337,16 +347,30 @@ export class GetSpendableService implements Service<
 
       return { ...draft, totals: billTotals };
     });
-
-    return Promise.all(
-      withTotals.map((draft) =>
-        this.resolutionOf({
-          draft,
-          workspaceId,
-          accounts,
-          cashAccountIds,
-        }),
+    const dated = withTotals.filter(
+      (draft): draft is DatedCardDraft => !('undated' in draft),
+    );
+    const [budgets, spends] = await Promise.all([
+      this.cardCycleRepository.findApplicableBudgets(
+        workspaceId,
+        dated.map(({ card, current }) => ({
+          accountId: card.id,
+          dueDate: current.dueDate,
+        })),
       ),
+      this.cardCycleRepository.sumCycleSpends(
+        dated.map(({ card, current }) => ({
+          workspaceId,
+          accountId: card.id,
+          periodStart: current.periodStart,
+          periodEnd: current.periodEnd,
+          timezone: card.timezone,
+        })),
+      ),
+    ]);
+
+    return withTotals.map((draft) =>
+      this.resolutionOf({ draft, budgets, spends, accounts, cashAccountIds }),
     );
   }
 
@@ -384,12 +408,13 @@ export class GetSpendableService implements Service<
     };
   }
 
-  private async resolutionOf({
+  private resolutionOf({
     draft,
-    workspaceId,
+    budgets,
+    spends,
     accounts,
     cashAccountIds,
-  }: CardResolutionInput): Promise<CardResolution> {
+  }: CardResolutionInput): CardResolution {
     if ('undated' in draft)
       return { card: null, undated: draft.undated, invoiceCents: 0 };
 
@@ -402,14 +427,8 @@ export class GetSpendableService implements Service<
       candidate,
       (key) => statementOf(key).remaining,
     );
-    const [budget, spendCents] = await Promise.all([
-      this.cardCycleRepository.findApplicableBudget(
-        workspaceId,
-        card.id,
-        current.dueDate,
-      ),
-      this.spendOn(workspaceId, card, current),
-    ]);
+    const budget = budgets.get(card.id) ?? null;
+    const spendCents = spends.get(card.id) ?? 0;
     const headroom =
       budget === null
         ? null
@@ -449,19 +468,5 @@ export class GetSpendableService implements Service<
     );
 
     return source === undefined || cashAccountIds.has(source.id);
-  }
-
-  private spendOn(
-    workspaceId: string,
-    card: CreditCard,
-    bounds: InvoiceBounds,
-  ): Promise<number> {
-    return this.cardCycleRepository.sumCycleSpend({
-      workspaceId,
-      accountId: card.id,
-      periodStart: bounds.periodStart,
-      periodEnd: bounds.periodEnd,
-      timezone: card.timezone,
-    });
   }
 }
