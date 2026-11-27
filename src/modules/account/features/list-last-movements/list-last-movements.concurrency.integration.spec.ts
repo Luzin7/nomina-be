@@ -12,6 +12,7 @@ import {
   startPostgres,
 } from '@shared/cache/test-helpers/freshness-harness';
 import { InMemoryCacheProvider } from '@shared/cache/test-helpers/in-memory-cache';
+import { sql } from 'drizzle-orm';
 
 jest.setTimeout(180_000);
 
@@ -108,5 +109,17 @@ describe('last movements against a real database', () => {
     expect(secondMovements.map(({ accountId }) => accountId)).not.toContain(
       second.pendingAccountId,
     );
+  });
+
+  it('declares transactions.date NOT NULL in the database', async () => {
+    const [column] = await postgres.db.execute<{ isNullable: string }>(sql`
+      SELECT is_nullable AS "isNullable"
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'transactions'
+        AND column_name = 'date'
+    `);
+
+    expect(column.isNullable).toBe('NO');
   });
 });

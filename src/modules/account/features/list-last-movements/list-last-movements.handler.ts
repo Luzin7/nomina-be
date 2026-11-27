@@ -35,7 +35,7 @@ export class ListLastMovementsService implements Service<
       cache: this.cache,
       key: buildCacheKey({
         route: 'account:last-movements',
-        version: 'v1',
+        version: 'v2',
         workspaceId,
         generations: { ledger: generation },
       }),

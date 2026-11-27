@@ -5,6 +5,7 @@ import { RedisModule } from '@infra/cache/Redis.module';
 import { DatabaseModule } from '@infra/databases/Database.module';
 import { DRIZZLE_TOKEN } from '@infra/databases/drizzle/drizzle.provider';
 import { AccountModule } from '@modules/account/Account.module';
+import { AccountRepository } from '@modules/account/repositories/contracts/AccountRepository';
 import {
   insertLastMovement,
   seedLastMovements,
@@ -150,5 +151,27 @@ describe('GET /account/last-movements over HTTP', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ data: { movements: [] } });
+  });
+
+  it('serves the warm cache with the same ISO dates', async () => {
+    const { app, seed } = await seedWithApp('America/Sao_Paulo');
+    const repository = app.get(AccountRepository);
+
+    await insertLastMovement(postgres.db, seed, { title: 'Mercado' });
+
+    const readLastMovements = jest.spyOn(
+      repository,
+      'findLastMovementsByWorkspaceId',
+    );
+    const http = app.getHttpServer();
+
+    const cold = await request(http).get('/account/last-movements');
+    const warm = await request(http).get('/account/last-movements');
+
+    expect(cold.status).toBe(200);
+    expect(warm.status).toBe(200);
+    expect(cold.body.data.movements[0].date).toBe('2026-11-10T15:00:00.000Z');
+    expect(warm.body).toEqual(cold.body);
+    expect(readLastMovements).toHaveBeenCalledTimes(1);
   });
 });
