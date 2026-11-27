@@ -8,6 +8,12 @@ export const localDayIn = (
 export const instantOf = (column: AnyColumn | SQL): SQL =>
   sql`to_timestamp(EXTRACT(EPOCH FROM ${column}))`;
 
+export const epochMsInUtc = (column: AnyColumn | SQL): SQL<string> =>
+  sql<string>`(EXTRACT(EPOCH FROM ${column}) * 1000)::bigint`;
+
+export const epochMsToDate = (epochMs: string): Date =>
+  new Date(Number(epochMs));
+
 export type LocalDayRange = {
   start: string;
   end: string;
