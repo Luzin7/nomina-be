@@ -20,6 +20,7 @@ import { Injectable } from '@nestjs/common';
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 import { AccountMapper } from '../mappers/account.mapper';
 import * as schema from '../schema';
+import { epochMsToDate } from '../sql-helpers';
 import { applyBalanceMovement, DrizzleTransaction } from './balance-movement';
 import { ensureEntityId } from './ensure-entity-id';
 import { insertOpeningMovement } from './opening-movement';
@@ -29,7 +30,7 @@ type LastMovementRow = {
   accountId: string;
   transactionId: string;
   title: string;
-  date: Date;
+  dateEpochMs: string;
   amount: string;
   type: string;
 };
@@ -39,7 +40,7 @@ function toLastMovement(row: LastMovementRow): AccountLastMovement {
     accountId: row.accountId,
     transactionId: row.transactionId,
     title: row.title,
-    date: row.date,
+    date: epochMsToDate(row.dateEpochMs),
     amountCents: Number(row.amount),
     type: row.type as TransactionType,
   };
@@ -349,7 +350,7 @@ export class AccountRepositoryImplementation implements AccountRepository {
         movements.account_id AS "accountId",
         movements.transaction_id AS "transactionId",
         movements.title,
-        movements.date,
+        (EXTRACT(EPOCH FROM movements.date) * 1000)::bigint AS "dateEpochMs",
         movements.amount,
         movements.type
       FROM (
